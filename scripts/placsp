@@ -16,7 +16,7 @@ fi
 
 # Defaults (host-mode: ingester talks to published ports)
 export WEAVIATE_URL="${WEAVIATE_URL:-http://localhost:${WEAVIATE_HTTP_PORT:-8087}}"
-export VECTORIZER_URL="${VECTORIZER_URL:-http://localhost:8089}"
+export VECTORIZER_URL="http://localhost:8089"  # always localhost for host-side ingestion
 export PLACSP_CODELIST_DIR="${PLACSP_CODELIST_DIR:-$REPO/codelists}"
 export PLACSP_WORK_DIR="${PLACSP_WORK_DIR:-$REPO/work}"
 mkdir -p "$PLACSP_WORK_DIR"
