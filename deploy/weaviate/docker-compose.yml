@@ -1,0 +1,60 @@
+# Dedicated Weaviate instance for the PLACSP RAG index.
+# Separate from the legacy iarag-vectorstore — its own container, volume, and API key.
+#
+# Bring up:   cd deploy/weaviate && cp .env.example .env && edit .env && docker compose up -d
+# Health:     curl -s http://localhost:${WEAVIATE_HTTP_PORT:-8087}/v1/.well-known/ready
+#
+# Addressing (see ../../docs/DEPLOYMENT.md):
+#   - ingester IN Docker  -> WEAVIATE_URL=http://placsp-weaviate:8080  (service name, via shared network)
+#   - ingester ON host    -> WEAVIATE_URL=http://localhost:${WEAVIATE_HTTP_PORT}  (published port)
+
+services:
+  placsp-weaviate:
+    image: semitechnologies/weaviate:1.28.3   # pinned to the version the schema/code was verified against
+    container_name: placsp-weaviate
+    restart: unless-stopped
+    command:
+      - --host=0.0.0.0
+      - --port=8080
+      - --scheme=http
+    ports:
+      - "${WEAVIATE_HTTP_PORT:-8087}:8080"
+      - "${WEAVIATE_GRPC_PORT:-50052}:50051"
+    volumes:
+      - placsp_weaviate_data:/var/lib/weaviate
+    environment:
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      QUERY_DEFAULTS_LIMIT: "25"
+      # Bring-your-own vectors (BGE-M3 supplied at upsert); BM25 is built-in, no modules needed.
+      DEFAULT_VECTORIZER_MODULE: "none"
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: "placsp1"
+      # --- API key auth (same key the ingester sends as `Authorization: Bearer`) ---
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
+      AUTHENTICATION_APIKEY_ENABLED: "true"
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: "${WEAVIATE_API_KEY}"
+      AUTHENTICATION_APIKEY_USERS: "placsp-ingest"
+      AUTHORIZATION_ADMINLIST_ENABLED: "true"
+      AUTHORIZATION_ADMINLIST_USERS: "placsp-ingest"
+      LIMIT_RESOURCES: "true"
+      GOMEMLIMIT: "${WEAVIATE_GOMEMLIMIT:-4GiB}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  placsp_weaviate_data:
+    name: placsp_weaviate_data
+
+# To let an in-Docker ingester reach BOTH this Weaviate and the existing `vectorizer`
+# by service name, attach this container to the vectorizer's network instead of the
+# default. Uncomment and set the real external network name (find it with:
+#   docker inspect -f '{{json .NetworkSettings.Networks}}' vectorizer ):
+#
+# networks:
+#   default:
+#     external: true
+#     name: <vectorizer-network-name>
