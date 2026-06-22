@@ -1,0 +1,195 @@
+{
+  "name": "Procurement 1: Set data table",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "59cbbaa0-70a8-48f7-bfcb-220558dd2766",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "54338c04-fd65-4ab7-9bf1-3bd6c1fc233a",
+              "name": "jsonData",
+              "value": "[   {     \"name\":\"placsp_mayores_2025\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2025.zip\",     \"incremental\":true   },   {     \"name\":\"placsp_mayores_2024\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2024.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2023\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2023.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2022\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2022.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2021\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2021.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2020\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2020.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2019\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2019.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2018\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2018.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2017\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2017.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2016\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2016.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2015\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2015.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2014\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2014.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2013\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2013.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_mayores_2012\",     \"category\":\"placsp_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_643\\/licitacionesPerfilesContratanteCompleto3_2012.zip\",     \"incremental\":false   },   {     \"name\":\"externos_mayores_2025\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2025.zip\",     \"incremental\":true   },   {     \"name\":\"externos_mayores_2024\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2024.zip\",     \"incremental\":false   },   {     \"name\":\"externos_mayores_2023\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2023.zip\",     \"incremental\":false   },   {     \"name\":\"externos_mayores_2022\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2022.zip\",     \"incremental\":false   },   {     \"name\":\"externos_mayores_2021\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2021.zip\",     \"incremental\":false   },   {     \"name\":\"externos_mayores_2020\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2020.zip\",     \"incremental\":false   },   {     \"name\":\"externos_mayores_2019\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2019.zip\",     \"incremental\":false   },   {     \"name\":\"externos_mayores_2018\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2018.zip\",     \"incremental\":false   },   {     \"name\":\"externos_mayores_2017\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2017.zip\",     \"incremental\":false   },   {     \"name\":\"externos_mayores_2016\",     \"category\":\"externos_mayores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1044\\/PlataformasAgregadasSinMenores_2016.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_menores_2025\",     \"category\":\"placsp_menores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1143\\/contratosMenoresPerfilesContratantes_2025.zip\",     \"incremental\":true   },   {     \"name\":\"placsp_menores_2024\",     \"category\":\"placsp_menores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1143\\/contratosMenoresPerfilesContratantes_2024.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_menores_2023\",     \"category\":\"placsp_menores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1143\\/contratosMenoresPerfilesContratantes_2023.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_menores_2022\",     \"category\":\"placsp_menores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1143\\/contratosMenoresPerfilesContratantes_2022.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_menores_2021\",     \"category\":\"placsp_menores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1143\\/contratosMenoresPerfilesContratantes_2021.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_menores_2020\",     \"category\":\"placsp_menores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1143\\/contratosMenoresPerfilesContratantes_2020.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_menores_2019\",     \"category\":\"placsp_menores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1143\\/contratosMenoresPerfilesContratantes_2019.zip\",     \"incremental\":false   },   {     \"name\":\"placsp_menores_2018\",     \"category\":\"placsp_menores\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1143\\/contratosMenoresPerfilesContratantes_2018.zip\",     \"incremental\":false   },   {     \"name\":\"propios_2025\",     \"category\":\"propios\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1383\\/EMP_SectorPublico_2025.zip\",     \"incremental\":true   },   {     \"name\":\"propios_2024\",     \"category\":\"propios\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1383\\/EMP_SectorPublico_2024.zip\",     \"incremental\":false   },   {     \"name\":\"propios_2023\",     \"category\":\"propios\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1383\\/EMP_SectorPublico_2023.zip\",     \"incremental\":false   },   {     \"name\":\"propios_2022\",     \"category\":\"propios\",     \"url\":\"https:\\/\\/contrataciondelsectorpublico.gob.es\\/sindicacion\\/sindicacion_1383\\/EMP_SectorPublico_2022.zip\",     \"incremental\":false   } ]",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "19fec5ff-49a5-4671-9853-d9fa259ada80",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obtener el valor de la propiedad jsonData del item de entrada\nconst jsonString = $input.first().json.jsonData;\n\ntry {\n  // Convertir la cadena de texto (String) a un Array de objetos (JSON)\n  const jsonArray = JSON.parse(jsonString);\n\n  // Devolver el array. n8n automáticamente crea un item por cada objeto del array.\n  return jsonArray;\n\n} catch (e) {\n  throw new Error(`Error al analizar la cadena JSON. Revise la sintaxis: ${e.message}`);\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "e020bfa7-4cd6-4fd9-aaa1-d68ed566e041",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "IC30RL9FROauP1Pv",
+          "mode": "list",
+          "cachedResultName": "procurement_links",
+          "cachedResultUrl": "/projects/mZ2h7wwsbPbyx0MK/datatables/IC30RL9FROauP1Pv"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "={{ $json.name }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {
+            "is_incremental": false
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "zip_url",
+              "displayName": "zip_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "page_url",
+              "displayName": "page_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "link_text",
+              "displayName": "link_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "is_incremental",
+              "displayName": "is_incremental",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        624,
+        0
+      ],
+      "id": "19f1660a-2a69-431d-96d5-837e181ab1f7",
+      "name": "Upsert row(s)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Upsert row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "09d80344-ca9b-430e-9b11-ff1eaee38d4b",
+  "meta": {
+    "instanceId": "115e25651d755f431c0430e2096e9b1c83cf8e0cf61585816d8933310a1fbb49"
+  },
+  "id": "5nTjsA2OKhdJoqQm",
+  "tags": [
+    {
+      "updatedAt": "2025-11-12T12:52:42.329Z",
+      "createdAt": "2025-11-12T12:52:42.329Z",
+      "id": "60SzvJNPqc4FC7VB",
+      "name": "procurement"
+    }
+  ]
+}

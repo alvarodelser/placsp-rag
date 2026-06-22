@@ -1,0 +1,263 @@
+{
+  "name": "Endpoint: /search",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "synergyos/search",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        480
+      ],
+      "id": "1e9279c9-8020-483a-ab1f-e5bacb610b28",
+      "name": "POST search",
+      "webhookId": "f18be94b-4b33-4272-8845-b2bc1895c25b",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "x1Vxosao8L7jtBiK",
+          "name": "Synergy Auth Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        912,
+        480
+      ],
+      "id": "a0614e4f-0590-4739-bed6-94e9ec4d26b1",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        304
+      ],
+      "id": "b23c7c76-2e73-4b8a-9f8f-9697a4dc9116",
+      "name": "Test search"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ==== quick switches you can change for testing ====\n//const TEST_TENANT = \"Repo-7032f89f-1805-46b7-8f9f-d74ccffe0827\"//\nconst TEST_TENANT = \"Repo-acf1d009-2648-46b6-85d6-8299c583d5ad\";\nconst TEST_QUERY  = \"ageing\";\nconst TEST_MODE   = \"hybrid\"; // \"vector\" | \"hybrid\" | \"keyword\"\nconst TEST_K      = 5;\nconst TEST_ALPHA  = 0.5;        // only used for \"hybrid\"\nconst TEST_PROPS  = [\"content\",\"title\",\"section\"]; // only used for \"keyword\" (bm25)\n\n// Build payload exactly like your webhook would send\nreturn {\n  json: {\n    tenant: TEST_TENANT,\n    query: TEST_QUERY,\n    permission_list: null,\n    mode: TEST_MODE,\n    k: TEST_K,\n    alpha: TEST_ALPHA,\n    properties: TEST_PROPS\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        304
+      ],
+      "id": "1667e1d4-16b5-4bce-b5a0-abc3c2f929f6",
+      "name": "Prepare payload"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "SuFZfYGMBFpz8IUc",
+          "mode": "list",
+          "cachedResultUrl": "/n8n/workflow/SuFZfYGMBFpz8IUc",
+          "cachedResultName": "Module: Retrieval"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "k": "={{ $json.k }}",
+            "tenant": "={{ $json.tenant }}",
+            "query": "={{ $json.query }}",
+            "permission_list": "={{ $json.permission_list }}",
+            "mode": "={{ $json.mode }}",
+            "alpha": "={{ $json.alpha }}",
+            "properties": "={{ $json.properties }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant",
+              "displayName": "tenant",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "query",
+              "displayName": "query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "permission_list",
+              "displayName": "permission_list",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "mode",
+              "displayName": "mode",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "k",
+              "displayName": "k",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "alpha",
+              "displayName": "alpha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "properties",
+              "displayName": "properties",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        688,
+        480
+      ],
+      "id": "58fcb5f4-7209-449e-baf6-c12ae070c1c4",
+      "name": "Search Workflow"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const body = $json.body;\nconst { tenant, query } = body;\n\n// --- required fields ---\nif (!tenant || typeof tenant !== 'string' || !tenant.trim()) {\n  throw new Error(\"Missing 'repository'\");\n}\nif (!query || typeof query !== 'string' || !query.trim()) {\n  throw new Error(\"Missing 'query'\");\n}\n\n// --- permission_list (required array of non-empty strings) ---\n//if (!Array.isArray(body.permission_list)) {\n//  throw new Error(\"Missing or invalid 'permission_list'. Must be //array.\");\n//}\n\n// --- mode (enum) ---\nconst rawMode = String(body.mode || 'vector').toLowerCase();\nconst mode = ['vector','hybrid','doc_lexical','chunk_lexical'].includes(rawMode) ? rawMode : 'hybrid';\n\n// --- k (optional) ---\nlet k = Number(body.k ?? 5);\nif (!Number.isFinite(k) || k < 1) k = 5;\nif (k > 50) k = 50;\n\n\n// --- alpha (hybrid only) ---\nlet alpha = Number(body.alpha ?? 0.5);\nif (!Number.isFinite(alpha)) alpha = 0.5;\nif (alpha < 0) alpha = 0;\nif (alpha > 1) alpha = 1;\n\n// --- properties (optional array of strings) ---\nlet properties = Array.isArray(body.properties) ? body.properties : null;\n\n\n\n//let cleaned = body.permission_list\n//  .filter(v => typeof v === 'string')\n//  .map(s => s.trim())\n//  .filter(Boolean);\n\n//if (cleaned.length !== body.permission_list.length || //cleaned.length === 0) {\n//  throw new Error(\"'permission_list' must contain at least one non-empty string\");\n//}\n\n// simple safe characters\nconst idRegex = /^[A-Za-z0-9._-]{1,200}$/;\n//const invalid = cleaned.find(id => !idRegex.test(id));\n//if (invalid) {\n//  throw new Error(`Invalid permission id: ${invalid}`);\n//}\n\n// dedupe\nconst permission_list = null //[...new Set(cleaned)];\n\nreturn {\n  json: {\n    tenant: tenant.trim(),\n    query: query.trim(),\n    permission_list,\n    k,\n    mode,\n    alpha,\n    properties,\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        480
+      ],
+      "id": "b483fa1d-faa7-4514-9ca7-da5bde8a1fdc",
+      "name": "Validate input"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "POST search": {
+      "main": [
+        [
+          {
+            "node": "Validate input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test search": {
+      "main": [
+        [
+          {
+            "node": "Prepare payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare payload": {
+      "main": [
+        [
+          {
+            "node": "Search Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Workflow": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate input": {
+      "main": [
+        [
+          {
+            "node": "Search Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "685fa3bf-f51f-46b4-8443-701aaac99615",
+  "meta": {
+    "instanceId": "115e25651d755f431c0430e2096e9b1c83cf8e0cf61585816d8933310a1fbb49"
+  },
+  "id": "PZZZAfecH8rwbR9X",
+  "tags": [
+    {
+      "updatedAt": "2025-10-16T16:22:08.367Z",
+      "createdAt": "2025-10-16T16:22:08.367Z",
+      "id": "mei1ShAoHo6tG9gg",
+      "name": "endpoint"
+    },
+    {
+      "updatedAt": "2025-10-16T11:35:45.327Z",
+      "createdAt": "2025-10-16T11:35:45.327Z",
+      "id": "ucEEfVADCUrXzJtL",
+      "name": "retrieval"
+    }
+  ]
+}

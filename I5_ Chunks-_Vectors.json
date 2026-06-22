@@ -1,0 +1,214 @@
+{
+  "name": "I5: Chunks->Vectors",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Metadata\n- document_id\n- content\n### File metadata\n- file\n  - file.type\n  - file.size\n  - file.path\n\n### Chunk metadata\n- chunks[]\n  - chunks[].content\n  - chunks[].vector\n  - chunks[].chunk_id\n  - chunks[].chunk_total\n  - chunks[].lang\n  - chunks[].token_number",
+        "height": 432,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1584,
+        160
+      ],
+      "id": "cda29423-1162-487d-a1cf-6824475023af",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const input = item.json || {};\n\n  const chunksArray = input.chunk_list || [];\n  const tokensArray = input.token_count || [];\n  const vectorsArray = input.embeddings || [];\n  const chunkLang = input.chunk_language || input.language || null;\n  const chunkTotal = chunksArray.length;\n\n  const chunks = chunksArray.map((content, i) => ({\n    content: content ?? \"\",\n    vector: vectorsArray[i] || [],\n    chunk_id: i + 1,\n    chunk_total: chunkTotal,\n    lang: chunkLang,\n    token_number: tokensArray[i] ?? null,\n  }));\n\n  // Create a copy to prevent modifying the original item by reference\n  const result = {\n    ...input,\n    chunks,\n  };\n\n  // Explicitly delete the source arrays so they don't show up in the output\n  delete result.chunk_list;\n  delete result.chunk_title;\n  delete result.token_count;\n  delete result.embeddings;\n\n  return {\n    json: result\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        -80
+      ],
+      "id": "53b433c9-4c2a-4a32-97c8-eebed96b58e8",
+      "name": "Build Chunk Metadata"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {
+          "clashHandling": {
+            "values": {
+              "resolveClash": "preferInput1"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -880,
+        -80
+      ],
+      "id": "40a0583c-e09f-47c6-b77f-8e0eeea621d8",
+      "name": "Data + Vectors"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://vectorizer:8089/embed",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "texts",
+              "value": "={{ $json.chunk_list }}"
+            },
+            {
+              "name": "normalize",
+              "value": "True"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "id": "28f39dd0-8d4e-4b1c-9901-8d8da67b6c12",
+      "name": "Vectorizer Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -1104,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "queue": "q.iarag.chunks",
+        "options": {
+          "assertQueue": true,
+          "acknowledge": "executionFinishes",
+          "jsonParseBody": true,
+          "onlyContent": true,
+          "parallelMessages": 1
+        }
+      },
+      "type": "n8n-nodes-base.rabbitmqTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1392,
+        -96
+      ],
+      "id": "dcdd0f8c-af87-4621-849d-9f60e7a6d579",
+      "name": "q.iarag.chunks",
+      "credentials": {
+        "rabbitmq": {
+          "id": "Ok4e4t8UDBRfAVsY",
+          "name": "RabbitMQ Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "exchange",
+        "exchange": "x.iarag",
+        "exchangeType": "topic",
+        "routingKey": "iarag.vectors",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rabbitmq",
+      "typeVersion": 1.1,
+      "position": [
+        -480,
+        -80
+      ],
+      "id": "8c8931e2-ccf5-4fa4-8ff9-93e50b9fe424",
+      "name": "iarag.vectors",
+      "credentials": {
+        "rabbitmq": {
+          "id": "Ok4e4t8UDBRfAVsY",
+          "name": "RabbitMQ Credentials"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Build Chunk Metadata": {
+      "main": [
+        [
+          {
+            "node": "iarag.vectors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data + Vectors": {
+      "main": [
+        [
+          {
+            "node": "Build Chunk Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vectorizer Service": {
+      "main": [
+        [
+          {
+            "node": "Data + Vectors",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "q.iarag.chunks": {
+      "main": [
+        [
+          {
+            "node": "Vectorizer Service",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Data + Vectors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c7396be6-75fd-4889-b49b-61e261810279",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "115e25651d755f431c0430e2096e9b1c83cf8e0cf61585816d8933310a1fbb49"
+  },
+  "id": "rCPbD8313BVDXIt9",
+  "tags": [
+    {
+      "updatedAt": "2025-10-01T14:02:28.182Z",
+      "createdAt": "2025-10-01T14:02:28.182Z",
+      "id": "DDw6WilEaSXuNy85",
+      "name": "iarag"
+    },
+    {
+      "updatedAt": "2025-10-14T11:43:31.798Z",
+      "createdAt": "2025-10-14T11:43:31.798Z",
+      "id": "EZ90gV49oI5uK62W",
+      "name": "ingestion"
+    }
+  ]
+}

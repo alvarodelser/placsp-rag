@@ -1,0 +1,539 @@
+{
+  "name": "I6: Vectors -> Upsert",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ \"https://synergy-api.\" + $('q.iarag.vectors').first().json.environment_id + \".synergyos.com/artifact/\" + ($('q.iarag.vectors').first().json.document_type === \"file\" ? \"documents\" : $('q.iarag.vectors').first().json.document_type + \"s\") + \"/update/index\" }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n      ids: [ String($('q.iarag.vectors').first().json.document_id ) ], \n      repoId: String($('q.iarag.vectors').first().json.repository_id ),\n      value: true\n    }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "e5c71750-b36f-4fb6-9671-1508b0f80394",
+      "name": "Confirm to Synergy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1488,
+        272
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "N4fOXfSL28xhWvNs",
+          "name": "TESTBIO"
+        },
+        "httpHeaderAuth": {
+          "id": "Gq6iwXAuwyjKHp6f",
+          "name": "Header Auth Synergy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://iarag-vectorstore:8086/v1/schema/Synergyos_chunks/tenants",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -224,
+        336
+      ],
+      "id": "caa95376-6ba9-48cd-88ad-72835cf2f380",
+      "name": "GET Weaviate Tenants",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "s5HwFuIfqdUaxssY",
+          "name": "Weaviate API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "useDataOfInput": 2
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        448,
+        352
+      ],
+      "id": "7450e6be-3689-48b5-8231-b2ddfccf471e",
+      "name": "Wait for #1 and pass #2"
+    },
+    {
+      "parameters": {
+        "content": "## Index",
+        "height": 736,
+        "width": 1296,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        144
+      ],
+      "id": "9177b2de-a066-460e-a60b-17ef14d361e9",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dce78ac2-fb39-4d1f-9d11-c91fef173247",
+              "leftValue": "={{ $json.count}}",
+              "rightValue": "={{ $node[\"Build Upsert Payload\"].json.expected_count }}",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1248,
+        368
+      ],
+      "id": "91067e99-8a56-41a4-a54d-45ed20a4fe83",
+      "name": "If all Succeeded"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  count: $input.all().length\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        368
+      ],
+      "id": "d2baecde-ae5e-4055-8b6f-0ecc8a1727fc",
+      "name": "Count Errors"
+    },
+    {
+      "parameters": {
+        "content": "## Cleanup",
+        "height": 736,
+        "width": 880,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        144
+      ],
+      "id": "a9257e18-2ed1-4ddb-9d0c-fa2c31535f41",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=http://iarag-vectorstore:8086/v1/batch/objects?tenant={{ $('q.iarag.vectors').item.json.repository_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"match\": {\n    \"class\": \"Synergyos_chunks\",\n    \"where\": {\n      \"operator\": \"And\",\n      \"operands\": [\n        { \"path\": [\"repository_id\"], \"operator\": \"Equal\", \"valueText\": \"={{ $node[\\\"Build Chunk Metadata\\\"].json.repository_id }}\" },\n        { \"path\": [\"document_id\"],   \"operator\": \"Equal\", \"valueText\": \"={{ $node[\\\"Build Chunk Metadata\\\"].json.document_id }}\" }\n      ]\n    }\n  },\n  \"output\": \"minimal\"\n}\n",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        224
+      ],
+      "id": "ec04da7a-439f-4be3-8b29-c2c1776ab92c",
+      "name": "Delete chunks from vectorstore",
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "s5HwFuIfqdUaxssY",
+          "name": "Weaviate API Key"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=http://iarag-vectorstore:8086/v1/batch/objects?tenant={{ $('q.iarag.vectors').item.json.repository_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"match\": {\n    \"class\": \"Synergyos_full_text\",\n    \"where\": {\n      \"operator\": \"And\",\n      \"operands\": [\n        { \"path\": [\"repository_id\"], \"operator\": \"Equal\", \"valueText\": \"={{ $node[\\\"Build Chunk Metadata\\\"].json.repository_id }}\" },\n        { \"path\": [\"document_id\"],   \"operator\": \"Equal\", \"valueText\": \"={{ $node[\\\"Build Chunk Metadata\\\"].json.document_id }}\" }\n      ]\n    }\n  },\n  \"output\": \"minimal\"\n}\n",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        128,
+        224
+      ],
+      "id": "b4a7aed0-ad1b-415f-8342-408daaa454f4",
+      "name": "Delete doc from bm25store",
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "s5HwFuIfqdUaxssY",
+          "name": "Weaviate API Key"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $input.all()[0]?.json || {};\nconst chunksArray = base.chunks || [];\n\n// 1. Map the Chunks (Synergyos_chunks)\nconst chunkObjects = chunksArray.map(c => ({\n  class: \"Synergyos_chunks\",\n  tenant: base.repository_id,\n  vector: c.vector,\n  properties: {\n    repository_id: base.repository_id,\n    document_id: base.document_id,\n    document_type: base.document_type,\n    permissions_id: base.permissions_id,\n    title: base.title,\n    content: c.content ?? \"\", // chunk text\n    createdDateTime: base.createdDateTime,\n    modifiedDateTime: base.modifiedDateTime,\n    author: base.author,\n    editor: base.editor,\n    related: base.related,\n    file: (Array.isArray(base.file) && base.file.length > 0) ? base.file[0] : (base.file || null),\n    chunk: {\n      chunk_id: c.chunk_id,\n      chunk_total: c.chunk_total,\n      lang: c.lang,\n      token_number: c.token_number,\n      text_related: c.text_related || []\n    }\n  }\n}));\n\n// 2. Map the Full Text Document (Synergyos_full_text)\nconst fullTextObject = {\n  class: \"Synergyos_full_text\",\n  tenant: base.repository_id,\n  properties: {\n    repository_id: base.repository_id,\n    document_id: base.document_id,\n    permissions_id: base.permissions_id,\n    document_type: base.document_type,\n    title: base.title,\n    content: base.content || \"\", // full text\n    createdDateTime: base.createdDateTime,\n    modifiedDateTime: base.modifiedDateTime,\n    author: base.author,\n    editor: base.editor,\n    related: base.related,\n    file: (Array.isArray(base.file) && base.file.length > 0) ? base.file[0] : (base.file || null)\n  }\n};\n\n// 3. Combine into one batch\nreturn [{ \n  json: { \n    objects: [...chunkObjects, fullTextObject],\n    expected_count: chunkObjects.length + 1 \n  } \n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        368
+      ],
+      "id": "746401e4-9cca-4a4a-b19c-a5b2565e3a56",
+      "name": "Build Upsert Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://iarag-vectorstore:8086/v1/batch/objects",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "f495f700-cba8-415f-8356-c1bc713daa53",
+      "name": "Upsert to Vectorstore and BM25store",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        832,
+        368
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "s5HwFuIfqdUaxssY",
+          "name": "Weaviate API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=http://iarag-vectorstore:8086/v1/batch/objects?tenant={{ $(q.iarag.vectors).item.json.repository_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"match\": {\n    \"class\": \"Synergyos_chunks\",\n    \"where\": {\n      \"operator\": \"And\",\n      \"operands\": [\n        { \"path\": [\"repository_id\"], \"operator\": \"Equal\", \"valueText\": \"={{ $node[\"Build Chunk Metadata\"].json.repository_id }}\" },\n        { \"path\": [\"document_id\"],   \"operator\": \"Equal\", \"valueText\": \"={{ $node[\"Build Chunk Metadata\"].json.document_id }}\" }\n      ]\n    }\n  },\n  \"output\": \"minimal\"\n}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1488,
+        448
+      ],
+      "id": "262eeb61-632a-41ec-acd1-d780565eb4cf",
+      "name": "Delete from Vectorstore & BM25store",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "s5HwFuIfqdUaxssY",
+          "name": "Weaviate API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "queue": "q.iarag.vectors",
+        "options": {
+          "assertQueue": true,
+          "acknowledge": "executionFinishes",
+          "jsonParseBody": true,
+          "onlyContent": true,
+          "parallelMessages": 1
+        }
+      },
+      "type": "n8n-nodes-base.rabbitmqTrigger",
+      "typeVersion": 1,
+      "position": [
+        -496,
+        336
+      ],
+      "id": "4800d81b-5aaf-4a01-a622-aa758e10c06a",
+      "name": "q.iarag.vectors",
+      "credentials": {
+        "rabbitmq": {
+          "id": "Ok4e4t8UDBRfAVsY",
+          "name": "RabbitMQ Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9856b600-cba7-4b59-9254-24c18c3a2453",
+              "leftValue": "={{ $json.body.map(t => t.name).includes($('q.iarag.vectors').first().json.repository_id) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -64,
+        336
+      ],
+      "id": "ebc0e9f7-e426-4713-9e4d-cd335b2f6fb9",
+      "name": "If Tenant Exists1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "GET Weaviate Tenants": {
+      "main": [
+        [
+          {
+            "node": "If Tenant Exists1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for #1 and pass #2": {
+      "main": [
+        [
+          {
+            "node": "Build Upsert Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If all Succeeded": {
+      "main": [
+        [
+          {
+            "node": "Confirm to Synergy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete from Vectorstore & BM25store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Count Errors": {
+      "main": [
+        [
+          {
+            "node": "If all Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete chunks from vectorstore": {
+      "main": [
+        [
+          {
+            "node": "Wait for #1 and pass #2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete doc from bm25store": {
+      "main": [
+        [
+          {
+            "node": "Delete chunks from vectorstore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Upsert Payload": {
+      "main": [
+        [
+          {
+            "node": "Upsert to Vectorstore and BM25store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert to Vectorstore and BM25store": {
+      "main": [
+        [
+          {
+            "node": "Count Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "q.iarag.vectors": {
+      "main": [
+        [
+          {
+            "node": "GET Weaviate Tenants",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait for #1 and pass #2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "If Tenant Exists1": {
+      "main": [
+        [
+          {
+            "node": "Delete doc from bm25store",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait for #1 and pass #2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0bb9ca3c-1bae-4036-8357-403e6b4981ed",
+  "meta": {
+    "instanceId": "115e25651d755f431c0430e2096e9b1c83cf8e0cf61585816d8933310a1fbb49"
+  },
+  "id": "2HbXBOqXg2qVq610",
+  "tags": [
+    {
+      "updatedAt": "2025-10-01T14:02:28.182Z",
+      "createdAt": "2025-10-01T14:02:28.182Z",
+      "id": "DDw6WilEaSXuNy85",
+      "name": "iarag"
+    },
+    {
+      "updatedAt": "2025-10-14T11:43:31.798Z",
+      "createdAt": "2025-10-14T11:43:31.798Z",
+      "id": "EZ90gV49oI5uK62W",
+      "name": "ingestion"
+    }
+  ]
+}

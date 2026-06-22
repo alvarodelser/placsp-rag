@@ -1,0 +1,136 @@
+{
+  "name": "Procurement 3: Atom -> Chunks",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        -80
+      ],
+      "id": "b1b85d61-ec3b-480c-96af-0df611f037ad",
+      "name": "Build Manual Payload"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        -80
+      ],
+      "id": "c17bde2e-8fdd-47ae-9c79-3e19a0b36134",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "queue": "q.procurement.atom",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rabbitmqTrigger",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        160
+      ],
+      "id": "97cf4b19-46bb-4d81-ab95-437ffdbfb8bf",
+      "name": "RabbitMQ Trigger",
+      "credentials": {
+        "rabbitmq": {
+          "id": "Ok4e4t8UDBRfAVsY",
+          "name": "RabbitMQ Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.file_path }}",
+        "options": {
+          "fileExtension": "bin"
+        }
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        160
+      ],
+      "id": "ef2968e5-79a4-47bb-914b-bc8a1f9f3ee1",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: $binary.atom_raw\n// Output: { xml: \"<feed ...>...</feed>\" }\nif (!$binary?.atom_raw?.data) {\n  throw new Error('Missing $binary.atom_raw.data');\n}\nconst xml = Buffer.from($binary.atom_raw.data, 'base64').toString('utf8');\nreturn [{ json: { xml } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        160
+      ],
+      "id": "6f90024d-26d8-457e-8163-028b5eca2e33",
+      "name": "Convert to Text"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Build Manual Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RabbitMQ Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Convert to Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b9dfc934-60f2-4157-8404-eee91a525ff9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "115e25651d755f431c0430e2096e9b1c83cf8e0cf61585816d8933310a1fbb49"
+  },
+  "id": "CYR9egb6hGNW3G2d",
+  "tags": [
+    {
+      "updatedAt": "2025-11-12T12:52:42.329Z",
+      "createdAt": "2025-11-12T12:52:42.329Z",
+      "id": "60SzvJNPqc4FC7VB",
+      "name": "procurement"
+    },
+    {
+      "updatedAt": "2025-10-14T11:43:31.798Z",
+      "createdAt": "2025-10-14T11:43:31.798Z",
+      "id": "EZ90gV49oI5uK62W",
+      "name": "ingestion"
+    }
+  ]
+}

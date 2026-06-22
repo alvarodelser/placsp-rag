@@ -1,0 +1,798 @@
+{
+  "name": "I4: Markdown -> Chunk",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1344,
+        80
+      ],
+      "id": "94c6258d-626c-4113-b70b-6e5fd43ea716",
+      "name": "Data + Chunks"
+    },
+    {
+      "parameters": {
+        "queue": "q.iarag.markdowns",
+        "options": {
+          "acknowledge": "executionFinishes",
+          "jsonParseBody": true,
+          "onlyContent": true,
+          "parallelMessages": 1
+        }
+      },
+      "type": "n8n-nodes-base.rabbitmqTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        -144
+      ],
+      "id": "b20538e3-ce0d-4c67-93dd-9516ba04963a",
+      "name": "q.iarag.markdowns",
+      "credentials": {
+        "rabbitmq": {
+          "id": "Ok4e4t8UDBRfAVsY",
+          "name": "RabbitMQ Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('q.iarag.markdowns').item.json.file_type ? 'http://chunker:8084/services/chunking/doc' : 'http://chunker:8084/services/chunking/short_text' }}",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "={{ $('q.iarag.markdowns').item.json.file_type ? 'content_parsed' : 'short_text' }}",
+              "value": "={{ $json.content }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        496,
+        -368
+      ],
+      "id": "359f1d20-7590-4177-a12d-4c93bea51bb5",
+      "name": "Chunking Service",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.file_path }}.md",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        -768
+      ],
+      "id": "69396991-2c15-4ed6-b0cc-497df5564aba",
+      "name": "Read Markdown"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "07c76bbc-426f-4ff9-aa49-1f4432220adf",
+              "name": "chunk_list",
+              "value": "={{ $json.body.chunk_list }}",
+              "type": "array"
+            },
+            {
+              "id": "c88dd440-0202-4d61-a97c-ebf7e496e338",
+              "name": "chunk_title",
+              "value": "={{ $json.body.chunk_title }}",
+              "type": "array"
+            },
+            {
+              "id": "fcd68c06-f5a6-4750-ae4c-2c5553a06cb4",
+              "name": "token_count",
+              "value": "={{ $json.body.token_count }}",
+              "type": "array"
+            },
+            {
+              "id": "f009a233-e5fa-43d2-b3f8-86e25f947244",
+              "name": "chunk_size",
+              "value": "={{ $json.body.chunk_size }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1056,
+        -304
+      ],
+      "id": "f13b0ce1-14d9-4f4f-a9e1-93baf0bc225d",
+      "name": "Format Chunk Output"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.file_path}}.bin",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        -608
+      ],
+      "id": "e8bbd0c9-d435-46fc-b70b-7a2a3ebde9ab",
+      "name": "Read txt or html"
+    },
+    {
+      "parameters": {
+        "errorMessage": "No Content!"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        736,
+        272
+      ],
+      "id": "403419d7-e11e-491c-8ee1-ef427774c685",
+      "name": "No Content Error"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ \"https://synergy-api.dev.synergyos.com/artifact/\" + ($('q.iarag.markdowns').item.json.document_type === \"file\" ? \"documents\" : $('q.iarag.markdowns').item.json.document_type + \"s\") + \"/update/index\" }}\n})() }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n      ids: [ String($('q.iarag.markdowns').item.json.document_id ) ], \n      repoId: String($('q.iarag.markdowns').item.json.repository_id ),\n      value: true\n    }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "1d67660c-0ebf-4ba8-a54f-e5bb16aa25cc",
+      "name": "Confirm to Synergy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        576,
+        272
+      ],
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "ytfvRHUp3zsWXzsM",
+          "name": "Temporary SynergyOS Credentials"
+        },
+        "httpHeaderAuth": {
+          "id": "Gq6iwXAuwyjKHp6f",
+          "name": "Header Auth Synergy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convert HTML to plain text and OVERWRITE `content`.\n\nfunction decodeHTMLEntities(s = '') {\n  const named = { amp:'&', lt:'<', gt:'>', quot:'\"', apos:\"'\", nbsp:' ', ensp:' ', emsp:' ', ndash:'-', mdash:'—' };\n  return String(s).replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (_, ent) => {\n    if (ent[0] === '#') {\n      const hex = ent[1]?.toLowerCase() === 'x';\n      const code = parseInt(ent.slice(hex ? 2 : 1), hex ? 16 : 10);\n      return Number.isFinite(code) ? String.fromCodePoint(code) : _;\n    }\n    return Object.prototype.hasOwnProperty.call(named, ent) ? named[ent] : _;\n  });\n}\n\nfunction htmlToText(html = '') {\n  let t = String(html);\n  t = t.replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n       .replace(/<style[\\s\\S]*?<\\/style>/gi, '');\n  t = t.replace(/<\\s*br\\s*\\/?>/gi, '\\n')\n       .replace(/<\\/\\s*p\\s*>/gi, '\\n');\n  t = t.replace(/<[^>]+>/g, '');\n  t = decodeHTMLEntities(t).replace(/\\u00A0/g, ' ');\n  t = t.replace(/[ \\t]+\\n/g, '\\n')\n       .replace(/\\n{3,}/g, '\\n\\n')\n       .replace(/[ \\t]{2,}/g, ' ')\n       .trim();\n  return t;\n}\n\nreturn items.map(it => {\n  // - it.json.text = Default output from \"Extract from File\" node\n  // - it.json.content = Default location from your raw API data\n  let rawContent = it.json.text || it.json.content || '';\n\n  let finalContent = rawContent;\n  // Only run the cleaner IF it's a string AND it contains something resembling an HTML tag (<something>)\n  if (typeof rawContent === 'string' && /<[^>]+>/.test(rawContent)) {\n    finalContent = htmlToText(rawContent);\n  }\n  return { \n    json: { \n        ...it.json,           // Keeps your file_path, language, etc.\n        content: finalContent // The guaranteed clean text\n    } \n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        -384
+      ],
+      "id": "4c817ecd-98c0-49b4-b0ef-5bb9694acd77",
+      "name": "HTML to Text"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.file_type }}",
+                    "rightValue": "pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "363662bc-5005-4c86-8f7b-5d413c06baf7"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pdf"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "49b8e6df-42e3-4323-bb0e-806199cd558c",
+                    "leftValue": "={{ $json.file_type }}",
+                    "rightValue": "docx",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "docx"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "72f943fe-40f7-4776-bb0f-f9e5d6567fea",
+                    "leftValue": "={{ $json.file_type }}",
+                    "rightValue": "html",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "html"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "7910bbc3-589a-42a7-b817-ee255288cc5a",
+                    "leftValue": "={{ $json.file_type }}",
+                    "rightValue": "txt",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "txt"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "fe19b5e8-204d-49a6-89cc-75281d2c7978",
+                    "leftValue": "={{ $json.file_type }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notExists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "null"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -928,
+        -496
+      ],
+      "id": "1b112366-6dba-45bb-8af7-bf2d051b2cb8",
+      "name": "File Type"
+    },
+    {
+      "parameters": {
+        "mode": "exchange",
+        "exchange": "x.iarag",
+        "exchangeType": "topic",
+        "routingKey": "iarag.chunks",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rabbitmq",
+      "typeVersion": 1.1,
+      "position": [
+        1744,
+        80
+      ],
+      "id": "8a61a1be-776b-49f1-b08f-1ba0ec3e168b",
+      "name": "iarag.chunks",
+      "credentials": {
+        "rabbitmq": {
+          "id": "Ok4e4t8UDBRfAVsY",
+          "name": "RabbitMQ Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=rm {{ $('q.iarag.markdowns').item.json.file_path}}.md"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1504,
+        -688
+      ],
+      "id": "8051832b-374a-4d67-b0a7-58dc70355162",
+      "name": "Delete md File"
+    },
+    {
+      "parameters": {
+        "command": "=rm {{ $('q.iarag.markdowns').item.json.file_path}}.txt"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1504,
+        -544
+      ],
+      "id": "d2069660-1dee-48ed-95dd-a02f7d6e67d6",
+      "name": "Delete txt File"
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "output": "empty"
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1264,
+        -688
+      ],
+      "id": "ed92c138-c626-4828-b481-d53f0bb049f2",
+      "name": "Wait for md Chunking"
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "output": "empty"
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1264,
+        -544
+      ],
+      "id": "10a875bd-abf5-49c7-befa-e27d7c3d4791",
+      "name": "Wait for txt Chunking"
+    },
+    {
+      "parameters": {
+        "content": "## Cleanup\n",
+        "height": 448,
+        "width": 544,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        -832
+      ],
+      "id": "8d7e2540-6fa1-4e2b-871d-b36d86c607c9",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "destinationKey": "content",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -768
+      ],
+      "id": "c94bb1fb-7eee-4ae5-ad87-6cf25363ac20",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "093f2784-5668-459f-af8c-db89bbc4d51a",
+              "leftValue": "={{ $json.content }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "f8697b40-d1d5-4007-bf46-18ff1d8ff7c9",
+              "leftValue": "={{ $json.content }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        256,
+        -384
+      ],
+      "id": "9ff3d1c4-10e1-499f-a5fa-77d76f417dc9",
+      "name": "If Content is Null/Empty"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "destinationKey": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -608
+      ],
+      "id": "c24768b0-5fd5-4dd1-824e-9d0f27b6309e",
+      "name": "Extract from File1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "60d0ed80-036e-4c4b-95b4-52f1d9681641",
+              "name": "content",
+              "value": "={{ $('If Content is Null/Empty').item.json.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1536,
+        80
+      ],
+      "id": "ddfb31f0-37ac-4a79-be66-b16fc31204fc",
+      "name": "Set Content"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "q.iarag.markdowns": {
+      "main": [
+        [
+          {
+            "node": "Data + Chunks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "File Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunking Service": {
+      "main": [
+        [
+          {
+            "node": "Format Chunk Output",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait for txt Chunking",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Wait for md Chunking",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Data + Chunks": {
+      "main": [
+        [
+          {
+            "node": "Set Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Markdown": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Chunk Output": {
+      "main": [
+        [
+          {
+            "node": "Data + Chunks",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Read txt or html": {
+      "main": [
+        [
+          {
+            "node": "Extract from File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm to Synergy": {
+      "main": [
+        [
+          {
+            "node": "No Content Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML to Text": {
+      "main": [
+        [
+          {
+            "node": "If Content is Null/Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Type": {
+      "main": [
+        [
+          {
+            "node": "Read Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read txt or html",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read txt or html",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTML to Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for txt Chunking": {
+      "main": [
+        [
+          {
+            "node": "Delete txt File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for md Chunking": {
+      "main": [
+        [
+          {
+            "node": "Delete md File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "If Content is Null/Empty",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait for md Chunking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Content is Null/Empty": {
+      "main": [
+        [
+          {
+            "node": "Confirm to Synergy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chunking Service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File1": {
+      "main": [
+        [
+          {
+            "node": "HTML to Text",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait for txt Chunking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "iarag.chunks": {
+      "main": [
+        []
+      ]
+    },
+    "Set Content": {
+      "main": [
+        [
+          {
+            "node": "iarag.chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "224e00d5-ea7d-4793-a039-ec87b924395e",
+  "meta": {
+    "instanceId": "115e25651d755f431c0430e2096e9b1c83cf8e0cf61585816d8933310a1fbb49"
+  },
+  "id": "6mbaf0b4HbahnY1i",
+  "tags": [
+    {
+      "updatedAt": "2025-10-01T14:02:28.182Z",
+      "createdAt": "2025-10-01T14:02:28.182Z",
+      "id": "DDw6WilEaSXuNy85",
+      "name": "iarag"
+    },
+    {
+      "updatedAt": "2025-10-14T11:43:31.798Z",
+      "createdAt": "2025-10-14T11:43:31.798Z",
+      "id": "EZ90gV49oI5uK62W",
+      "name": "ingestion"
+    }
+  ]
+}
