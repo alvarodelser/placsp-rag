@@ -1,4 +1,4 @@
-const BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
+const BASE = (import.meta.env.VITE_API_BASE || '/placsprag').replace(/\/$/, '')
 
 export async function search(q, mode = 'hybrid', k = 15) {
   const url = `${BASE}/api/search?q=${encodeURIComponent(q)}&mode=${mode}&k=${k}`
