@@ -49,6 +49,22 @@ services:
       retries: 10
       start_period: 20s
 
+  # ── Schema init (one-shot, idempotent) ───────────────────────────────────
+  placsp-init-schema:
+    build:
+      context: .
+      dockerfile: deploy/ingester/Dockerfile
+    image: placsp-ingester
+    container_name: placsp-init-schema
+    environment:
+      WEAVIATE_URL: "http://placsp-weaviate:8080"
+      WEAVIATE_API_KEY: "${WEAVIATE_API_KEY}"
+    command: python -m placsp init-schema
+    depends_on:
+      placsp-weaviate:
+        condition: service_healthy
+    restart: "no"
+
   # ── Search API (FastAPI / uvicorn) ────────────────────────────────────────
   placsp-search-api:
     build: ./search-api

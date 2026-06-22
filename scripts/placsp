@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Usage: ./scripts/placsp <command> [args]
+#   commands: init-schema, daily, backfill, reconcile
+#
+# Auto-creates the virtualenv and installs the package on first run.
+# Sources .env from the repo root if WEAVIATE_API_KEY is not already set.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO"
+
+# Load .env if vars not already in environment
+if [ -f "$REPO/.env" ] && [ -z "${WEAVIATE_API_KEY:-}" ]; then
+    set -a; source "$REPO/.env"; set +a
+fi
+
+# Defaults (host-mode: ingester talks to published ports)
+export WEAVIATE_URL="${WEAVIATE_URL:-http://localhost:${WEAVIATE_HTTP_PORT:-8087}}"
+export VECTORIZER_URL="${VECTORIZER_URL:-http://localhost:8089}"
+export PLACSP_CODELIST_DIR="${PLACSP_CODELIST_DIR:-$REPO/codelists}"
+export PLACSP_WORK_DIR="${PLACSP_WORK_DIR:-$REPO/work}"
+mkdir -p "$PLACSP_WORK_DIR"
+
+# Auto-create venv
+if [ ! -d "$REPO/.venv" ]; then
+    echo "[placsp] Creating virtualenv..." >&2
+    python3.11 -m venv "$REPO/.venv"
+fi
+source "$REPO/.venv/bin/activate"
+
+# Install package if missing or out of date
+if ! python -c "import placsp" 2>/dev/null; then
+    echo "[placsp] Installing package..." >&2
+    pip install -e "$REPO" -q --no-cache-dir
+fi
+
+exec python -m placsp "$@"
