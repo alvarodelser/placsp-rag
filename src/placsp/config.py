@@ -20,7 +20,7 @@ class Config:
 def load_config() -> Config:
     return Config(
         vectorizer_url=_env("VECTORIZER_URL", "http://vectorizer:8089"),
-        weaviate_url=_env("WEAVIATE_URL", "http://iarag-vectorstore:8086"),
+        weaviate_url=_env("WEAVIATE_URL", "http://placsp-weaviate:8080"),
         weaviate_api_key=_env("WEAVIATE_API_KEY", ""),
         weaviate_class=_env("PLACSP_CLASS", "Placsp_licitaciones"),
         work_dir=_env("PLACSP_WORK_DIR", "./work"),
