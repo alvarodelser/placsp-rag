@@ -1,42 +1,40 @@
-# PLACSP Weaviate instance
+# PLACSP Weaviate configuration
 
-A dedicated Weaviate container for the PLACSP RAG index — separate from the legacy
-`iarag-vectorstore`. Bring-your-own vectors (BGE-M3 supplied at upsert), BM25 built-in,
-API-key auth, pinned to **1.28.3** (the version the schema/code was verified against).
+Environment variable reference for the dedicated Weaviate container (separate from the
+legacy `iarag-vectorstore` — its own volume and API key).
 
-## Bring it up
+## Deploy
+
+Weaviate is managed by the **root `docker-compose.yml`**:
 
 ```bash
-cd deploy/weaviate
+# from repo root
 cp .env.example .env
-# edit .env: set a strong WEAVIATE_API_KEY (openssl rand -hex 32), adjust ports if needed
-docker compose up -d
+# edit .env: set WEAVIATE_API_KEY (openssl rand -hex 32)
+docker compose up -d placsp-weaviate
 ```
 
 ## Verify
 
 ```bash
 curl -s http://localhost:${WEAVIATE_HTTP_PORT:-8087}/v1/.well-known/ready && echo READY
-# auth check (should list schema, empty at first):
-curl -s -H "Authorization: Bearer $WEAVIATE_API_KEY" \
-  http://localhost:8087/v1/schema
+curl -s -H "Authorization: Bearer $WEAVIATE_API_KEY" http://localhost:8087/v1/schema
 ```
 
-## How the ingester reaches it
+## Environment variables (see root `.env.example`)
 
-- **Ingester on the host** (cron/systemd): `WEAVIATE_URL=http://localhost:8087`.
-- **Ingester in Docker** on the vectorizer's network: `WEAVIATE_URL=http://placsp-weaviate:8080`
-  (uncomment the external `networks:` block in `docker-compose.yml` and set the
-  vectorizer's network name).
-
-The **same** `WEAVIATE_API_KEY` value goes in both this `.env` and the ingester's
-environment. See `../../docs/DEPLOYMENT.md` for the full deploy + test checklist.
+| Variable | Default | Description |
+|---|---|---|
+| `WEAVIATE_API_KEY` | *(required)* | Shared between Weaviate and the search-api |
+| `WEAVIATE_HTTP_PORT` | `8087` | Host port for the HTTP API |
+| `WEAVIATE_GRPC_PORT` | `50052` | Host port for the gRPC API |
+| `WEAVIATE_GOMEMLIMIT` | `4GiB` | Soft memory ceiling |
 
 ## Data / teardown
 
-State lives in the named volume `placsp_weaviate_data`.
+State lives in the named Docker volume `placsp_weaviate_data`.
 
 ```bash
-docker compose down              # stop, keep data
-docker compose down -v           # stop and DELETE all indexed data
+docker compose stop placsp-weaviate          # stop, keep data
+docker compose down -v                        # stop and DELETE all indexed data
 ```

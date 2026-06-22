@@ -1,0 +1,106 @@
+# PLACSP full-stack deployment: Weaviate + Search API + Search UI.
+#
+# Quick start:
+#   cp .env.example .env
+#   # edit .env: set WEAVIATE_API_KEY and VITE_API_BASE
+#   docker compose up -d
+#
+# Vectorizer note:
+#   The BGE-M3 vectorizer is a pre-existing container (iarag project).
+#   By default the search-api reaches it via `host.docker.internal:8089`
+#   (Docker 20.10+ host-gateway alias, works on Linux and Mac).
+#   To use the container service name instead, uncomment the networks block
+#   at the bottom and set the vectorizer's network name.
+
+services:
+
+  # ── Weaviate (vector store) ───────────────────────────────────────────────
+  placsp-weaviate:
+    image: semitechnologies/weaviate:1.28.3
+    container_name: placsp-weaviate
+    restart: unless-stopped
+    command:
+      - --host=0.0.0.0
+      - --port=8080
+      - --scheme=http
+    ports:
+      - "${WEAVIATE_HTTP_PORT:-8087}:8080"
+      - "${WEAVIATE_GRPC_PORT:-50052}:50051"
+    volumes:
+      - placsp_weaviate_data:/var/lib/weaviate
+    environment:
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      QUERY_DEFAULTS_LIMIT: "25"
+      DEFAULT_VECTORIZER_MODULE: "none"
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: "placsp1"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
+      AUTHENTICATION_APIKEY_ENABLED: "true"
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: "${WEAVIATE_API_KEY}"
+      AUTHENTICATION_APIKEY_USERS: "placsp-ingest"
+      AUTHORIZATION_ADMINLIST_ENABLED: "true"
+      AUTHORIZATION_ADMINLIST_USERS: "placsp-ingest"
+      LIMIT_RESOURCES: "true"
+      GOMEMLIMIT: "${WEAVIATE_GOMEMLIMIT:-4GiB}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ── Search API (FastAPI / uvicorn) ────────────────────────────────────────
+  placsp-search-api:
+    build: ./search-api
+    image: placsp-search-api
+    container_name: placsp-search-api
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    environment:
+      WEAVIATE_URL: "http://placsp-weaviate:8080"
+      WEAVIATE_API_KEY: "${WEAVIATE_API_KEY}"
+      VECTORIZER_URL: "${VECTORIZER_URL:-http://host.docker.internal:8089}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-*}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      placsp-weaviate:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8092/api/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Search UI (React → nginx) ─────────────────────────────────────────────
+  # VITE_API_BASE is baked into the static bundle at build time — it must be
+  # the URL the **browser** uses to reach the search-api (not the internal name).
+  placsp-search-ui:
+    build:
+      context: ./search-ui
+      args:
+        VITE_API_BASE: "${VITE_API_BASE:-http://localhost:8092}"
+    image: placsp-search-ui
+    container_name: placsp-search-ui
+    restart: unless-stopped
+    ports:
+      - "${UI_PORT:-80}:80"
+    depends_on:
+      placsp-search-api:
+        condition: service_healthy
+
+volumes:
+  placsp_weaviate_data:
+    name: placsp_weaviate_data   # named so it survives compose down/up
+
+# Uncomment to join the vectorizer's existing Docker network so the search-api
+# can reach `http://vectorizer:8089` by service name instead of via the host.
+# Find the network: docker inspect -f '{{json .NetworkSettings.Networks}}' vectorizer
+#
+# networks:
+#   default:
+#     external: true
+#     name: <vectorizer-network-name>
