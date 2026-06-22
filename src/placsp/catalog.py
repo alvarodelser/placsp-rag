@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import datetime
 
 @dataclass
 class Feed:
@@ -17,7 +18,7 @@ _CHANNELS = {
 }
 
 def _build():
-    feeds, current = [], 2025
+    feeds, current = [], datetime.date.today().year
     for cat, (sind, stem, start) in _CHANNELS.items():
         for year in range(start, current + 1):
             feeds.append(Feed(f"{cat}_{year}", cat,

@@ -3,6 +3,7 @@ import structlog
 from .models import RawEntry, Tombstone, ProcurementRecord, StatusEvent
 from .atom_parser import parse_feed
 from .codice_extractor import extract
+from .renderer import render
 
 log = structlog.get_logger(service="placsp")
 
@@ -57,5 +58,4 @@ class Pipeline:
         return {"records": len(recs), "upserted": upserted, "deleted": deleted}
 
     def _summary(self, rec) -> str:
-        from .renderer import render
         return render(rec)[0]

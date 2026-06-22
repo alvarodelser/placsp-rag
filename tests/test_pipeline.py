@@ -41,3 +41,5 @@ def test_is_offpeak():
     # default window 22..7
     assert p.is_offpeak(datetime(2026,1,1,23,0)) is True
     assert p.is_offpeak(datetime(2026,1,1,12,0)) is False
+    assert p.is_offpeak(datetime(2026,1,1,22,0)) is True    # start hour IS offpeak
+    assert p.is_offpeak(datetime(2026,1,1,7,0)) is False     # end hour is NOT offpeak
