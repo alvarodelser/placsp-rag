@@ -1,8 +1,8 @@
-# PLACSP full-stack deployment: Weaviate + Search API + Search UI.
+# PLACSP backend deployment: Weaviate + Search API.
+# The UI is a static build served by the host nginx — see search-ui/README.md.
 #
 # Quick start:
-#   cp .env.example .env
-#   # edit .env: set WEAVIATE_API_KEY and VITE_API_BASE
+#   cp .env.example .env   # edit: set WEAVIATE_API_KEY
 #   docker compose up -d
 #
 # Vectorizer note:
@@ -75,22 +75,6 @@ services:
       retries: 5
       start_period: 10s
 
-  # ── Search UI (React → nginx) ─────────────────────────────────────────────
-  # VITE_API_BASE is baked into the static bundle at build time — it must be
-  # the URL the **browser** uses to reach the search-api (not the internal name).
-  placsp-search-ui:
-    build:
-      context: ./search-ui
-      args:
-        VITE_API_BASE: "${VITE_API_BASE:-http://localhost:8092}"
-    image: placsp-search-ui
-    container_name: placsp-search-ui
-    restart: unless-stopped
-    ports:
-      - "${UI_PORT:-80}:80"
-    depends_on:
-      placsp-search-api:
-        condition: service_healthy
 
 volumes:
   placsp_weaviate_data:

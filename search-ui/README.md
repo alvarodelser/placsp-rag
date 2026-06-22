@@ -22,20 +22,17 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
-## Build & deploy (you own this part)
+## Build & deploy (host nginx)
 
 ```bash
-npm run build        # outputs static files to dist/
+# set VITE_API_BASE to the public URL of the search-api, then build:
+VITE_API_BASE=http://<server-ip>:8092 npm run build
+
+# copy the output to your nginx webroot:
+cp -r dist/* /var/www/html/placsp/
 ```
 
-Serve `dist/` from any static host (nginx, Netlify, S3+CloudFront, etc.).
-
-Or build a container (API base baked in at build time):
-
-```bash
-docker build --build-arg VITE_API_BASE=https://search.example.org -t placsp-search-ui .
-docker run --rm -p 8080:80 placsp-search-ui
-```
+Point your nginx `root` at that directory and you're done.
 
 ## Structure
 
