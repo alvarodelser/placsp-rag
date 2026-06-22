@@ -1,9 +1,9 @@
 work/
 codelists/
 *.zip
-head*.atom
-propios_2022/
-ContractCode.gc
+/head*.atom
+/propios_2022/
+/ContractCode.gc
 analyze.py
 __pycache__/
 .pytest_cache/
