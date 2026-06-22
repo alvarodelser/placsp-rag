@@ -34,4 +34,12 @@ if ! python -c "import placsp" 2>/dev/null; then
     pip install -e "$REPO" -q --no-cache-dir
 fi
 
+# Populate codelists on first run
+if [ -z "$(ls -A "$PLACSP_CODELIST_DIR" 2>/dev/null)" ]; then
+    echo "[placsp] Populating codelists..." >&2
+    for fixture in "$REPO/tests/fixtures"/*.atom; do
+        python scripts/fetch_codelists.py "$fixture" "$PLACSP_CODELIST_DIR"
+    done
+fi
+
 exec python -m placsp "$@"
