@@ -47,6 +47,15 @@ def _decode(cl, list_uri, code):
     return cl.label(list_uri, code) or code
 
 
+def _num(s: Optional[str]) -> Optional[float]:
+    if s is None:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 def extract(raw: RawEntry, codelists: Optional[Codelists] = None) -> ProcurementRecord:
     cfs = raw.cfs
     rec = ProcurementRecord(syndication_id=raw.syndication_id, category=raw.category, updated=raw.updated)
@@ -91,4 +100,38 @@ def extract(raw: RawEntry, codelists: Optional[Codelists] = None) -> Procurement
 
     # documents
     rec.document_urls = all_text(cfs, "pe:GeneralDocument//cac:ExternalReference/cbc:URI")
+
+    # money — three distinct concepts, source-specific paths (first-present wins)
+    rec.budget_amount = _num(first_text(cfs, [
+        "cac:ProcurementProject/cac:BudgetAmount/cbc:TaxExclusiveAmount",
+        "cac:ProcurementProject/cac:BudgetAmount/cbc:TotalAmount"]))
+    rec.estimated_value = _num(first_text(cfs, [
+        "cac:ProcurementProject/cac:BudgetAmount/cbc:EstimatedOverallContractAmount"]))
+    rec.awarded_amount = _num(first_text(cfs, [
+        "cac:TenderResult/cac:AwardedTenderedProject/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount",
+        "cac:TenderResult/cac:AwardedTenderedProject/cac:LegalMonetaryTotal/cbc:PayableAmount"]))
+
+    # tender result
+    rec.result_code = first_text(cfs, ["cac:TenderResult/cbc:ResultCode"])
+    rec.result_label = _decode(codelists, _list_uri(cfs, "cac:TenderResult/cbc:ResultCode"), rec.result_code)
+    rec.award_date = first_text(cfs, ["cac:TenderResult/cbc:AwardDate"])
+    rec.adjudicatario = first_text(cfs, ["cac:TenderResult/cac:WinningParty/cac:PartyName/cbc:Name"])
+    rec.adjudicatario_nif = first_text(cfs, [".//cac:TenderResult/cac:WinningParty/cac:PartyIdentification/cbc:ID"])
+    n = first_text(cfs, ["cac:TenderResult/cbc:ReceivedTenderQuantity"])
+    rec.n_bids = int(n) if (n and n.isdigit()) else None
+    sme = first_text(cfs, ["cac:TenderResult/cbc:SMEAwardedIndicator"])
+    rec.sme_awarded = {"true": True, "false": False}.get((sme or "").lower()) if sme else None
+
+    # lots
+    from .models import Lot
+    for lot_el in (cfs.xpath("cac:ProcurementProjectLot", namespaces=NS) if cfs is not None else []):
+        lid = lot_el.xpath("cbc:ID/text()", namespaces=NS)
+        name = lot_el.xpath("cac:ProcurementProject/cbc:Name/text()", namespaces=NS)
+        amt = lot_el.xpath(".//cbc:TaxExclusiveAmount/text()", namespaces=NS)
+        cpv = [str(x).strip() for x in lot_el.xpath(".//cbc:ItemClassificationCode/text()", namespaces=NS)]
+        rec.lots.append(Lot(lot_id=(str(lid[0]) if lid else ""),
+                            name=(str(name[0]).strip() if name else None),
+                            amount=_num(str(amt[0]) if amt else None),
+                            cpv=cpv))
+
     return rec

@@ -30,3 +30,16 @@ def test_extract_without_codelists_does_not_crash():
     raw = _first_entry("tests/fixtures/menores.atom", "placsp_menores")
     rec = extract(raw, None)
     assert rec.syndication_id and rec.status_code
+
+def test_money_source_paths():
+    # menores: amount lives under TenderResult; always awarded
+    raw = _first_entry("tests/fixtures/menores.atom", "placsp_menores")
+    rec = extract(raw, None)
+    assert rec.awarded_amount is not None and rec.awarded_amount > 0
+    assert rec.result_code is not None
+    assert rec.adjudicatario  # winner name
+
+def test_budget_present_for_propios():
+    raw = _first_entry("tests/fixtures/propios.atom", "propios")
+    rec = extract(raw, None)
+    assert rec.budget_amount is not None
