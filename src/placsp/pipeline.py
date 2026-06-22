@@ -44,18 +44,37 @@ class Pipeline:
         h = now.hour
         return (s <= h or h < e) if s > e else (s <= h < e)
 
-    def process_files(self, paths: list[str], category: str) -> dict:
+    def process_files(self, paths: list[str], category: str, merge_stored: bool = False) -> dict:
         def items():
             for p in paths:
                 yield from parse_feed(p, category)
         records, tombs = collapse(items(), self.codelists)
         recs = list(records.values())
+        skipped = 0
+        if merge_stored:
+            surviving = []
+            for rec in recs:
+                stored = self.upserter.get_stored(rec.syndication_id)
+                if stored is not None and stored.get("updated") and rec.updated is not None and rec.updated <= stored["updated"]:
+                    skipped += 1
+                    continue
+                if stored is not None and stored.get("status_history"):
+                    merged = {}
+                    for e in stored["status_history"]:
+                        key = (e["code"], e.get("date"))
+                        merged[key] = StatusEvent(code=e["code"], date=e.get("date"))
+                    for e in rec.status_history:
+                        key = (e.code, e.date)
+                        merged[key] = StatusEvent(code=e.code, date=e.date)
+                    rec.status_history = sorted(merged.values(), key=lambda e: e.date or "")
+                surviving.append(rec)
+            recs = surviving
         texts = [self._summary(r) for r in recs]
         vectors = self.embedder.embed(texts) if recs else []
         upserted = self.upserter.upsert(recs, vectors) if recs else 0
         deleted = self.upserter.apply_tombstones(tombs) if tombs else 0
-        log.info("processed", category=category, files=len(paths), upserted=upserted, deleted=deleted)
-        return {"records": len(recs), "upserted": upserted, "deleted": deleted}
+        log.info("processed", category=category, files=len(paths), upserted=upserted, deleted=deleted, skipped=skipped)
+        return {"records": len(recs) + skipped, "upserted": upserted, "deleted": deleted, "skipped": skipped}
 
     def _summary(self, rec) -> str:
         return render(rec)[0]
@@ -72,7 +91,8 @@ class Pipeline:
                            headers={"Authorization": f"Bearer {self.cfg.weaviate_api_key}"} if self.cfg.weaviate_api_key else {})
             agg = r.json()["data"]["Aggregate"][self.cfg.weaviate_class]
             return agg[0]["updated"]["maximum"] if agg else None
-        except Exception:
+        except Exception as exc:
+            log.warning("watermark_failed", category=category, error=str(exc))
             return None
 
     def run_backfill(self):
@@ -107,7 +127,7 @@ class Pipeline:
             while url and page < 1000:
                 tmp = os.path.join(tempfile.gettempdir(), f"placsp_{category}_{page}.atom")
                 download(url, tmp)
-                self.process_files([tmp], category)
+                self.process_files([tmp], category, merge_stored=True)
                 # capture the next link and this page's newest update BEFORE deleting tmp
                 newest = max((getattr(i, "updated", "") or "" for i in parse_feed(tmp, category)), default="")
                 nxt = feed_next_link(tmp)
@@ -126,5 +146,5 @@ class Pipeline:
             workdir = os.path.join(self.cfg.work_dir, feed.name + "_recon")
             zip_path = os.path.join(workdir, feed.name + ".zip")
             download(feed.url, zip_path)
-            self.process_files(unzip(zip_path, workdir), feed.category)
+            self.process_files(unzip(zip_path, workdir), feed.category, merge_stored=True)
             os.remove(zip_path)

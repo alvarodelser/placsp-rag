@@ -118,7 +118,13 @@ def extract(raw: RawEntry, codelists: Optional[Codelists] = None) -> Procurement
     rec.adjudicatario = first_text(cfs, ["cac:TenderResult/cac:WinningParty/cac:PartyName/cbc:Name"])
     rec.adjudicatario_nif = first_text(cfs, [".//cac:TenderResult/cac:WinningParty/cac:PartyIdentification/cbc:ID"])
     n = first_text(cfs, ["cac:TenderResult/cbc:ReceivedTenderQuantity"])
-    rec.n_bids = int(n) if (n and n.isdigit()) else None
+    if n:
+        try:
+            rec.n_bids = int(float(n))
+        except (TypeError, ValueError):
+            rec.n_bids = None
+    else:
+        rec.n_bids = None
     sme = first_text(cfs, ["cac:TenderResult/cbc:SMEAwardedIndicator"])
     rec.sme_awarded = {"true": True, "false": False}.get((sme or "").lower()) if sme else None
 
