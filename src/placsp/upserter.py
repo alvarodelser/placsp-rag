@@ -1,7 +1,10 @@
 import uuid
 import httpx
+import structlog
 from .models import ProcurementRecord, Tombstone
 from .renderer import render
+
+log = structlog.get_logger(service="placsp")
 
 def object_uuid(syndication_id: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"https://placsp.id/{syndication_id}"))
@@ -30,7 +33,16 @@ class Upserter:
             return 0
         r = self._c.post(f"{self.base}/v1/batch/objects", json={"objects": objects})
         r.raise_for_status()
-        return len(objects)
+        results = r.json()
+        failed = [o for o in results if (o.get("result") or {}).get("status") != "SUCCESS"]
+        if failed:
+            for o in failed[:3]:
+                errs = ((o.get("result") or {}).get("errors") or {}).get("error") or []
+                log.warning("batch_object_failed", id=o.get("id"),
+                            error=errs[0].get("message") if errs else "unknown")
+            if len(failed) > 3:
+                log.warning("batch_object_failed", additional=len(failed) - 3)
+        return len(objects) - len(failed)
 
     def delete(self, sid: str) -> None:
         r = self._c.delete(f"{self.base}/v1/objects/{self.cls}/{object_uuid(sid)}")
