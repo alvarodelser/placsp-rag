@@ -59,3 +59,72 @@ class Pipeline:
 
     def _summary(self, rec) -> str:
         return render(rec)[0]
+
+    # --- append to Pipeline ---
+    def watermark(self, category: str) -> Optional[str]:
+        # max(updated) for a category, via GraphQL aggregate; None if empty/unsupported
+        import httpx
+        q = ('{Aggregate{%s(where:{path:["category"],operator:Equal,valueText:"%s"})'
+             '{updated{maximum}}}}' % (self.cfg.weaviate_class, category))
+        try:
+            r = httpx.post(f"{self.cfg.weaviate_url.rstrip('/')}/v1/graphql",
+                           json={"query": q}, timeout=60,
+                           headers={"Authorization": f"Bearer {self.cfg.weaviate_api_key}"} if self.cfg.weaviate_api_key else {})
+            agg = r.json()["data"]["Aggregate"][self.cfg.weaviate_class]
+            return agg[0]["updated"]["maximum"] if agg else None
+        except Exception:
+            return None
+
+    def run_backfill(self):
+        import os, time
+        from datetime import datetime
+        from .catalog import CATALOG
+        from .fetcher import download, unzip
+        for feed in sorted(CATALOG, key=lambda f: (f.year, f.category)):
+            while not self.is_offpeak(datetime.now()):
+                log.info("sleeping_until_offpeak"); time.sleep(600)
+            workdir = os.path.join(self.cfg.work_dir, feed.name)
+            zip_path = os.path.join(workdir, feed.name + ".zip")
+            try:
+                download(feed.url, zip_path)
+                paths = unzip(zip_path, workdir)
+                self.process_files(paths, feed.category)
+            except Exception as exc:
+                log.error("feed_failed", feed=feed.name, error=str(exc))
+            finally:
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+
+    def run_daily(self):
+        import os, tempfile
+        from .catalog import CATALOG, live_head_url
+        from .fetcher import download, feed_next_link
+        from .atom_parser import parse_feed
+        for category in sorted({f.category for f in CATALOG}):
+            wm = self.watermark(category)
+            url = live_head_url(category)
+            page = 0
+            while url and page < 1000:
+                tmp = os.path.join(tempfile.gettempdir(), f"placsp_{category}_{page}.atom")
+                download(url, tmp)
+                self.process_files([tmp], category)
+                # capture the next link and this page's newest update BEFORE deleting tmp
+                newest = max((getattr(i, "updated", "") or "" for i in parse_feed(tmp, category)), default="")
+                nxt = feed_next_link(tmp)
+                os.remove(tmp)
+                # stop when this page is entirely older than the watermark
+                if wm and newest and newest <= wm:
+                    break
+                url, page = nxt, page + 1
+
+    def run_reconcile(self):
+        import os
+        from datetime import datetime
+        from .catalog import CATALOG
+        from .fetcher import download, unzip
+        for feed in [f for f in CATALOG if f.incremental]:
+            workdir = os.path.join(self.cfg.work_dir, feed.name + "_recon")
+            zip_path = os.path.join(workdir, feed.name + ".zip")
+            download(feed.url, zip_path)
+            self.process_files(unzip(zip_path, workdir), feed.category)
+            os.remove(zip_path)
