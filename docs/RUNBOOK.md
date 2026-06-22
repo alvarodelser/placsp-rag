@@ -2,24 +2,38 @@
 
 This runbook validates the PLACSP ingestion pipeline against a real running deployment (Weaviate + Vectorizer). It must be executed from a host with network access to the deployment services.
 
+> **Full server deploy + test checklist:** see [DEPLOYMENT.md](DEPLOYMENT.md). This runbook
+> is the focused one-feed validation that DEPLOYMENT.md references.
+
 ## Prerequisites
 
-- Access to deployment host with Weaviate (`iarag-vectorstore:8086`) and Vectorizer (`vectorizer:8089`) running
-- Environment variables set:
-  - `WEAVIATE_URL` — Weaviate GraphQL endpoint (e.g., `http://iarag-vectorstore:8086`)
-  - `WEAVIATE_API_KEY` — Weaviate API authentication token
-  - `VECTORIZER_URL` — Vectorizer service URL (e.g., `http://vectorizer:8089`)
+- The **dedicated PLACSP Weaviate** instance running (see `deploy/weaviate/`), plus the
+  shared Vectorizer (`vectorizer:8089`, BGE-M3) reachable.
+- Environment variables set (host-run commands below assume the published port):
+  - `WEAVIATE_URL` — `http://localhost:8087` (host) or `http://placsp-weaviate:8080` (in Docker)
+  - `WEAVIATE_API_KEY` — the key configured in `deploy/weaviate/.env` (sent as `Authorization: Bearer`)
+  - `VECTORIZER_URL` — `http://localhost:8089` (host) or `http://vectorizer:8089` (in Docker)
   - `PLACSP_CODELIST_DIR` — Directory for cached codelists (e.g., `./codelists`)
   - Optional: `PLACSP_EMBED_BATCH`, `PLACSP_MAX_IN_FLIGHT` for throughput tuning
+- Use `python3.11` (the target interpreter); from a source checkout, `pip install -e .`.
+
+## Step 0: Bring up the PLACSP Weaviate (Run on Deployment Host)
+
+```bash
+cd deploy/weaviate && cp .env.example .env   # set a strong WEAVIATE_API_KEY in .env
+docker compose up -d
+curl -s http://localhost:8087/v1/.well-known/ready && echo " READY"
+```
 
 ## Step 1: Initialize Schema (Run on Deployment Host)
 
 Create the Weaviate schema for the first time (or verify existing schema).
 
 ```bash
-export WEAVIATE_URL=http://iarag-vectorstore:8086
-export WEAVIATE_API_KEY=<key>
-python -m placsp init-schema
+export WEAVIATE_URL=http://localhost:8087
+export WEAVIATE_API_KEY=<same key as deploy/weaviate/.env>
+export VECTORIZER_URL=http://localhost:8089
+python3.11 -m placsp init-schema
 ```
 
 **Expected output:** "created" or confirmation that schema exists.
@@ -79,6 +93,26 @@ Example:
 - If `records = 0`, verify the URL is accessible and the feed format is valid
 - If `upserted = 0`, check Weaviate and Vectorizer connectivity
 - If `deleted > 0`, this indicates tombstone records were processed (normal for incremental feeds)
+
+> ⚠️ **Do not trust `upserted` alone.** Weaviate's batch endpoint returns HTTP 200 even
+> when individual objects fail (e.g. a date-typed property rejecting a non-RFC3339 string),
+> and the current `Upserter.upsert` does not inspect per-object results (see
+> [FOLLOWUPS.md](FOLLOWUPS.md) #1). **Verify the actual stored count:**
+>
+> ```bash
+> python3.11 - <<'PY'
+> import httpx
+> from placsp.config import load_config
+> cfg = load_config()
+> q = '{Aggregate{%s{meta{count}}}}' % cfg.weaviate_class
+> r = httpx.post(cfg.weaviate_url.rstrip("/")+"/v1/graphql", json={"query": q},
+>     headers={"Authorization": f"Bearer {cfg.weaviate_api_key}"} if cfg.weaviate_api_key else {})
+> print(r.json())
+> PY
+> ```
+>
+> The reported `count` should match `upserted`. A large gap means objects were silently
+> rejected — inspect a single object POST response body for per-object `errors`.
 
 ## Step 4: Verify Retrieval Quality (Run on Deployment Host)
 

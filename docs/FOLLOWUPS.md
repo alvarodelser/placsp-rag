@@ -26,7 +26,9 @@ intentionally deferred past that milestone. Triage these before enabling the ful
 2. **I2 — watermark aggregate on a `date` field.** Confirm `Aggregate { ... { updated { maximum } } }`
    actually returns a value on Weaviate 1.28.3 for a date property. If not, the daily walk loses
    its stop condition and re-walks up to 1000 pages. Fallback: store/query `updated` as `text`,
-   or track the watermark in a tiny state file.
+   or track the watermark in a tiny state file. **We now own the Weaviate instance**
+   (`deploy/weaviate/`), so bumping its image version is also a valid fix if a newer release
+   handles date aggregation better — just keep the schema in `weaviate_schema.py` in sync.
 
 3. **I4 — HTTP retry/backoff** on the embedder, upserter, fetcher, and watermark clients
    (spec §8). A transient vectorizer/Weaviate blip currently aborts a feed.
