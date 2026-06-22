@@ -41,11 +41,18 @@ def render(rec: ProcurementRecord) -> tuple[str, dict]:
         parts.append(f"Fecha de publicación: {rec.publication_date}.")
     summary = " ".join(parts)
 
+    _DATE_FIELDS = {"publication_date", "award_date", "submission_deadline", "updated"}
+
     props = asdict(rec)
     props["content"] = summary
     # serialize nested
     props["status_history"] = [asdict(e) for e in rec.status_history]
     props["lots"] = [asdict(l) for l in rec.lots]
+    # RFC3339: Weaviate date fields require a full timestamp
+    for f in _DATE_FIELDS:
+        v = props.get(f)
+        if v and "T" not in v:
+            props[f] = v + "T00:00:00Z"
     # drop empty/None scalars (keep required + lists)
     keep_always = {"syndication_id", "category", "content", "status_history", "lots", "cpv", "document_urls"}
     props = {k: v for k, v in props.items()

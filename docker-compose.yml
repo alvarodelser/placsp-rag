@@ -42,12 +42,9 @@ services:
       AUTHORIZATION_ADMINLIST_USERS: "placsp-ingest"
       LIMIT_RESOURCES: "true"
       GOMEMLIMIT: "${WEAVIATE_GOMEMLIMIT:-4GiB}"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/v1/.well-known/ready"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+    # No container healthcheck: the Weaviate image ships no wget/curl, so a wget-based
+    # healthcheck would never report "healthy" and would deadlock dependents. Readiness
+    # is instead gated by placsp-init-schema, which polls /v1/.well-known/ready below.
 
   # ── Schema init (one-shot, idempotent) ───────────────────────────────────
   placsp-init-schema:
@@ -59,10 +56,19 @@ services:
     environment:
       WEAVIATE_URL: "http://placsp-weaviate:8080"
       WEAVIATE_API_KEY: "${WEAVIATE_API_KEY}"
-    command: python -m placsp init-schema
+    command:
+      - sh
+      - -c
+      - |
+        echo 'waiting for weaviate to be ready...'
+        until python -c "import urllib.request; urllib.request.urlopen('http://placsp-weaviate:8080/v1/.well-known/ready')" 2>/dev/null; do
+          sleep 2
+        done
+        echo 'weaviate ready; creating schema'
+        python -m placsp init-schema
     depends_on:
       placsp-weaviate:
-        condition: service_healthy
+        condition: service_started
     restart: "no"
 
   # ── Search API (FastAPI / uvicorn) ────────────────────────────────────────
@@ -81,8 +87,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      placsp-weaviate:
-        condition: service_healthy
+      placsp-init-schema:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8092/api/health')"]
@@ -94,7 +100,8 @@ services:
 
 volumes:
   placsp_weaviate_data:
-    external: true   # volume pre-exists; compose must not try to own it
+    name: placsp_weaviate_data   # compose-managed, stable name; persists across down/up
+                                 # (removed only by an explicit `docker compose down -v`)
 
 # Uncomment to join the vectorizer's existing Docker network so the search-api
 # can reach `http://vectorizer:8089` by service name instead of via the host.
