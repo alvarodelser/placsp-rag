@@ -94,7 +94,7 @@ services:
 
 volumes:
   placsp_weaviate_data:
-    name: placsp_weaviate_data   # named so it survives compose down/up
+    external: true   # volume pre-exists; compose must not try to own it
 
 # Uncomment to join the vectorizer's existing Docker network so the search-api
 # can reach `http://vectorizer:8089` by service name instead of via the host.
