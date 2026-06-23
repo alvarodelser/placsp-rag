@@ -25,6 +25,21 @@ class Lot:
     cpv: list[str] = field(default_factory=list)
 
 @dataclass
+class LotResult:
+    lot_id: str
+    winner_name: Optional[str] = None
+    winner_nif: Optional[str] = None
+    amount: Optional[float] = None
+    award_date: Optional[str] = None
+    sme_awarded: Optional[bool] = None
+    n_bids: Optional[int] = None
+    n_sme_bids: Optional[int] = None
+    lower_tender_amount: Optional[float] = None
+    higher_tender_amount: Optional[float] = None
+    name: Optional[str] = None
+    cpv: list[str] = field(default_factory=list)
+
+@dataclass
 class StatusEvent:
     code: str
     date: Optional[str] = None
@@ -67,6 +82,7 @@ class ProcurementRecord:
     funding_program: Optional[str] = None
     document_urls: list[str] = field(default_factory=list)
     lots: list[Lot] = field(default_factory=list)
+    lot_results: list[LotResult] = field(default_factory=list)
     source_url: Optional[str] = None
     buyer_profile_url: Optional[str] = None
     lang: str = "es"
