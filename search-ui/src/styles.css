@@ -43,3 +43,21 @@ main { padding: 18px 0 60px; }
 .score { float: right; color: #9aa7b8; font-size: 12px; font-variant-numeric: tabular-nums; }
 .empty { color: var(--muted); text-align: center; padding: 40px 0; }
 .err { background: #fdecec; border: 1px solid #f5c2c2; color: #9b2226; padding: 10px 12px; border-radius: 10px; margin: 8px 0; }
+.layout { display: flex; gap: 24px; align-items: flex-start; }
+.filter-panel { flex: 0 0 280px; display: flex; flex-direction: column; gap: 14px; }
+.results { flex: 1 1 auto; min-width: 0; }
+.filter-group { border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+.filter-group legend { font-weight: 600; padding: 0 6px; }
+.filter-group input[type="date"], .filter-group input[type="number"], .filter-group select { width: 100%; margin-top: 6px; }
+.checks { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow: auto; }
+.check { display: flex; gap: 6px; align-items: center; font-size: 14px; }
+.cpv-select input { width: 100%; }
+.cpv-suggestions { list-style: none; margin: 4px 0; padding: 0; max-height: 240px; overflow: auto; border: 1px solid #eee; border-radius: 6px; }
+.cpv-suggestions li { padding: 6px 8px; cursor: pointer; }
+.cpv-suggestions li:hover { background: #f3f4f6; }
+.cpv-code { font-family: monospace; }
+.cpv-path { font-size: 12px; color: #666; }
+.chip .hint { color: #2563eb; font-style: normal; font-size: 12px; }
+.chip button { margin-left: 6px; border: none; background: none; cursor: pointer; }
+.more { margin: 16px auto; display: block; }
+@media (max-width: 800px) { .layout { flex-direction: column; } .filter-panel { flex-basis: auto; width: 100%; } }

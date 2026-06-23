@@ -1,4 +1,5 @@
 import { money } from '../format.js'
+import cpvMap from '../codelists/cpv.json'
 
 export default function ResultCard({ r }) {
   const title = r.title || r.expediente || r.syndication_id || 'Sin título'
@@ -49,7 +50,11 @@ export default function ResultCard({ r }) {
 
       {Array.isArray(r.cpv) && r.cpv.length > 0 && (
         <div className="chips">
-          {r.cpv.slice(0, 8).map((c) => <span className="chip" key={c}>CPV {c}</span>)}
+          {r.cpv.slice(0, 8).map((c) => (
+            <span className="chip" key={c} title={cpvMap[c] || ''}>
+              {c}{cpvMap[c] ? ` · ${cpvMap[c]}` : ''}
+            </span>
+          ))}
         </div>
       )}
 
