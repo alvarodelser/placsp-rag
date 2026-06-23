@@ -67,7 +67,12 @@ CREATE TABLE IF NOT EXISTS feedback (
 ```
 
 The `searches` row is written **lazily** — only on the *first* like within that
-search — so idle searches that never receive feedback are not logged.
+search — so idle searches that never receive feedback are not logged. Because the
+row is written once and never updated, `results_json` captures the snapshot *as it
+existed at first-like time*. If the user clicks "Cargar más" and then likes a
+result from a later page, the snapshot still reflects the earlier (smaller) shown
+set. Accepted simplification for the eval use case; the liked result's own
+`result_rank`/`result_score` are always recorded accurately on the `feedback` row.
 
 ## Backend (`search-api`)
 
