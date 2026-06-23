@@ -12,6 +12,7 @@ class Config:
     work_dir: str
     codelist_dir: str
     embed_batch_size: int
+    upsert_batch_size: int
     max_in_flight: int
     offpeak_start: int
     offpeak_end: int
@@ -26,6 +27,7 @@ def load_config() -> Config:
         work_dir=_env("PLACSP_WORK_DIR", "./work"),
         codelist_dir=_env("PLACSP_CODELIST_DIR", "./codelists"),
         embed_batch_size=int(_env("PLACSP_EMBED_BATCH", "48")),
+        upsert_batch_size=int(_env("PLACSP_UPSERT_BATCH", "100")),
         max_in_flight=int(_env("PLACSP_MAX_IN_FLIGHT", "1")),
         offpeak_start=int(_env("PLACSP_OFFPEAK_START", "22")),
         offpeak_end=int(_env("PLACSP_OFFPEAK_END", "7")),
