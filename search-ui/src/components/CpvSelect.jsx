@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import cpvMap from '../codelists/cpv.json'
-import { cpvLevel, cpvPath } from '../cpv.js'
+import { cpvLevel, cpvPath, cpvChildren } from '../cpv.js'
 
 const ENTRIES = Object.entries(cpvMap) // [code, label][]
 
 export default function CpvSelect({ value, onChange }) {
   const [term, setTerm] = useState('')
+  const [expanded, setExpanded] = useState(null)
 
   const matches = useMemo(() => {
     const t = term.trim().toLowerCase()
@@ -49,14 +50,33 @@ export default function CpvSelect({ value, onChange }) {
         </ul>
       )}
       {value.length > 0 && (
-        <div className="chips">
-          {value.map((code) => (
-            <span className="chip" key={code}>
-              {code} · {cpvMap[code] || '—'}
-              {cpvLevel(code) < 8 && <em className="hint"> (incluye sub-códigos)</em>}
-              <button type="button" onClick={() => remove(code)} aria-label="Quitar">✕</button>
-            </span>
-          ))}
+        <div className="cpv-chips">
+          {value.map((code) => {
+            const kids = cpvChildren(code, cpvMap)
+            const open = expanded === code
+            return (
+              <div className="cpv-chip-wrap" key={code}>
+                <span className="chip">
+                  {code} · {cpvMap[code] || '—'}
+                  {cpvLevel(code) < 8 && <em className="hint"> (incluye sub-códigos)</em>}
+                  {kids.length > 0 && (
+                    <button type="button" className="drill" aria-label="Subcódigos"
+                      onClick={() => setExpanded(open ? null : code)}>{open ? '▾' : '▸'}</button>
+                  )}
+                  <button type="button" onClick={() => remove(code)} aria-label="Quitar">✕</button>
+                </span>
+                {open && kids.length > 0 && (
+                  <ul className="cpv-subcodes">
+                    {kids.map((kc) => (
+                      <li key={kc} onClick={() => { onChange(value.map((c) => (c === code ? kc : c))); setExpanded(kc) }}>
+                        <span className="cpv-code">{kc}</span> · {cpvMap[kc] || '—'}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
