@@ -16,3 +16,7 @@ __pycache__/
 *.db-shm
 .idea/
 .DS_Store
+
+# Local Python env / build artifacts
+.venv/
+*.egg-info/
