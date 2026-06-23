@@ -32,6 +32,8 @@ params from the prior feature).
   the selection; new `cpvChildren` helper.
 - Reusable dual-thumb `RangeSlider`; `BudgetRange` (log scale + synced numeric
   inputs); `DateTimeline` (publication range + presets + "open only" toggle).
+- An **"Explorar" preset** (status `PUB`+`PRE`, latest-first) that is the
+  **default view on load** and re-applicable via a button.
 - Graceful empty-search handling and readable API errors.
 - Full `styles.css` refresh (palette, spacing, borders, type; cards quieted).
 - Deployment step + verification for the browse-capable API.
@@ -65,10 +67,12 @@ params from the prior feature).
   abierto" checkbox bound to `open_only`.
 - `components/MultiCheck.jsx` — the checkbox-list picker (extracted from the old
   `FilterPanel`) reused for status/result/contract_type/procedure.
-- `filters.js` — pure helpers: `filtersToParams(filters)` (maps UI state to API
-  params, e.g. `open_only` → `deadline_from = todayISO()`), the budget log-scale
-  mapping (`budgetToPos`, `posToBudget`), and `activeFilterList(filters)` (for
-  the chip row and rail badges). No React imports.
+- `filters.js` — pure helpers and constants: `EMPTY` (the cleared filter shape),
+  `EXPLORE` (the default preset, §4bis), `filtersToParams(filters)` (maps UI
+  state to API params, e.g. `open_only` → `deadline_from = todayISO()`), the
+  budget log-scale mapping (`budgetToPos`, `posToBudget`), and
+  `activeFilterList(filters)` (for the chip row and rail badges). No React
+  imports.
 
 ### 3.2 Modified files
 - `App.jsx` — owns `filters` state, which drawer is open, run/browse logic, and
@@ -91,7 +95,27 @@ params from the prior feature).
   open tab, clicking outside the drawer, or pressing `Escape` closes it. Drawer
   state is a single `openTab` string (or `null`).
 - **Active filters:** `ActiveFilters` lists each active value as a removable
-  chip; removing updates `filters`. "Limpiar" resets to `EMPTY`.
+  chip; removing updates `filters`. "Limpiar" resets to `EMPTY` (a truly empty
+  state — not the explore default).
+
+## 4bis. Explore preset & default view
+
+- **`EXPLORE` preset** (in `filters.js`): `EMPTY` merged with
+  `{ status: ['PUB', 'PRE'], sort: 'publication_date desc' }`. `PUB` is the
+  "EN PLAZO" (in-deadline) status and `PRE` is "Anuncio Previo"; ordering by
+  `publication_date desc` surfaces the latest. It deliberately does **not** set
+  `open_only`/`deadline_from`, because `PUB` already implies in-deadline and a
+  `deadline_from ≥ today` constraint would wrongly exclude `PRE` entries that
+  have no deadline yet.
+- **Default on load:** the app's initial `filters` state **is** `EXPLORE`, and it
+  **auto-runs the browse on mount** — the first thing the user sees is the latest
+  "en plazo" + "anuncio previo" tenders, not an empty prompt.
+- **Re-applying:** an **"Explorar"** quick-action button (next to the search
+  controls) sets `filters = EXPLORE` and runs. This lets the user return to the
+  default view after clearing or changing filters.
+- **Distinction:** "Explorar" → `EXPLORE` (status PUB+PRE, latest);
+  "Limpiar" → `EMPTY` (nothing active). With `EMPTY` and no query the app shows
+  the idle prompt (§8); with `EXPLORE` it browses.
 
 ## 5. CPV drill-down
 
@@ -135,6 +159,8 @@ params from the prior feature).
   sort:'' }`.
   (`deadline_from`/`deadline_to` are no longer UI state; deadline filtering is
   expressed via `open_only`.)
+- **Initial state** = `EXPLORE` (not `EMPTY`); the app auto-runs a browse on
+  mount (§4bis).
 - On submit/run: `params = { q, mode, k, offset, ...filtersToParams(filters) }`
   → `search(params)` (existing `api.js`). `filtersToParams` drops empty values
   and maps `open_only` → `deadline_from`.
@@ -143,7 +169,10 @@ params from the prior feature).
 
 ## 8. Empty-search & error handling
 
-- **No query and no active filters:** show a friendly inline prompt ("Escribe
+- **On load:** the default `EXPLORE` preset is active, so the app browses
+  immediately and shows results (it does not start at the idle prompt).
+- **No query and no active filters** (reached only after "Limpiar"): show a
+  friendly inline prompt ("Escribe
   una consulta o aplica un filtro"); the submit button reads "Filtrar" but the
   run is a no-op with a brief hint — never a network call, never an error.
 - **No query but filters active:** browse request (already supported).
@@ -171,6 +200,9 @@ params from the prior feature).
   - `filtersToParams` — empty-value dropping, `open_only` → `deadline_from`,
     leaving other params intact.
   - `activeFilterList` — counts/labels for the rail badges and chip row.
+  - `EXPLORE` preset shape — asserts `status: ['PUB','PRE']` and
+    `sort: 'publication_date desc'`, and that `filtersToParams(EXPLORE)` yields
+    those params with no `deadline_from`.
 - **Build/manual:** `npm run build` for all components; manual smoke covering
   rail/drawer open-close, CPV drill-down, budget/date sliders, presets, "open
   only", empty-search prompt, and an end-to-end filtered browse.
@@ -183,3 +215,6 @@ params from the prior feature).
 - Dates = **publication timeline + presets + "open only" toggle**.
 - Restyle = **cohesive minimal refresh** (includes result cards).
 - Date lower bound = **2019**; slider primitive is **custom** (no new deps).
+- **Explore preset** = `status ['PUB','PRE']` + `sort publication_date desc`,
+  **default on load** (auto-browses), re-applicable via an "Explorar" button;
+  uses statuses (not the deadline toggle) so `PRE` entries aren't excluded.
