@@ -21,3 +21,18 @@ export function cpvPath(code, cpvMap) {
   }
   return labels
 }
+
+export function cpvChildren(code, cpvMap) {
+  const d = normalize(code)
+  const parentLen = cpvLevel(code)
+  if (parentLen >= 8) return []
+  const prefix = d.slice(0, parentLen)
+  const childLen = parentLen + 1
+  const out = []
+  for (const c of Object.keys(cpvMap)) {
+    if (cpvLevel(c) === childLen && normalize(c).slice(0, parentLen) === prefix) {
+      out.push(c)
+    }
+  }
+  return out.sort()
+}

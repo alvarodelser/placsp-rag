@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cpvLevel, cpvPath } from './cpv.js'
+import { cpvLevel, cpvPath, cpvChildren } from './cpv.js'
 
 const MAP = {
   '45000000': 'Construcción',
@@ -26,5 +26,24 @@ describe('cpvPath', () => {
   })
   it('returns empty for a division', () => {
     expect(cpvPath('45000000', MAP)).toEqual([])
+  })
+})
+
+const TREE = {
+  '45000000': 'Construcción',
+  '45100000': 'Preparación de obras',
+  '45200000': 'Construcción completa',
+  '45210000': 'Edificios',
+  '45211000': 'Viviendas',
+}
+
+describe('cpvChildren', () => {
+  it('returns direct children one level deeper', () => {
+    expect(cpvChildren('45000000', TREE)).toEqual(['45100000', '45200000'])
+    expect(cpvChildren('45200000', TREE)).toEqual(['45210000'])
+    expect(cpvChildren('45210000', TREE)).toEqual(['45211000'])
+  })
+  it('returns empty for a leaf', () => {
+    expect(cpvChildren('45211000', TREE)).toEqual([])
   })
 })
