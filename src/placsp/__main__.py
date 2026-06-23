@@ -9,7 +9,8 @@ from .weaviate_schema import ensure_class
 def _pipeline(cfg):
     return Pipeline(cfg,
                     Embedder(cfg.vectorizer_url, cfg.embed_batch_size, cfg.request_timeout),
-                    Upserter(cfg.weaviate_url, cfg.weaviate_api_key, cfg.weaviate_class, cfg.request_timeout),
+                    Upserter(cfg.weaviate_url, cfg.weaviate_api_key, cfg.weaviate_class, cfg.request_timeout,
+                             batch_size=cfg.upsert_batch_size),
                     Codelists(cfg.codelist_dir))
 
 def main(argv=None):

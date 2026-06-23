@@ -23,6 +23,23 @@ def test_upsert_posts_batch_with_vector_and_id():
     assert obj["vector"] == [0.1, 0.2]
     assert obj["properties"]["syndication_id"] == "19862167"
 
+def test_upsert_chunks_large_batches():
+    posts = []
+    def handler(req):
+        if req.method == "POST" and req.url.path.endswith("/batch/objects"):
+            body = json.loads(req.content)
+            posts.append(len(body["objects"]))
+            return httpx.Response(200, json=[{"result": {"status": "SUCCESS"}} for _ in body["objects"]])
+        return httpx.Response(404)
+    up = Upserter("http://wv:8086", "k", "Placsp_licitaciones", batch_size=2,
+                  transport=httpx.MockTransport(handler))
+    recs = [ProcurementRecord(syndication_id=str(i), category="placsp_mayores",
+                              updated="2026-06-19T21:50:27+02:00", title="X") for i in range(5)]
+    vecs = [[0.1, 0.2] for _ in range(5)]
+    n = up.upsert(recs, vecs)
+    assert n == 5
+    assert posts == [2, 2, 1]
+
 def test_apply_tombstones_deletes_by_id():
     deleted = []
     def handler(req):
