@@ -3,6 +3,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY search_api.py filters.py feedback.py ./
+# Stamp the deployed commit so feedback rows record which build produced them.
+# compose passes this from $APP_VERSION (see docker-compose.yml build.args); the
+# bare image defaults to "unknown" if built without the arg.
+ARG APP_VERSION=unknown
+ENV APP_VERSION=$APP_VERSION
 # Relevance-feedback SQLite lives on a mounted volume so it survives container recreation.
 ENV FEEDBACK_DB=/data/feedback.db
 RUN mkdir -p /data

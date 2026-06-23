@@ -73,7 +73,12 @@ services:
 
   # ── Search API (FastAPI / uvicorn) ────────────────────────────────────────
   placsp-search-api:
-    build: ./search-api
+    build:
+      context: ./search-api
+      args:
+        # Baked into the image as ENV APP_VERSION; `make deploy` sets it to the
+        # git commit. Defaults to "unknown" if built without it.
+        APP_VERSION: "${APP_VERSION:-unknown}"
     image: placsp-search-api
     container_name: placsp-search-api
     restart: unless-stopped
@@ -85,7 +90,8 @@ services:
       VECTORIZER_URL: "${VECTORIZER_URL:-http://host.docker.internal:8089}"
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
       FEEDBACK_DB: "/data/feedback.db"
-      APP_VERSION: "${APP_VERSION:-unknown}"   # stamp onto relevance feedback; set to the git commit at deploy
+      # APP_VERSION is baked into the image at build time (build.args above), not
+      # set here — a runtime default would override the baked commit with "unknown".
     volumes:
       - placsp_feedback_data:/data
     extra_hosts:
