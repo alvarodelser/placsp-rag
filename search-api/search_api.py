@@ -19,6 +19,8 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+import filters as filt
+
 VECTORIZER_URL = os.getenv("VECTORIZER_URL", "http://localhost:8089").rstrip("/")
 WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8087").rstrip("/")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY", "")
@@ -56,27 +58,65 @@ def health():
 
 @app.get("/api/search")
 def search(
-    q: str = Query(..., min_length=1),
+    q: str | None = Query(None),
     mode: str = Query("hybrid", pattern="^(hybrid|vector|keyword)$"),
     k: int = Query(15, ge=1, le=50),
+    offset: int = Query(0, ge=0),
     alpha: float = Query(0.5, ge=0.0, le=1.0),
+    sort: str | None = Query(None),
+    cpv: list[str] | None = Query(None),
+    nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None),
+    result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None),
+    procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None),
+    pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None),
+    deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None),
+    budget_max: float | None = Query(None),
 ):
+    where = filt.build_where(
+        cpv=cpv, nuts=nuts, status=status, result=result,
+        contract_type=contract_type, procedure=procedure,
+        pub_from=pub_from, pub_to=pub_to,
+        deadline_from=deadline_from, deadline_to=deadline_to,
+        budget_min=budget_min, budget_max=budget_max,
+    )
+    query = (q or "").strip()
+
+    # Guard: no query AND no filters -> don't dump the whole index.
+    if not query and where is None:
+        return {"query": None, "mode": "browse", "count": 0, "results": [], "errors": None}
+
     fields = "\n".join(FIELDS)
+    args: list[str] = []
     try:
-        if mode == "keyword":
-            clause = f"bm25: {{ query: {json.dumps(q)} }}"
+        if not query:  # browse mode
+            mode = "browse"
+            extra = "_additional { id }"
+            args.append(filt.sort_to_gql(filt.build_sort(sort)))
+        elif mode == "keyword":
+            args.append(f"bm25: {{ query: {json.dumps(query)} }}")
             extra = "_additional { id score }"
         elif mode == "vector":
-            clause = f"nearVector: {{ vector: {json.dumps(_embed(q))} }}"
+            args.append(f"nearVector: {{ vector: {json.dumps(_embed(query))} }}")
             extra = "_additional { id certainty }"
         else:  # hybrid
-            clause = (f"hybrid: {{ query: {json.dumps(q)}, alpha: {alpha}, "
-                      f"vector: {json.dumps(_embed(q))} }}")
+            args.append(f"hybrid: {{ query: {json.dumps(query)}, alpha: {alpha}, "
+                        f"vector: {json.dumps(_embed(query))} }}")
             extra = "_additional { id score }"
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"vectorizer error: {exc}")
 
-    gql = f"{{ Get {{ {CLASS}({clause}, limit: {k}) {{ {fields} {extra} }} }} }}"
+    if where is not None:
+        args.append(filt.where_to_gql(where))
+    args.append(f"limit: {k}")
+    args.append(f"offset: {offset}")
+    clause = ", ".join(args)
+
+    gql = f"{{ Get {{ {CLASS}({clause}) {{ {fields} {extra} }} }} }}"
     try:
         r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
                        headers=_wv_headers(), timeout=120)
@@ -93,4 +133,4 @@ def search(
         h["_score"] = add.get("certainty", add.get("score"))
         results.append(h)
     return {"query": q, "mode": mode, "count": len(results),
-            "results": results, "errors": data.get("errors")}
+            "offset": offset, "results": results, "errors": data.get("errors")}
