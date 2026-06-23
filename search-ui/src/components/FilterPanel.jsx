@@ -3,6 +3,7 @@ import resultMap from '../codelists/result.json'
 import typeMap from '../codelists/contract_type.json'
 import procMap from '../codelists/procedure.json'
 import CpvSelect from './CpvSelect.jsx'
+import NutsSelect from './NutsSelect.jsx'
 
 const SORTS = [
   ['publication_date desc', 'Publicación (recientes)'],
@@ -37,6 +38,11 @@ export default function FilterPanel({ filters, onChange, browse }) {
       <fieldset className="filter-group">
         <legend>CPV</legend>
         <CpvSelect value={filters.cpv} onChange={(cpv) => set({ cpv })} />
+      </fieldset>
+
+      <fieldset className="filter-group">
+        <legend>Ubicación (NUTS)</legend>
+        <NutsSelect value={filters.nuts} onChange={(nuts) => set({ nuts })} />
       </fieldset>
 
       <MultiCheck label="Estado" map={statusMap} value={filters.status} onChange={(status) => set({ status })} />

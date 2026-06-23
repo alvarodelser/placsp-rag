@@ -24,7 +24,11 @@ export default function App() {
   const [state, setState] = useState({ status: 'idle' }) // idle | loading | done | error
 
   const browse = q.trim() === ''
-  const hasFilters = Object.values(filters).some((v) => (Array.isArray(v) ? v.length : v))
+  // `sort` is a browse-mode ordering choice, not a filter — exclude it so
+  // touching the sort selector alone doesn't trigger an empty browse request.
+  const hasFilters = Object.entries(filters).some(
+    ([k, v]) => k !== 'sort' && (Array.isArray(v) ? v.length : v),
+  )
 
   async function run(offset = 0) {
     if (browse && !hasFilters) return
