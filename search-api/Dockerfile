@@ -2,7 +2,10 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY search_api.py .
+COPY search_api.py filters.py feedback.py ./
+# Relevance-feedback SQLite lives on a mounted volume so it survives container recreation.
+ENV FEEDBACK_DB=/data/feedback.db
+RUN mkdir -p /data
 EXPOSE 8092
 HEALTHCHECK --interval=20s --timeout=5s --retries=5 --start-period=10s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8092/api/health')"

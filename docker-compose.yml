@@ -84,6 +84,10 @@ services:
       WEAVIATE_API_KEY: "${WEAVIATE_API_KEY}"
       VECTORIZER_URL: "${VECTORIZER_URL:-http://host.docker.internal:8089}"
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
+      FEEDBACK_DB: "/data/feedback.db"
+      APP_VERSION: "${APP_VERSION:-unknown}"   # stamp onto relevance feedback; set to the git commit at deploy
+    volumes:
+      - placsp_feedback_data:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -102,6 +106,8 @@ volumes:
   placsp_weaviate_data:
     name: placsp_weaviate_data   # compose-managed, stable name; persists across down/up
                                  # (removed only by an explicit `docker compose down -v`)
+  placsp_feedback_data:
+    name: placsp_feedback_data   # relevance-feedback SQLite; same persistence semantics
 
 # Uncomment to join the vectorizer's existing Docker network so the search-api
 # can reach `http://vectorizer:8089` by service name instead of via the host.

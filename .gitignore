@@ -10,5 +10,9 @@ __pycache__/
 .superpowers/
 *.pyc
 .env
+# Relevance-feedback SQLite (dev runs create ./search-api/feedback.db)
+*.db
+*.db-wal
+*.db-shm
 .idea/
 .DS_Store

@@ -14,11 +14,14 @@ Run:  uvicorn search_api:app --host 0.0.0.0 --port 8092
 """
 import json
 import os
+import subprocess
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
+import feedback as fb
 import filters as filt
 
 VECTORIZER_URL = os.getenv("VECTORIZER_URL", "http://localhost:8089").rstrip("/")
@@ -26,6 +29,25 @@ WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8087").rstrip("/")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY", "")
 CLASS = os.getenv("PLACSP_CLASS", "Placsp_licitaciones")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+
+
+def _resolve_version() -> str:
+    """Backend version stamped onto feedback: APP_VERSION env, else the short
+    git commit, else 'unknown'. Resolved once at import."""
+    v = os.getenv("APP_VERSION")
+    if v:
+        return v
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=os.path.dirname(__file__) or ".", stderr=subprocess.DEVNULL,
+        )
+        return out.decode().strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+APP_VERSION = _resolve_version()
 
 FIELDS = [
     "syndication_id", "title", "content", "category", "expediente",
@@ -37,8 +59,13 @@ FIELDS = [
 
 app = FastAPI(title="PLACSP Search API")
 app.add_middleware(
-    CORSMiddleware, allow_origins=CORS_ORIGINS, allow_methods=["GET"], allow_headers=["*"],
+    CORSMiddleware, allow_origins=CORS_ORIGINS,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["*"],
 )
+
+
+def _fb_conn():
+    return fb.connect(os.getenv("FEEDBACK_DB", "feedback.db"))
 
 
 def _wv_headers():
@@ -134,3 +161,57 @@ def search(
         results.append(h)
     return {"query": q, "mode": mode, "count": len(results),
             "offset": offset, "results": results, "errors": data.get("errors")}
+
+
+class ResultRef(BaseModel):
+    id: str
+    rank: int | None = None
+    score: float | None = None
+
+
+class FeedbackIn(BaseModel):
+    search_id: str
+    session_id: str
+    query: str | None = None
+    mode: str | None = None
+    filters: dict = {}
+    results: list[ResultRef] = []
+    result_id: str
+
+
+class FeedbackDel(BaseModel):
+    search_id: str
+    result_id: str
+
+
+@app.post("/api/feedback")
+def post_feedback(body: FeedbackIn):
+    """Record a 'relevant' judgment. Lazily snapshots the search, derives the
+    liked result's rank/score from that snapshot, and stamps the backend version."""
+    conn = _fb_conn()
+    try:
+        fb.upsert_search(
+            conn, search_id=body.search_id, session_id=body.session_id,
+            query=body.query, mode=body.mode, filters=body.filters,
+            results=[r.model_dump() for r in body.results], app_version=APP_VERSION,
+        )
+        match = next((r for r in body.results if r.id == body.result_id), None)
+        fb.add_like(
+            conn, search_id=body.search_id, session_id=body.session_id,
+            result_id=body.result_id,
+            result_rank=match.rank if match else None,
+            result_score=match.score if match else None,
+        )
+    finally:
+        conn.close()
+    return {"ok": True, "app_version": APP_VERSION}
+
+
+@app.delete("/api/feedback")
+def delete_feedback(body: FeedbackDel):
+    conn = _fb_conn()
+    try:
+        fb.remove_like(conn, search_id=body.search_id, result_id=body.result_id)
+    finally:
+        conn.close()
+    return {"ok": True}

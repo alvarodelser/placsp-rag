@@ -2,7 +2,7 @@ import { money } from '../format.js'
 import cpvMap from '../codelists/cpv.json'
 import nutsMap from '../codelists/nuts.json'
 
-export default function ResultCard({ r }) {
+export default function ResultCard({ r, liked = false, onToggleLike = () => {} }) {
   const title = r.title || r.expediente || r.syndication_id || 'Sin título'
   const moneys = [
     ['Presupuesto', r.budget_amount],
@@ -67,6 +67,18 @@ export default function ResultCard({ r }) {
       )}
       {loc && <div className="row">{loc}</div>}
       {r.content && <div className="snippet">{r.content}</div>}
+
+      <div className="card-foot">
+        <button
+          type="button"
+          className={`like${liked ? ' liked' : ''}`}
+          onClick={onToggleLike}
+          aria-pressed={liked}
+          title={liked ? 'Marcado como relevante' : 'Marcar como relevante'}
+        >
+          {liked ? '👍 Relevante' : '👍 ¿Relevante?'}
+        </button>
+      </div>
     </div>
   )
 }
