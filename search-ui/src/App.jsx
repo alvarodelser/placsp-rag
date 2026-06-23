@@ -50,6 +50,7 @@ export default function App() {
   const [state, setState] = useState({ status: 'idle' })
   const [sessionId] = useState(getSessionId)
   const [searchId, setSearchId] = useState(null)
+  const [searchedFilters, setSearchedFilters] = useState(EXPLORE)
   const [liked, setLiked] = useState(() => new Set())
   const didMount = useRef(false)
 
@@ -64,6 +65,7 @@ export default function App() {
     // A new query (offset 0) starts a fresh feedback context; "Cargar más" keeps it.
     if (offset === 0) {
       setSearchId(crypto.randomUUID())
+      setSearchedFilters(f)
       setLiked(new Set())
     }
     setState({ status: 'loading' })
@@ -97,7 +99,7 @@ export default function App() {
         await sendFeedback({
           search_id: searchId, session_id: sessionId,
           query: state.data.query || '', mode: state.data.mode,
-          filters, results, result_id: id,
+          filters: searchedFilters, results, result_id: id,
         })
       }
     } catch {

@@ -46,6 +46,9 @@ def init_db(conn: sqlite3.Connection) -> None:
 def connect(path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    # Wait briefly instead of failing immediately when another request holds
+    # the write lock (concurrent likes hitting the same SQLite file).
+    conn.execute("PRAGMA busy_timeout=3000")
     init_db(conn)
     return conn
 
