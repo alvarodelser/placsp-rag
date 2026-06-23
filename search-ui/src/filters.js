@@ -55,3 +55,18 @@ export function activeFilterList(filters) {
   }
   return out
 }
+
+const B_MIN = 1000
+const B_MAX = 100000000
+const B_LMIN = Math.log(B_MIN)
+const B_LSPAN = Math.log(B_MAX) - B_LMIN
+
+export function budgetToPos(v) {
+  const x = Math.max(B_MIN, Math.min(B_MAX, Number(v) || B_MIN))
+  return Math.round(((Math.log(x) - B_LMIN) / B_LSPAN) * 1000)
+}
+
+export function posToBudget(p) {
+  const t = Math.max(0, Math.min(1000, Number(p))) / 1000
+  return Math.round(Math.exp(B_LMIN + t * B_LSPAN))
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { EMPTY, EXPLORE, todayISO, filtersToParams, presetRange, activeFilterList } from './filters.js'
+import { EMPTY, EXPLORE, todayISO, filtersToParams, presetRange, activeFilterList, budgetToPos, posToBudget } from './filters.js'
 
 describe('EXPLORE preset', () => {
   it('is PUB+PRE sorted latest, no deadline', () => {
@@ -49,5 +49,22 @@ describe('activeFilterList', () => {
   it('includes dates, budget and open_only entries', () => {
     const list = activeFilterList({ ...EMPTY, pub_from: '2024-01-01', open_only: true, budget_min: '1000' })
     expect(list.map((e) => e.field)).toEqual(['dates', 'open_only', 'budget'])
+  })
+})
+
+describe('budget log scale', () => {
+  it('maps endpoints to 0 and 1000', () => {
+    expect(budgetToPos(1000)).toBe(0)
+    expect(budgetToPos(100000000)).toBe(1000)
+  })
+  it('clamps out-of-range inputs', () => {
+    expect(budgetToPos(100)).toBe(0)
+    expect(budgetToPos(1e12)).toBe(1000)
+  })
+  it('round-trips within 1%', () => {
+    for (const v of [5000, 50000, 1000000, 20000000]) {
+      const back = posToBudget(budgetToPos(v))
+      expect(Math.abs(back - v) / v).toBeLessThan(0.01)
+    }
   })
 })
