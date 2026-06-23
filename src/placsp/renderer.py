@@ -1,5 +1,8 @@
+import re
 from dataclasses import asdict
 from .models import ProcurementRecord
+
+_DATE_ONLY = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})")
 
 def _money(v):
     return f"{v:,.2f} EUR" if v is not None else None
@@ -48,11 +51,16 @@ def render(rec: ProcurementRecord) -> tuple[str, dict]:
     # serialize nested
     props["status_history"] = [asdict(e) for e in rec.status_history]
     props["lots"] = [asdict(l) for l in rec.lots]
-    # RFC3339: Weaviate date fields require a full timestamp
+    # RFC3339: Weaviate date fields require a full timestamp. Source values that
+    # already carry a time component (contain "T", e.g. updated) are left as-is;
+    # date-only values are normalized from their YYYY-MM-DD prefix, tolerating
+    # junk like a stray trailing "Z". Anything unparseable is dropped.
     for f in _DATE_FIELDS:
         v = props.get(f)
-        if v and "T" not in v:
-            props[f] = v + "T00:00:00Z"
+        if not v or "T" in v:
+            continue
+        m = _DATE_ONLY.match(v)
+        props[f] = m.group(1) + "T00:00:00Z" if m else None
     # drop empty/None scalars (keep required + lists)
     keep_always = {"syndication_id", "category", "content", "status_history", "lots", "cpv", "document_urls"}
     props = {k: v for k, v in props.items()
