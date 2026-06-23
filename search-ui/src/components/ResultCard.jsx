@@ -1,5 +1,6 @@
 import { money } from '../format.js'
 import cpvMap from '../codelists/cpv.json'
+import nutsMap from '../codelists/nuts.json'
 
 export default function ResultCard({ r }) {
   const title = r.title || r.expediente || r.syndication_id || 'Sin título'
@@ -11,7 +12,10 @@ export default function ResultCard({ r }) {
     .map(([label, v]) => [label, money(v)])
     .filter(([, v]) => v)
 
-  const loc = [r.nuts_label || r.city, r.publication_date].filter(Boolean).join(' · ')
+  // Prefer the server-decoded nuts_label; fall back to decoding the raw nuts
+  // code client-side (mirrors how CPV is decoded) before resorting to city.
+  const nutsLabel = r.nuts_label || nutsMap[r.nuts] || r.city
+  const loc = [nutsLabel, r.publication_date].filter(Boolean).join(' · ')
 
   return (
     <div className="card">
