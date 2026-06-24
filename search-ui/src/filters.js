@@ -4,7 +4,7 @@
 
 export const EMPTY = {
   cpv: [], nuts: [], status: [], result: [], contract_type: [], procedure: [],
-  pub_from: '', pub_to: '', budget_min: '', budget_max: '', open_only: false,
+  pub_from: '', pub_to: '', deadline_from: '', deadline_to: '', budget_min: '', budget_max: '', open_only: false,
   sort: '',
 }
 
@@ -48,6 +48,9 @@ export function activeFilterList(filters) {
   }
   if (filters.pub_from || filters.pub_to) {
     out.push({ field: 'dates', value: `${filters.pub_from || '…'} – ${filters.pub_to || '…'}` })
+  }
+  if (filters.deadline_from || filters.deadline_to) {
+    out.push({ field: 'deadline', value: `${filters.deadline_from || '…'} – ${filters.deadline_to || '…'}` })
   }
   if (filters.open_only) out.push({ field: 'open_only', value: 'Plazo abierto' })
   if (filters.budget_min || filters.budget_max) {
