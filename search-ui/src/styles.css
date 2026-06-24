@@ -1,10 +1,12 @@
 :root {
-  --ink: #14181f; --muted: #687280; --line: #eceef2; --bg: #fafbfc;
-  --accent: #2563a8; --accent-soft: #eaf1fa; --chip: #f1f3f6; --ok: #1f7a4d;
-  --radius: 12px; --shadow: 0 6px 24px rgba(20,24,31,.08);
+  --ink: #161a23; --muted: #6b7280; --line: #e7eaf1; --bg: #f7f8fb; --card: #fff;
+  --accent: #4f46e5; --accent-soft: #eef0fe; --accent-ink: #4338ca;
+  --chip: #eef1f6; --chip-ink: #4a5568; --ok: #1f7a4d; --ok-soft: #e9f7ef;
+  --radius: 12px; --radius-sm: 9px; --shadow: 0 8px 30px rgba(22,26,35,.10);
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 * { box-sizing: border-box; }
-body { margin: 0; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); }
+body { margin: 0; font-size: 15px; line-height: 1.55; font-family: var(--font); color: var(--ink); background: var(--bg); }
 .wrap { max-width: 980px; margin: 0 auto; padding: 0 18px; }
 header { background: #fff; border-bottom: 1px solid var(--line); padding: 20px 0; position: sticky; top: 0; z-index: 5; }
 h1 { margin: 0 0 2px; font-size: 19px; letter-spacing: -.3px; }
