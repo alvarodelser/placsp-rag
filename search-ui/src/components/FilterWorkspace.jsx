@@ -215,7 +215,6 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
           <LiveResults total={total} results={previewResults} loading={loading} />
         </div>
         <div className="ws-foot">
-          <span className="ws-foot-count">{total != null ? total.toLocaleString('es-ES') : '—'} resultados</span>
           <button type="button" className="ws-apply" onClick={onClose}>Ver resultados</button>
         </div>
       </div>
