@@ -18,6 +18,10 @@ select, button { padding: 11px 14px; border: 1px solid var(--line); border-radiu
 button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; font-weight: 600; }
 button:disabled { opacity: .55; cursor: default; }
 .explore-btn { background: #fff; color: var(--accent); }
+.filtros-btn { display: inline-flex; align-items: center; gap: 7px; background: #fff; color: var(--accent); border: 1px solid var(--line); }
+.filtros-btn:hover { border-color: var(--accent); }
+.filtros-badge { background: var(--accent); color: #fff; border-radius: 999px; font-size: 11px; padding: 0 6px; }
+.layout { display: block; }
 main { padding: 22px 0 64px; }
 .layout { display: flex; gap: 20px; align-items: flex-start; position: relative; }
 .results { flex: 1 1 auto; min-width: 0; }
