@@ -34,13 +34,26 @@ CLASS_DEF = {
     "properties": _props(),
 }
 
-def ensure_class(base_url, api_key, class_name, timeout=300, transport=None) -> bool:
+COMPANY_CLASS_DEF = {
+    "class": "Placsp_companies",
+    "description": "Companies involved in public procurement.",
+    "vectorizer": "none",
+    "vectorIndexConfig": {"distance": "cosine"},
+    "invertedIndexConfig": {"bm25": {"b": 0.75, "k1": 1.2}},
+    "properties": [
+        {"name": "nif", "dataType": ["text"]},
+        {"name": "name", "dataType": ["text"]},
+        {"name": "description", "dataType": ["text"]}
+    ],
+}
+
+def ensure_class(base_url, api_key, class_name, class_def=CLASS_DEF, timeout=300, transport=None) -> bool:
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     base = base_url.rstrip("/")
     with httpx.Client(timeout=timeout, transport=transport, headers=headers) as c:
         r = c.get(f"{base}/v1/schema/{class_name}")
         if r.status_code == 200:
             return False
-        body = dict(CLASS_DEF, **{"class": class_name})
+        body = dict(class_def, **{"class": class_name})
         c.post(f"{base}/v1/schema", json=body).raise_for_status()
         return True

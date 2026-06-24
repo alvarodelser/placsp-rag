@@ -24,6 +24,7 @@ from pydantic import BaseModel
 import facets as fac
 import feedback as fb
 import filters as filt
+from graph_api import router as graph_router
 
 VECTORIZER_URL = os.getenv("VECTORIZER_URL", "http://localhost:8089").rstrip("/")
 WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8087").rstrip("/")
@@ -63,6 +64,7 @@ app.add_middleware(
     CORSMiddleware, allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["*"],
 )
+app.include_router(graph_router)
 
 
 def _fb_conn():
@@ -173,8 +175,53 @@ def search(
             total = fac.parse_aggregate(tr.json(), [], [])["total"]
         except httpx.HTTPError:
             total = None  # degrade: client uses the page-size heuristic
-    return {"query": q, "mode": mode, "count": len(results), "total": total,
             "offset": offset, "results": results, "errors": data.get("errors")}
+
+
+@app.get("/api/weaviate/company/search")
+def weaviate_company_search(
+    q: str,
+    k: int = Query(10, ge=1, le=50),
+    alpha: float = Query(0.5, ge=0.0, le=1.0)
+):
+    """Semantic search against Placsp_companies to find a company by description."""
+    query = q.strip()
+    if not query:
+        return {"results": []}
+        
+    try:
+        vector = _embed(query)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"vectorizer error: {exc}")
+
+    args = [
+        f"hybrid: {{ query: {json.dumps(query)}, alpha: {alpha}, vector: {json.dumps(vector)} }}",
+        f"limit: {k}"
+    ]
+    clause = ", ".join(args)
+    fields = "nif name description _additional { id score }"
+    
+    gql = f"{{ Get {{ Placsp_companies({clause}) {{ {fields} }} }} }}"
+    try:
+        r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
+                       headers=_wv_headers(), timeout=120)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"weaviate error: {exc}")
+
+    data = r.json()
+    if data.get("errors"):
+        raise HTTPException(500, f"weaviate query errors: {data['errors']}")
+        
+    hits = ((data.get("data") or {}).get("Get") or {}).get("Placsp_companies") or []
+    results = []
+    for h in hits:
+        add = h.pop("_additional", {}) or {}
+        h["_id"] = add.get("id")
+        h["_score"] = add.get("score")
+        results.append(h)
+        
+    return {"query": q, "count": len(results), "results": results}
 
 
 @app.get("/api/facets")

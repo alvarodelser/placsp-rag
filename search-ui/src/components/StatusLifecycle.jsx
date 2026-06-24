@@ -50,11 +50,6 @@ function fmt(n) {
   return n.toLocaleString('es-ES')
 }
 
-// Arched path for horizontal arrows between adjacent nodes
-function archPath(x1, y, x2, rise = 10) {
-  const mx = (x1 + x2) / 2
-  return `M${x1},${y} Q${mx},${y - rise} ${x2},${y}`
-}
 
 function Node({ node, x, y, w = NW, h = NH, active, count, onToggle }) {
   const label = fmt(count)
@@ -121,85 +116,56 @@ export default function StatusDiagram({ value = [], counts = {}, onChange }) {
         aria-label="Diagrama del ciclo de vida del contrato"
       >
         <defs>
-          {/* ── Main flow arrowhead — indigo, tapered ── */}
-          <marker id="sd-arr" markerWidth="12" markerHeight="9"
-            refX="10" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
-            <path d="M0,0 L11,4.5 L0,9 L2,4.5 Z" fill="#6366f1" />
+          {/* Shared minimal arrowhead — small, gray */}
+          <marker id="sd-arr" markerWidth="6" markerHeight="5"
+            refX="5" refY="2.5" orient="auto">
+            <path d="M0,0 L6,2.5 L0,5 Z" fill="#94a3b8" />
           </marker>
-          {/* ── RES→ANULADA arrowhead — green ── */}
-          <marker id="sd-arr-green" markerWidth="12" markerHeight="9"
-            refX="10" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
-            <path d="M0,0 L11,4.5 L0,9 L2,4.5 Z" fill="#1f7a4d" />
+          {/* Same shape, red for elbow */}
+          <marker id="sd-arr-red" markerWidth="6" markerHeight="5"
+            refX="5" refY="2.5" orient="auto">
+            <path d="M0,0 L6,2.5 L0,5 Z" fill="#fca5a5" />
           </marker>
-          {/* ── Elbow arrowhead — red ── */}
-          <marker id="sd-arr-red" markerWidth="12" markerHeight="9"
-            refX="10" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
-            <path d="M0,0 L11,4.5 L0,9 L2,4.5 Z" fill="#ef4444" />
-          </marker>
-          {/* ── Drop shadow filter ── */}
-          <filter id="sd-glow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="2" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-          </filter>
         </defs>
 
-        {/* ── Sequential flow arrows (arched paths) ── */}
+        {/* ── Sequential flow arrows — thin gray lines ── */}
         {FLOW.slice(0, 4).map((_, i) => (
-          <path
+          <line
             key={`flow${i}`}
-            d={archPath(nx(i) + NW + 1, ncy, nx(i + 1) - 1, 11)}
-            fill="none"
-            stroke="#6366f1"
-            strokeWidth={2}
+            x1={nx(i) + NW + 1} y1={ncy}
+            x2={nx(i + 1) - 1}  y2={ncy}
+            stroke="#cbd5e1" strokeWidth={1}
             markerEnd="url(#sd-arr)"
-            strokeLinecap="round"
           />
         ))}
 
-        {/* ── RES → ANULADA (straight vertical, green) ── */}
-        <path
-          d={`M${ANUL_CX},${nBot + 1} L${ANUL_CX},${ANUL_Y - 1}`}
-          fill="none"
-          stroke="#1f7a4d"
-          strokeWidth={2}
-          markerEnd="url(#sd-arr-green)"
-          strokeLinecap="round"
+        {/* ── RES → ANULADA (straight vertical, gray) ── */}
+        <line
+          x1={ANUL_CX} y1={nBot + 1}
+          x2={ANUL_CX} y2={ANUL_Y - 1}
+          stroke="#cbd5e1" strokeWidth={1}
+          markerEnd="url(#sd-arr)"
         />
 
-        {/* ── L-elbow "from any state" (dashed red, enters ANULADA left) ── */}
-        {/* Vertical leg */}
-        <path
-          d={`M${ELBOW_X},${ELBOW_Y1} L${ELBOW_X},${ELBOW_Y2}`}
+        {/* ── L-elbow "from any state" — thin dashed, muted red ── */}
+        <polyline
+          points={`${ELBOW_X},${ELBOW_Y1} ${ELBOW_X},${ELBOW_Y2} ${ANUL_X - 1},${ELBOW_Y2}`}
           fill="none"
-          stroke="#ef4444"
-          strokeWidth={1.6}
-          strokeDasharray="5 4"
-          strokeLinecap="round"
-        />
-        {/* Horizontal leg with arrowhead into ANULADA left edge */}
-        <path
-          d={`M${ELBOW_X},${ELBOW_Y2} L${ANUL_X - 1},${ELBOW_Y2}`}
-          fill="none"
-          stroke="#ef4444"
-          strokeWidth={1.6}
-          strokeDasharray="5 4"
-          strokeLinecap="round"
+          stroke="#fca5a5" strokeWidth={1}
+          strokeDasharray="4 3"
           markerEnd="url(#sd-arr-red)"
         />
-        {/* Floating "···" indicating unspecified origin at top of elbow */}
-        <text
-          x={ELBOW_X} y={ELBOW_Y1 - 6}
-          textAnchor="middle" fontSize={11} fill="#ef4444" letterSpacing="2"
-          fontFamily="inherit" opacity={0.7}
-        >
+        {/* ··· floating origin hint */}
+        <text x={ELBOW_X} y={ELBOW_Y1 - 5}
+          textAnchor="middle" fontSize={9} fill="#fca5a5"
+          letterSpacing="2" fontFamily="inherit">
           ···
         </text>
-        {/* Label along horizontal segment */}
+        {/* Label */}
         <text
-          x={(ELBOW_X + ANUL_X) / 2} y={ELBOW_Y2 - 6}
-          textAnchor="middle" fontSize={8} fill="#ef4444"
-          fontStyle="italic" fontFamily="inherit" opacity={0.85}
-        >
+          x={(ELBOW_X + ANUL_X) / 2} y={ELBOW_Y2 - 5}
+          textAnchor="middle" fontSize={7.5} fill="#fca5a5"
+          fontStyle="italic" fontFamily="inherit">
           desde cualquier estado
         </text>
 

@@ -128,6 +128,9 @@ services:
       VECTORIZER_URL: "${VECTORIZER_URL:-http://host.docker.internal:8089}"
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
       FEEDBACK_DB: "/data/feedback.db"
+      NEO4J_URL: "bolt://placsp-neo4j:7687"
+      NEO4J_USER: "neo4j"
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
       # APP_VERSION is baked into the image at build time (build.args above), not
       # set here — a runtime default would override the baked commit with "unknown".
     volumes:

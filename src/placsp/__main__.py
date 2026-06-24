@@ -28,8 +28,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     cfg = load_config()
     if args.cmd == "init-schema":
-        created = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, cfg.weaviate_class, cfg.request_timeout)
-        print("created" if created else "exists")
+        from .weaviate_schema import CLASS_DEF, COMPANY_CLASS_DEF
+        created_lic = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, cfg.weaviate_class, class_def=CLASS_DEF, timeout=cfg.request_timeout)
+        created_comp = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, "Placsp_companies", class_def=COMPANY_CLASS_DEF, timeout=cfg.request_timeout)
+        print("licitaciones:", "created" if created_lic else "exists")
+        print("companies:", "created" if created_comp else "exists")
         return
     if args.cmd == "init-graph":
         gs = _graph_sink(cfg)
