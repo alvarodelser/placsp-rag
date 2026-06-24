@@ -23,7 +23,11 @@ main { padding: 22px 0 64px; }
 .results { flex: 1 1 auto; min-width: 0; }
 
 .meta { color: var(--muted); font-size: 13px; margin: 4px 2px 14px; }
-.card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; display: flex; overflow: hidden; }
+.card-main { padding: 16px 18px; flex: 1; min-width: 0; }
+.relgutter { flex: 0 0 64px; border: none; border-left: 1px solid var(--line); background: #fff; color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.relgutter:hover { background: var(--accent-soft); color: var(--accent); }
+.relgutter.on { background: var(--accent); color: #fff; border-left-color: var(--accent); }
 .card h2 { margin: 0 0 6px; font-size: 16px; line-height: 1.35; }
 .card h2 a { color: var(--accent); text-decoration: none; }
 .card h2 a:hover { text-decoration: underline; }
@@ -44,12 +48,6 @@ main { padding: 22px 0 64px; }
 .empty { color: var(--muted); text-align: center; padding: 44px 0; }
 .err { background: #fdecec; border: 1px solid #f5c2c2; color: #9b2226; padding: 10px 12px; border-radius: 10px; margin: 8px 0; }
 .more { margin: 16px auto; display: block; background: #fff; color: var(--accent); }
-
-/* Relevance-feedback like button */
-.card-foot { margin-top: 12px; display: flex; justify-content: flex-end; }
-.like { background: #fff; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.like:hover { border-color: var(--accent); color: var(--accent); }
-.like.liked { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 
 /* Active filters */
 .active-filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 14px; }
