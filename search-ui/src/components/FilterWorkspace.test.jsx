@@ -15,7 +15,7 @@ describe('FilterWorkspace', () => {
     const onClose = vi.fn()
     render(<FilterWorkspace {...base} onClose={onClose} />)
     expect(screen.getByRole('button', { name: /CPV/i })).toBeInTheDocument()
-    expect(screen.getByText('42 resultados')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Ver resultados/i })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /cerrar/i }))
     expect(onClose).toHaveBeenCalled()
   })
