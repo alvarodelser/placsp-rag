@@ -160,8 +160,11 @@ def search(
         h["_id"] = add.get("id")
         h["_score"] = add.get("certainty", add.get("score"))
         results.append(h)
-    total = len(results)
-    if where is not None or query:
+    # Aggregate cannot honor hybrid/vector ranking, so an exact match total is
+    # only meaningful for browse/filter mode (no free-text query). With a query,
+    # return total=None and let the client fall back to a page-size heuristic.
+    total = None
+    if not query:
         try:
             tg = fac.wrap_aggregate([fac.agg_total(CLASS, where)])
             tr = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": tg},
@@ -169,7 +172,7 @@ def search(
             tr.raise_for_status()
             total = fac.parse_aggregate(tr.json(), [], [])["total"]
         except httpx.HTTPError:
-            total = len(results)  # degrade: fall back to page size
+            total = None  # degrade: client uses the page-size heuristic
     return {"query": q, "mode": mode, "count": len(results), "total": total,
             "offset": offset, "results": results, "errors": data.get("errors")}
 

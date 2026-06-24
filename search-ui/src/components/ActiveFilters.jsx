@@ -15,6 +15,7 @@ function labelFor({ field, value }) {
   const m = MAPS[field]
   if (m) return `${value} · ${m[value] || ''}`.trim()
   if (field === 'dates') return `Fechas: ${value}`
+  if (field === 'deadline') return `Plazo: ${value}`
   if (field === 'budget') return `Presupuesto: ${value}`
   return value
 }

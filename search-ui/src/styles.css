@@ -23,7 +23,6 @@ button:disabled { opacity: .55; cursor: default; }
 .filtros-badge { background: var(--accent); color: #fff; border-radius: 999px; font-size: 11px; padding: 0 6px; }
 .layout { display: block; }
 main { padding: 22px 0 64px; }
-.layout { display: flex; gap: 20px; align-items: flex-start; position: relative; }
 .results { flex: 1 1 auto; min-width: 0; }
 
 .meta { color: var(--muted); font-size: 13px; margin: 4px 2px 14px; }

@@ -110,7 +110,7 @@ export default function App() {
     const id = setTimeout(async () => {
       try {
         const f = await facets({ q: q.trim(), ...params })
-        setFacetsData(f); setTotal(f.total)
+        setFacetsData(f); setTotal(q.trim() ? null : f.total)
       } catch { /* degrade silently — filtering still works */ }
     }, 250)
     return () => clearTimeout(id)
@@ -124,6 +124,7 @@ export default function App() {
     if (['cpv', 'nuts', 'status', 'result', 'contract_type', 'procedure'].includes(field)) {
       patch({ [field]: filters[field].filter((v) => v !== value) })
     } else if (field === 'dates') patch({ pub_from: '', pub_to: '' })
+    else if (field === 'deadline') patch({ deadline_from: '', deadline_to: '' })
     else if (field === 'open_only') patch({ open_only: false })
     else if (field === 'budget') patch({ budget_min: '', budget_max: '' })
   }
@@ -175,7 +176,9 @@ export default function App() {
                         onToggleLike={() => toggleLike(r)}
                       />
                     ))}
-                    {(state.data.offset || 0) + state.data.results.length < (state.data.total ?? 0) && (
+                    {(state.data.total != null
+                      ? (state.data.offset || 0) + state.data.results.length < state.data.total
+                      : state.data.count === K) && (
                       <button className="more" onClick={() => run((state.data.offset || 0) + K)}>Cargar más</button>
                     )}
                   </>
