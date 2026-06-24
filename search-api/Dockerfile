@@ -2,7 +2,7 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY search_api.py filters.py feedback.py ./
+COPY search_api.py filters.py facets.py feedback.py graph_api.py ./
 # Stamp the deployed commit so feedback rows record which build produced them.
 # compose passes this from $APP_VERSION (see docker-compose.yml build.args); the
 # bare image defaults to "unknown" if built without the arg.

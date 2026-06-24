@@ -112,7 +112,10 @@ export default function App() {
       try {
         const f = await facets({ q: q.trim(), ...params })
         setFacetsData(f); setTotal(q.trim() ? null : f.total)
-      } catch { /* degrade silently — filtering still works */ }
+      } catch (err) {
+        console.warn('facets fetch failed:', err.message)
+        // degrade silently — filtering still works, histograms stay blank
+      }
     }, 250)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
