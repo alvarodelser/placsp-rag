@@ -2,7 +2,7 @@ import { useState } from 'react'
 import CpvMiller from './CpvMiller.jsx'
 import SpainMap from './SpainMap.jsx'
 import DensitySlider from './DensitySlider.jsx'
-import StatusLifecycle from './StatusLifecycle.jsx'
+import StatusDiagram from './StatusLifecycle.jsx'
 import MultiCheckIcons from './MultiCheckIcons.jsx'
 import LiveResults from './LiveResults.jsx'
 import { budgetToPos, posToBudget, presetRange, todayISO } from '../filters.js'
@@ -87,7 +87,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
 
       case 'status':
         return (
-          <StatusLifecycle
+          <StatusDiagram
             value={filters.status}
             counts={facetsData?.status || {}}
             onChange={(v) => setList('status', v)}
