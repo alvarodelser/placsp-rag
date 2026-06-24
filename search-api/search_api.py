@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import facets as fac
 import feedback as fb
 import filters as filt
 
@@ -159,8 +160,59 @@ def search(
         h["_id"] = add.get("id")
         h["_score"] = add.get("certainty", add.get("score"))
         results.append(h)
-    return {"query": q, "mode": mode, "count": len(results),
+    total = len(results)
+    if where is not None or query:
+        try:
+            tg = fac.wrap_aggregate([fac.agg_total(CLASS, where)])
+            tr = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": tg},
+                            headers=_wv_headers(), timeout=120)
+            tr.raise_for_status()
+            total = fac.parse_aggregate(tr.json(), [], [])["total"]
+        except httpx.HTTPError:
+            total = len(results)  # degrade: fall back to page size
+    return {"query": q, "mode": mode, "count": len(results), "total": total,
             "offset": offset, "results": results, "errors": data.get("errors")}
+
+
+@app.get("/api/facets")
+def facets(
+    q: str | None = Query(None),
+    cpv: list[str] | None = Query(None),
+    nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None),
+    result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None),
+    procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None),
+    pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None),
+    deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None),
+    budget_max: float | None = Query(None),
+):
+    where = filt.build_where(
+        cpv=cpv, nuts=nuts, status=status, result=result,
+        contract_type=contract_type, procedure=procedure,
+        pub_from=pub_from, pub_to=pub_to,
+        deadline_from=deadline_from, deadline_to=deadline_to,
+        budget_min=budget_min, budget_max=budget_max,
+    )
+    pub_b = fac.month_buckets(pub_from, pub_to, cap=36)
+    plazo_b = fac.month_buckets(deadline_from, deadline_to, cap=36)
+    fields = [
+        fac.agg_total(CLASS, where),
+        fac.agg_groupby(CLASS, where, "nuts"),
+        *fac.agg_month_counts(CLASS, where, "publication_date", pub_b),
+        *fac.agg_month_counts(CLASS, where, "submission_deadline", plazo_b),
+    ]
+    gql = fac.wrap_aggregate(fields)
+    try:
+        r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
+                       headers=_wv_headers(), timeout=120)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"weaviate error: {exc}")
+    return fac.parse_aggregate(r.json(), pub_b, plazo_b)
 
 
 class ResultRef(BaseModel):

@@ -64,6 +64,33 @@ def month_buckets(from_date, to_date, cap: int = 36, today: date | None = None):
     return out[-cap:]
 
 
+def parse_aggregate(raw: dict, pub_buckets, plazo_buckets) -> dict:
+    agg = ((raw.get("data") or {}).get("Aggregate") or {})
+
+    def _count(alias):
+        node = agg.get(alias) or []
+        return (node[0].get("meta", {}).get("count", 0)) if node else 0
+
+    nuts = {}
+    for g in (agg.get("nuts") or []):
+        val = (g.get("groupedBy") or {}).get("value")
+        if val:
+            nuts[val] = g.get("meta", {}).get("count", 0)
+
+    def _series(buckets, offset):
+        return [{"month": b["month"], "count": _count(f"m{offset + i}")}
+                for i, b in enumerate(buckets)]
+
+    return {
+        "total": _count("total"),
+        "nuts": nuts,
+        "dates": {
+            "publication": _series(pub_buckets, 0),
+            "plazo": _series(plazo_buckets, len(pub_buckets)),
+        },
+    }
+
+
 def agg_month_counts(class_name, base_where, date_field, buckets):
     fields = []
     for i, b in enumerate(buckets):

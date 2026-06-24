@@ -59,3 +59,22 @@ def test_agg_month_counts_aliases_and_date_field():
     assert "2026-05-01T00:00:00Z" in fields[0]
     assert "2026-05-31T23:59:59Z" in fields[0]
     assert fields[0].endswith("{ meta { count } }")
+
+
+def test_parse_aggregate_response():
+    raw = {"data": {"Aggregate": {
+        "total": [{"meta": {"count": 1284}}],
+        "nuts": [
+            {"groupedBy": {"value": "ES300"}, "meta": {"count": 900}},
+            {"groupedBy": {"value": "ES511"}, "meta": {"count": 384}},
+        ],
+        "m0": [{"meta": {"count": 10}}],
+        "m1": [{"meta": {"count": 20}}],
+    }}}
+    pub = [{"month": "2026-05"}, {"month": "2026-06"}]
+    out = fac.parse_aggregate(raw, pub_buckets=pub, plazo_buckets=[])
+    assert out["total"] == 1284
+    assert out["nuts"] == {"ES300": 900, "ES511": 384}
+    assert out["dates"]["publication"] == [
+        {"month": "2026-05", "count": 10}, {"month": "2026-06", "count": 20}]
+    assert out["dates"]["plazo"] == []
