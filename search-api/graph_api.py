@@ -1,5 +1,5 @@
+import atexit
 import os
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from neo4j import GraphDatabase
@@ -10,19 +10,20 @@ NEO4J_URL = os.getenv("NEO4J_URL", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
 
-# Driver is initialized lazily or at startup if env vars exist
 _driver = None
+
 
 def get_driver():
     global _driver
     if _driver is None:
         if not NEO4J_PASSWORD:
-            raise HTTPException(500, "Neo4j not configured (missing password)")
+            raise HTTPException(503, "Neo4j not configured — set NEO4J_PASSWORD to enable graph endpoints")
         _driver = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USER, NEO4J_PASSWORD))
     return _driver
 
-@router.on_event("shutdown")
-def shutdown_event():
+
+@atexit.register
+def _close_driver():
     if _driver is not None:
         _driver.close()
 

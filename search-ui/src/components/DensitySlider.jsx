@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useId, useRef, useState, useEffect, useCallback } from 'react'
 import { densityPath } from '../density.js'
 
 const W = 1000, H = 48
@@ -21,6 +21,7 @@ export default function DensitySlider({
   toPos = (v, lo, hi) => hi <= lo ? 0 : Math.max(0, Math.min(1, (v - lo) / (hi - lo))),
   toValue = (p, lo, hi) => lo + Math.max(0, Math.min(1, p)) * (hi - lo),
 }) {
+  const uid = useId()
   const trackRef = useRef(null)
   const [dragging, setDragging] = useState(null) // 'low' | 'high' | null
 
@@ -73,10 +74,10 @@ export default function DensitySlider({
         {/* Unselected dimmed area */}
         <path d={d} className="density-area density-area-dim" />
         {/* Selected (highlighted) area clipped between low/high */}
-        <clipPath id="ds-sel">
+        <clipPath id={`ds-sel-${uid}`}>
           <rect x={`${lowPos * 100}%`} width={`${(highPos - lowPos) * 100}%`} y="0" height={H} />
         </clipPath>
-        <path d={d} className="density-area density-area-sel" clipPath="url(#ds-sel)" />
+        <path d={d} className="density-area density-area-sel" clipPath={`url(#ds-sel-${uid})`} />
       </svg>
 
       {/* Track */}

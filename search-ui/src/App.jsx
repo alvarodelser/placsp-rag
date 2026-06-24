@@ -162,7 +162,10 @@ export default function App() {
 
             {state.status === 'done' && (
               <>
-                <div className="meta">{state.data?.count ?? 0} resultado(s) · modo {state.data?.mode || ''}</div>
+                <div className="meta">
+                  {total != null ? `${total.toLocaleString('es-ES')} contratos` : `${(state.data?.results || []).length} resultado(s)`}
+                  {state.data?.mode && state.data.mode !== 'browse' ? ` · ${state.data.mode}` : ''}
+                </div>
                 {state.data?.errors && <div className="err">Weaviate: {JSON.stringify(state.data.errors)}</div>}
                 {(state.data?.results || []).length > 0 ? (
                   <>

@@ -272,6 +272,7 @@ def facets(
         fac.agg_total(CLASS, where_cpv, alias="t_cpv"),
         fac.agg_total(CLASS, where_nuts, alias="t_nuts"),
         fac.agg_total(CLASS, where_status, alias="t_status"),
+        fac.agg_total(CLASS, where_result, alias="t_result"),
         fac.agg_total(CLASS, where_contract_type, alias="t_contract_type"),
         fac.agg_total(CLASS, where_procedure, alias="t_procedure"),
         fac.agg_total(CLASS, where_dates, alias="t_dates"),

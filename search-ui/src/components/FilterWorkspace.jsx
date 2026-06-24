@@ -9,43 +9,59 @@ import { money } from '../format.js'
 import {
   Stack, MapPin, Calendar, CurrencyEur, ListChecks, Scales, Gavel, X,
   Package, Wrench, HandCoins, Storefront, FileText, ArrowsLeftRight, UsersThree,
-  CheckCircle, XCircle, HourglassHigh,
+  CheckCircle, XCircle, HourglassHigh, Trophy,
 } from '../icons.js'
 import typeMap from '../codelists/contract_type.json'
 import procMap from '../codelists/procedure.json'
+import resultMap from '../codelists/result.json'
 
 // Icon maps for contract types
 const TYPE_ICONS = {
-  '1':  Package,          // Suministros
-  '2':  FileText,         // Servicios
-  '21': Storefront,       // Gestión de Servicios Públicos
-  '22': HandCoins,        // Concesión de Servicios
-  '3':  Wrench,           // Obras
-  '31': Wrench,           // Concesión de Obras Públicas
-  '32': Wrench,           // Concesión de Obras
-  '40': UsersThree,       // Colaboración P-P
-  '50': FileText,         // Patrimonial
-  '7':  FileText,         // Administrativo especial
-  '8':  FileText,         // Privado
+  '1':  Package,
+  '2':  FileText,
+  '21': Storefront,
+  '22': HandCoins,
+  '3':  Wrench,
+  '31': Wrench,
+  '32': Wrench,
+  '40': UsersThree,
+  '50': FileText,
+  '7':  FileText,
+  '8':  FileText,
 }
 
 // Icon maps for procedures
 const PROC_ICONS = {
-  '1':   ArrowsLeftRight, // Abierto
-  '9':   ArrowsLeftRight, // Abierto simplificado
-  '2':   ListChecks,      // Restringido
-  '3':   Gavel,           // Negociado sin publicidad
-  '4':   Gavel,           // Negociado con publicidad
-  '5':   UsersThree,      // Diálogo competitivo
-  '6':   FileText,        // Contrato menor
-  '7':   ArrowsLeftRight, // Derivado de acuerdo marco
-  '8':   Scales,          // Concurso de proyectos
-  '10':  UsersThree,      // Asociación para la innovación
-  '11':  ArrowsLeftRight, // Derivado de asociación
-  '12':  ArrowsLeftRight, // Basado en SDA
-  '13':  Gavel,           // Licitación con negociación
-  '100': FileText,        // Normas internas
-  '999': FileText,        // Otros
+  '1':   ArrowsLeftRight,
+  '9':   ArrowsLeftRight,
+  '2':   ListChecks,
+  '3':   Gavel,
+  '4':   Gavel,
+  '5':   UsersThree,
+  '6':   FileText,
+  '7':   ArrowsLeftRight,
+  '8':   Scales,
+  '10':  UsersThree,
+  '11':  ArrowsLeftRight,
+  '12':  ArrowsLeftRight,
+  '13':  Gavel,
+  '100': FileText,
+  '999': FileText,
+}
+
+// Icon maps for result codes
+const RESULT_ICONS = {
+  '1':  Trophy,       // Adjudicado Provisionalmente
+  '2':  Trophy,       // Adjudicado Definitivamente
+  '8':  Trophy,       // Adjudicado
+  '9':  Trophy,       // Formalizado
+  '10': Trophy,       // Licitador mejor valorado
+  '11': Trophy,       // Encargo Formalizado
+  '3':  XCircle,      // Desierto
+  '6':  XCircle,      // Desierto Provisionalmente
+  '7':  XCircle,      // Desierto Definitivamente
+  '4':  XCircle,      // Desistimiento
+  '5':  XCircle,      // Renuncia
 }
 
 const CATS = [
@@ -54,6 +70,7 @@ const CATS = [
   { id: 'dates',         label: 'Fechas',        Icon: Calendar,     fields: ['pub_from', 'pub_to', 'deadline_from'] },
   { id: 'budget',        label: 'Presupuesto',   Icon: CurrencyEur,  fields: ['budget_min', 'budget_max'] },
   { id: 'status',        label: 'Estado',        Icon: ListChecks,   fields: ['status'] },
+  { id: 'result',        label: 'Resultado',     Icon: Trophy,       fields: ['result'] },
   { id: 'contract_type', label: 'Tipo',          Icon: Scales,       fields: ['contract_type'] },
   { id: 'procedure',     label: 'Procedimiento', Icon: Gavel,        fields: ['procedure'] },
 ]
@@ -64,6 +81,13 @@ function catCount(cat, f) {
   if (cat.id === 'dates') return (f.pub_from || f.pub_to || f.deadline_from || f.deadline_to) ? 1 : 0
   if (cat.id === 'budget') return (f.budget_min || f.budget_max) ? 1 : 0
   return 0
+}
+
+function fmtTotal(n) {
+  if (n == null) return null
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`
+  return n.toLocaleString('es-ES')
 }
 
 function fmtAvail(n) {
@@ -96,6 +120,17 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
             value={filters.status}
             counts={facetsData?.status || {}}
             onChange={(v) => setList('status', v)}
+          />
+        )
+
+      case 'result':
+        return (
+          <MultiCheckIcons
+            map={resultMap}
+            value={filters.result}
+            onChange={(v) => setList('result', v)}
+            icons={RESULT_ICONS}
+            counts={facetsData?.result || {}}
           />
         )
 
@@ -213,6 +248,11 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
           <section className="ws-view">{center()}</section>
         </div>
         <div className="ws-foot">
+          <div className="ws-foot-count">
+            {facetsData?.total != null
+              ? <>{fmtTotal(facetsData.total)} <span>contratos</span></>
+              : <span className="ws-foot-loading">Calculando…</span>}
+          </div>
           <button type="button" className="ws-apply" onClick={onClose}>Ver resultados</button>
         </div>
       </div>

@@ -130,6 +130,7 @@ def parse_aggregate(
             "cpv": _count("t_cpv"),
             "nuts": _count("t_nuts"),
             "status": _count("t_status"),
+            "result": _count("t_result"),
             "contract_type": _count("t_contract_type"),
             "procedure": _count("t_procedure"),
             "dates": _count("t_dates"),

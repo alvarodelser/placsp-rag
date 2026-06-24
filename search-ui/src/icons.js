@@ -7,6 +7,8 @@ export {
   // Category / procedure icons
   Package, Wrench, Tree, HandCoins, Storefront,
   FileText, ArrowsLeftRight, UsersThree, Leaf,
+  // Result icons
+  Trophy,
   // Layout
   FunnelSimple, SortAscending,
 } from '@phosphor-icons/react'
