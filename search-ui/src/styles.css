@@ -109,3 +109,19 @@ main { padding: 22px 0 64px; }
   .rail-tab { border-radius: 10px; border-right: 1px solid var(--line); min-width: auto; }
   .filter-drawer { position: static; right: auto; width: 100%; margin-bottom: 12px; }
 }
+
+/* CpvMiller */
+.cm-search { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; color: var(--muted); }
+.cm-search input { border: none; outline: none; flex: 1; font-size: 14px; }
+.cm-cols { display: flex; gap: 0; margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; min-height: 220px; }
+.cm-col { flex: 1; border-right: 1px solid var(--line); overflow-y: auto; max-height: 320px; }
+.cm-col:last-child { border-right: none; }
+.cm-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; font-size: 13px; }
+.cm-item:hover { background: var(--accent-soft); }
+.cm-item.path { background: var(--accent-soft); color: var(--accent-ink); }
+.cm-label { flex: 1; min-width: 0; }
+.cm-add { border: 1px solid var(--line); background: #fff; border-radius: 6px; color: var(--accent); width: 20px; height: 20px; padding: 0; }
+.cm-matches { list-style: none; margin: 10px 0 0; padding: 0; max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.cm-matches li { padding: 7px 9px; cursor: pointer; font-size: 13px; }
+.cm-matches li:hover { background: var(--accent-soft); }
+.cm-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
