@@ -92,6 +92,17 @@ main { padding: 22px 0 64px; }
 .preset { background: var(--chip); color: var(--ink); border: none; font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 999px; }
 .open-toggle { margin-top: 10px; }
 
+.density-slider { margin: 10px 2px; }
+.density-svg { width: 100%; height: 40px; display: block; }
+.density-area { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; opacity: .55; }
+.ds-track { position: relative; height: 24px; }
+.ds-track::before { content: ""; position: absolute; top: 11px; left: 0; right: 0; height: 3px; background: var(--line); border-radius: 3px; }
+.ds-fill { position: absolute; top: 11px; height: 3px; background: var(--accent); border-radius: 3px; }
+.ds-thumb { position: absolute; top: 0; left: 0; width: 100%; margin: 0; background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+.ds-thumb::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.ds-thumb::-moz-range-thumb { pointer-events: auto; height: 18px; width: 18px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); cursor: pointer; }
+.ds-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+
 @media (max-width: 800px) {
   .layout { flex-direction: column; }
   .filter-rail { position: static; flex-direction: row; flex-wrap: wrap; order: -1; }
