@@ -202,9 +202,17 @@ def facets(
     )
     pub_b = fac.month_buckets(pub_from, pub_to, cap=36)
     plazo_b = fac.month_buckets(deadline_from, deadline_to, cap=36)
+    # Categorical group-bys: (Weaviate prop name, response alias)
+    cat_fields = [
+        ("status_code",        "status"),
+        ("result_code",        "result"),
+        ("contract_type_code", "contract_type"),
+        ("procedure_code",     "procedure"),
+    ]
     fields = [
         fac.agg_total(CLASS, where),
         fac.agg_groupby(CLASS, where, "nuts"),
+        *[fac.agg_groupby_field(CLASS, where, prop, alias) for prop, alias in cat_fields],
         *fac.agg_month_counts(CLASS, where, "publication_date", pub_b),
         *fac.agg_month_counts(CLASS, where, "submission_deadline", plazo_b),
     ]
@@ -215,7 +223,8 @@ def facets(
         r.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"weaviate error: {exc}")
-    return fac.parse_aggregate(r.json(), pub_b, plazo_b)
+    return fac.parse_aggregate(r.json(), pub_b, plazo_b,
+                               extra_groupby=[alias for _, alias in cat_fields])
 
 
 class ResultRef(BaseModel):

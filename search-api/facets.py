@@ -29,6 +29,13 @@ def agg_groupby(class_name: str, where: dict | None, prop: str) -> str:
             "{ groupedBy { value } meta { count } }")
 
 
+def agg_groupby_field(class_name: str, where: dict | None, prop: str, alias: str) -> str:
+    """Generic group-by aggregate for any single-value field, returned under `alias`."""
+    extra = f'groupBy: ["{prop}"]'
+    return (f"{alias}: {class_name}{_args(where, extra)} "
+            "{ groupedBy { value } meta { count } }")
+
+
 def wrap_aggregate(fields: list[str]) -> str:
     return "{ Aggregate { " + " ".join(fields) + " } }"
 
@@ -64,24 +71,35 @@ def month_buckets(from_date, to_date, cap: int = 36, today: date | None = None):
     return out[-cap:]
 
 
-def parse_aggregate(raw: dict, pub_buckets, plazo_buckets) -> dict:
+def parse_aggregate(raw: dict, pub_buckets, plazo_buckets, extra_groupby=None) -> dict:
+    """Parse Weaviate Aggregate response.
+
+    extra_groupby: list of alias strings for additional group-by fields
+    (e.g. ['status', 'result', 'contract_type', 'procedure']), each mapped
+    from its corresponding alias in the Aggregate block.
+    """
     agg = ((raw.get("data") or {}).get("Aggregate") or {})
+    extra_groupby = extra_groupby or []
 
     def _count(alias):
         node = agg.get(alias) or []
         return (node[0].get("meta", {}).get("count", 0)) if node else 0
 
-    nuts = {}
-    for g in (agg.get("nuts") or []):
-        val = (g.get("groupedBy") or {}).get("value")
-        if val:
-            nuts[val] = g.get("meta", {}).get("count", 0)
+    def _groupby_counts(alias):
+        out = {}
+        for g in (agg.get(alias) or []):
+            val = (g.get("groupedBy") or {}).get("value")
+            if val:
+                out[val] = g.get("meta", {}).get("count", 0)
+        return out
+
+    nuts = _groupby_counts("nuts")
 
     def _series(buckets, offset):
         return [{"month": b["month"], "count": _count(f"m{offset + i}")}
                 for i, b in enumerate(buckets)]
 
-    return {
+    result = {
         "total": _count("total"),
         "nuts": nuts,
         "dates": {
@@ -89,6 +107,9 @@ def parse_aggregate(raw: dict, pub_buckets, plazo_buckets) -> dict:
             "plazo": _series(plazo_buckets, len(pub_buckets)),
         },
     }
+    for alias in extra_groupby:
+        result[alias] = _groupby_counts(alias)
+    return result
 
 
 def agg_month_counts(class_name, base_where, date_field, buckets):

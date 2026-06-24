@@ -77,11 +77,9 @@ services:
       - sh
       - -c
       - |
-        echo 'waiting for weaviate to be ready...'
         until python -c "import urllib.request; urllib.request.urlopen('http://placsp-weaviate:8080/v1/.well-known/ready')" 2>/dev/null; do
           sleep 2
         done
-        echo 'weaviate ready; creating schema'
         python -m placsp init-schema
     depends_on:
       placsp-weaviate:
@@ -100,11 +98,9 @@ services:
       - sh
       - -c
       - |
-        echo 'waiting for neo4j bolt...'
         until python -c "from neo4j import GraphDatabase; GraphDatabase.driver('bolt://placsp-neo4j:7687', auth=('neo4j','${NEO4J_PASSWORD}')).verify_connectivity()" 2>/dev/null; do
           sleep 2
         done
-        echo 'neo4j ready; creating constraints'
         python -m placsp init-graph
     depends_on:
       placsp-neo4j:

@@ -27,8 +27,10 @@ const resultId = (r) => r._id || r.syndication_id
 
 export default function App() {
   const [q, setQ] = useState('')
-  const [mode, setMode] = useState('hybrid')
   const [filters, setFilters] = useState(EXPLORE)
+  const mode = 'hybrid'  // always use hybrid search
+  const browse = q.trim() === ''
+
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [facetsData, setFacetsData] = useState({ nuts: {}, dates: { publication: [], plazo: [] } })
   const [total, setTotal] = useState(null)
@@ -39,8 +41,7 @@ export default function App() {
   const [liked, setLiked] = useState(() => new Set())
   const didMount = useRef(false)
 
-  const MODES = [['hybrid', 'Híbrida'], ['vector', 'Semántica'], ['keyword', 'Palabra clave']]
-  const browse = q.trim() === ''
+
 
   async function run(offset = 0, f = filters, query = q) {
     if (query.trim() === '' && activeFilterList(f).length === 0) {
@@ -138,9 +139,6 @@ export default function App() {
           <form onSubmit={(e) => { e.preventDefault(); run(0) }}>
             <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
               placeholder="p. ej. servicios de limpieza (o deja vacío y filtra)" autoFocus />
-            <select value={mode} onChange={(e) => setMode(e.target.value)} title="Modo de búsqueda" disabled={browse}>
-              {MODES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-            </select>
             <button type="submit" disabled={state.status === 'loading'}>
               {state.status === 'loading' ? 'Buscando…' : browse ? 'Filtrar' : 'Buscar'}
             </button>

@@ -1,136 +1,107 @@
-# PLACSP Ingestion — Server Deploy & Test Task List
+# PLACSP — Deployment Reference
 
-A step-by-step checklist to deploy the pipeline on the server, validate it on one feed,
-prove the daily path, then schedule it and run the historical backfill.
+## Services
 
-**Conventions**
-- Target interpreter: **`python3.11`**.
-- Two ways the ingester can reach the services — pick one and keep it consistent:
-  - **Host mode** (ingester runs via cron/systemd on the host): use published ports —
-    `WEAVIATE_URL=http://localhost:8087`, `VECTORIZER_URL=http://localhost:8089`.
-    (Requires the vectorizer to publish 8089 to the host.)
-  - **Docker mode** (ingester runs as a container on the vectorizer's network): use service
-    names — `WEAVIATE_URL=http://placsp-weaviate:8080`, `VECTORIZER_URL=http://vectorizer:8089`.
-- The same `WEAVIATE_API_KEY` value is shared by `deploy/weaviate/.env` and the ingester env.
+All services are defined in `docker-compose.yml` and launched with:
 
----
+```bash
+cp .env.example .env   # set WEAVIATE_API_KEY and NEO4J_PASSWORD
+docker compose up -d
+```
 
-## Phase 0 — Provision the dedicated Weaviate
+| Container | Role | Port(s) |
+|---|---|---|
+| `placsp-weaviate` | Vector store (Weaviate 1.28) | `8087` (HTTP), `50052` (gRPC) |
+| `placsp-neo4j` | Company graph (Neo4j 5) | `7474` (browser), `7687` (Bolt) — localhost only |
+| `placsp-search-api` | Search API (FastAPI/uvicorn) | `8092` — localhost only |
+| `placsp-init-schema` | One-shot: creates Weaviate schema | — |
+| `placsp-init-graph` | One-shot: creates Neo4j constraints | — |
 
-- [ ] **0.1** Clone/pull this repo onto the server; `cd` into it.
-- [ ] **0.2** Configure the instance:
-  ```bash
-  cd deploy/weaviate
-  cp .env.example .env
-  # set WEAVIATE_API_KEY to a strong value:
-  sed -i "s/^WEAVIATE_API_KEY=.*/WEAVIATE_API_KEY=$(openssl rand -hex 32)/" .env
-  ```
-- [ ] **0.3** (Docker mode only) Uncomment the external `networks:` block in
-      `docker-compose.yml` and set it to the vectorizer's network
-      (`docker inspect -f '{{json .NetworkSettings.Networks}}' vectorizer`).
-- [ ] **0.4** Start it: `docker compose up -d`
-- [ ] **0.5** Health + auth check:
-  ```bash
-  curl -s http://localhost:8087/v1/.well-known/ready && echo " READY"
-  curl -s -H "Authorization: Bearer $(grep WEAVIATE_API_KEY .env | cut -d= -f2)" \
-    http://localhost:8087/v1/schema | head -c 200; echo
-  ```
-  Expect `READY` and an (empty) schema JSON, not a 401.
+**Volumes:** `placsp_weaviate_data`, `placsp_neo4j_data`, `placsp_feedback_data` — persisted across restarts, removed only by `docker compose down -v`.
 
-## Phase 1 — Install the ingester
+## External dependencies
 
-- [ ] **1.1** Create a venv and install the package:
-  ```bash
-  cd <repo-root>
-  python3.11 -m venv .venv && . .venv/bin/activate
-  pip install -e .
-  ```
-- [ ] **1.2** Export the runtime env (host mode shown):
-  ```bash
-  export WEAVIATE_URL=http://localhost:8087
-  export WEAVIATE_API_KEY=<same value as deploy/weaviate/.env>
-  export VECTORIZER_URL=http://localhost:8089
-  export PLACSP_CODELIST_DIR=$PWD/codelists
-  export PLACSP_WORK_DIR=$PWD/work
-  ```
-- [ ] **1.3** Confirm reachability of both services from the ingester:
-  ```bash
-  curl -s "$VECTORIZER_URL/health"; echo
-  curl -s "$WEAVIATE_URL/v1/.well-known/ready" && echo " WV-OK"
-  ```
+| Service | Default address | Used by |
+|---|---|---|
+| BGE-M3 vectorizer (iarag project) | `host.docker.internal:8089` | `placsp-search-api`, ingester |
 
-## Phase 2 — Schema + codelists
+To reach the vectorizer by container name instead, uncomment the `networks:` block at the bottom of `docker-compose.yml` and set it to the vectorizer's Docker network.
 
-- [ ] **2.1** Create the schema: `python3.11 -m placsp init-schema` → expect `created`.
-- [ ] **2.2** Populate codelists:
-      `python3.11 scripts/fetch_codelists.py tests/fixtures/mayores.atom "$PLACSP_CODELIST_DIR"`
-      (re-run with a menores/externos sample too, to cover their codelists). Note any `skip`/`err`.
+## Startup sequence
 
-## Phase 3 — One-feed validation
+On `docker compose up -d`:
 
-Follow [RUNBOOK.md](RUNBOOK.md) Steps 3–4, then:
+1. `placsp-weaviate` and `placsp-neo4j` start.
+2. `placsp-init-schema` polls Weaviate until ready, then runs `python -m placsp init-schema` (idempotent).
+3. `placsp-init-graph` waits for Neo4j and for `placsp-init-schema` to complete, then runs `python -m placsp init-graph` (idempotent).
+4. `placsp-search-api` starts after `placsp-init-schema` completes.
 
-- [ ] **3.1** Ingest one feed (RUNBOOK Step 3). Record the returned `{records, upserted, deleted}`.
-- [ ] **3.2** **Verify the ACTUAL stored count** matches `upserted` (RUNBOOK Step 3 ⚠️ box /
-      FOLLOWUPS #1). A gap = silently-rejected objects → investigate before proceeding.
-- [ ] **3.3** Retrieval smoke test (RUNBOOK Step 4): 3 relevant hits, readable Spanish `content`,
-      decoded `status_label` (not raw codes).
-- [ ] **3.4** Spot-check decoded labels and the three money fields on a few objects.
+## Ingestion
 
-## Phase 4 — Daily-path validation (the steady state)
+Ingestion runs on the **host** (not in Docker), talking to published ports.
 
-- [ ] **4.1** Run the daily walk once: `python3.11 -m placsp daily`.
-      Confirm it pages the live feed, upserts new records, and applies tombstones (deletes).
-- [ ] **4.2** **Idempotency:** run `python3.11 -m placsp daily` again immediately. The second run
-      should upsert ~0 and report `skipped > 0` (the `updated` guard working — FOLLOWUPS C1 fix).
-- [ ] **4.3** **status_history merge:** pick one expediente that changed state, and confirm its
-      `status_history` array in Weaviate contains *all* prior states, not just the latest
-      (the C2 fix; GET-merge on the daily path).
-- [ ] **4.4** **Watermark sanity:** confirm the walk stops after a bounded number of pages (not
-      ~1000). If it walks the whole feed, the date-aggregate watermark isn't returning a value —
-      see FOLLOWUPS #2.
+`scripts/placsp` is the entrypoint — it auto-creates the venv, installs the package, and populates codelists on first run:
 
-## Phase 5 — Tune throughput & off-peak
+```bash
+./scripts/placsp <command>
+```
 
-- [ ] **5.1** Measure embed throughput during Phase 3/4 (entries/min) without starving the shared
-      GPU the iarag project uses. Adjust `PLACSP_EMBED_BATCH` and keep `PLACSP_MAX_IN_FLIGHT` low (1).
-- [ ] **5.2** Set the off-peak window for backfill: `PLACSP_OFFPEAK_START` / `PLACSP_OFFPEAK_END`
-      (host-local hours). Backfill only does work inside this window.
-- [ ] **5.3** Record chosen values in RUNBOOK Step 5 (Observed Metrics).
+| Command | What it does |
+|---|---|
+| `init-schema` | Creates or verifies the Weaviate schema |
+| `daily` | Pages the live feed, upserts new records, applies tombstones |
+| `backfill` | Ingests historical data; self-gates to the off-peak window |
+| `reconcile` | Monthly full reconcile against the live feed |
 
-## Phase 6 — Schedule daily + monthly reconcile
+Scheduled via cron (example):
 
-Create an env file the timers source, e.g. `/etc/placsp/placsp.env` with the Phase 1.2 vars.
+```cron
+15 3 * * *   cd /opt/placsp && ./scripts/placsp daily     >> /var/log/placsp/daily.log 2>&1
+30 4 1 * *   cd /opt/placsp && ./scripts/placsp reconcile  >> /var/log/placsp/reconcile.log 2>&1
+```
 
-- [ ] **6.1** Daily (off-peak), e.g. cron `15 3 * * *`:
-  ```cron
-  15 3 * * *  cd /opt/placsp && . .venv/bin/activate && set -a && . /etc/placsp/placsp.env && python -m placsp daily   >> /var/log/placsp/daily.log 2>&1
-  ```
-- [ ] **6.2** Monthly reconciliation, e.g. cron `30 4 1 * *`:
-  ```cron
-  30 4 1 * *  cd /opt/placsp && . .venv/bin/activate && set -a && . /etc/placsp/placsp.env && python -m placsp reconcile >> /var/log/placsp/reconcile.log 2>&1
-  ```
-  (systemd timer equivalents are fine; `Type=oneshot` services pointing at the same commands.)
-- [ ] **6.3** Verify the first scheduled `daily` ran and logged sane counts.
+Codelists are pre-populated automatically on first run. To refresh against a new feed file:
 
-## Phase 7 — Historical backfill
+```bash
+python scripts/fetch_codelists.py <feed.atom> ./codelists
+```
 
-- [ ] **7.1** Launch the resumable backfill (it self-gates to the off-peak window):
-      `nohup python3.11 -m placsp backfill >> /var/log/placsp/backfill.log 2>&1 &`
-- [ ] **7.2** Monitor: object count climbing, GPU not starving iarag traffic, no error spikes.
-      Note: backfill is idempotent (safe to restart) but not yet checkpoint-resuming — FOLLOWUPS #5.
-- [ ] **7.3** On completion, confirm per-category counts look plausible vs. expectations.
+## Environment variables
 
-## Phase 8 — Teardown / rollback
+Loaded from `.env` in the repo root (auto-sourced by `scripts/placsp`).
 
-- [ ] Drop indexed data, keep the container: delete + recreate the class
-      (`python3.11 -m placsp init-schema` after deleting the class), or `cd deploy/weaviate && docker compose down -v` to wipe everything.
-- [ ] Disable the cron/systemd timers to stop ingestion.
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `WEAVIATE_API_KEY` | ✓ | — | Shared by Weaviate container and ingester |
+| `NEO4J_PASSWORD` | ✓ | — | Neo4j auth |
+| `WEAVIATE_URL` | | `http://localhost:8087` | Override for Docker-mode ingestion |
+| `VECTORIZER_URL` | | `http://localhost:8089` | BGE-M3 vectorizer |
+| `WEAVIATE_HTTP_PORT` | | `8087` | Published Weaviate HTTP port |
+| `WEAVIATE_GRPC_PORT` | | `50052` | Published Weaviate gRPC port |
+| `WEAVIATE_GOMEMLIMIT` | | `4GiB` | Weaviate Go memory limit |
+| `NEO4J_HTTP_PORT` | | `7474` | Published Neo4j browser port |
+| `NEO4J_BOLT_PORT` | | `7687` | Published Neo4j Bolt port |
+| `NEO4J_HEAP` | | `2G` | Neo4j JVM heap |
+| `SEARCH_API_PORT` | | `8092` | Published search-api port |
+| `CORS_ORIGINS` | | `*` | CORS origins for search-api |
+| `PLACSP_CODELIST_DIR` | | `./codelists` | Codelist cache directory |
+| `PLACSP_WORK_DIR` | | `./work` | Download/unzip scratch directory |
+| `PLACSP_EMBED_BATCH` | | — | Vectorizer batch size |
+| `PLACSP_MAX_IN_FLIGHT` | | — | Concurrent embed requests |
+| `PLACSP_OFFPEAK_START` | | — | Off-peak window start (host local time) |
+| `PLACSP_OFFPEAK_END` | | — | Off-peak window end |
+
+## Rollback
+
+```bash
+# Drop indexed data, keep containers:
+python -m placsp init-schema   # after manually deleting the Weaviate class
+
+# Wipe everything (data volumes too):
+docker compose down -v
+```
 
 ---
 
-## Pre-production gate
-
-Before considering this production-ready, review **[FOLLOWUPS.md](FOLLOWUPS.md)** and decide
-which hardening items to do now vs. later. The highest-priority ones surfaced by validation are
-usually **#1 (silent batch errors / date typing)** and **#2 (watermark aggregate)**.
+For one-feed end-to-end validation see [RUNBOOK.md](RUNBOOK.md).
+For known issues and hardening backlog see [FOLLOWUPS.md](FOLLOWUPS.md).
