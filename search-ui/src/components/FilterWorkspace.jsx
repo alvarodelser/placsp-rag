@@ -6,7 +6,7 @@ import MultiCheck from './MultiCheck.jsx'
 import LiveResults from './LiveResults.jsx'
 import { budgetToPos, posToBudget, presetRange, todayISO } from '../filters.js'
 import { money } from '../format.js'
-import { Stack, MapPin, Calendar, CurrencyEur, ListChecks, Scales, Gavel, Buildings, X } from '../icons.js'
+import { Stack, MapPin, Calendar, CurrencyEur, ListChecks, Scales, Gavel, X } from '../icons.js'
 import statusMap from '../codelists/status.json'
 import resultMap from '../codelists/result.json'
 import typeMap from '../codelists/contract_type.json'
@@ -26,7 +26,7 @@ const CATS = [
 function catCount(cat, f) {
   if (cat.id === 'cpv' || ['nuts', 'status', 'result', 'contract_type', 'procedure'].includes(cat.id))
     return (f[cat.id] || []).length
-  if (cat.id === 'dates') return (f.pub_from || f.pub_to || f.deadline_from) ? 1 : 0
+  if (cat.id === 'dates') return (f.pub_from || f.pub_to || f.deadline_from || f.deadline_to) ? 1 : 0
   if (cat.id === 'budget') return (f.budget_min || f.budget_max) ? 1 : 0
   return 0
 }
