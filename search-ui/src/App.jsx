@@ -91,14 +91,14 @@ export default function App() {
       if (wasLiked) {
         await removeFeedback({ search_id: searchId, result_id: id })
       } else {
-        const results = state.data.results.map((res, i) => ({
+        const results = (state.data?.results || []).map((res, i) => ({
           id: resultId(res),
-          rank: (state.data.offset || 0) + i,
+          rank: (state.data?.offset || 0) + i,
           score: res._score ?? null,
         }))
         await sendFeedback({
           search_id: searchId, session_id: sessionId,
-          query: state.data.query || '', mode: state.data.mode,
+          query: state.data?.query || '', mode: state.data?.mode,
           filters: searchedFilters, results, result_id: id,
         })
       }
@@ -183,11 +183,11 @@ export default function App() {
 
             {state.status === 'done' && (
               <>
-                <div className="meta">{state.data.count} resultado(s) · modo {state.data.mode}</div>
-                {state.data.errors && <div className="err">Weaviate: {JSON.stringify(state.data.errors)}</div>}
-                {state.data.results.length > 0 ? (
+                <div className="meta">{state.data?.count ?? 0} resultado(s) · modo {state.data?.mode || ''}</div>
+                {state.data?.errors && <div className="err">Weaviate: {JSON.stringify(state.data.errors)}</div>}
+                {(state.data?.results || []).length > 0 ? (
                   <>
-                    {state.data.results.map((r) => (
+                    {(state.data?.results || []).map((r) => (
                       <ResultCard
                         key={resultId(r)}
                         r={r}
@@ -195,8 +195,8 @@ export default function App() {
                         onToggleLike={() => toggleLike(r)}
                       />
                     ))}
-                    {state.data.count === K && (
-                      <button className="more" onClick={() => run((state.data.offset || 0) + K)}>Cargar más</button>
+                    {state.data?.count === K && (
+                      <button className="more" onClick={() => run((state.data?.offset || 0) + K)}>Cargar más</button>
                     )}
                   </>
                 ) : <div className="empty">Sin resultados.</div>}
