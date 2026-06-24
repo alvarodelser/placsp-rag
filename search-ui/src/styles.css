@@ -146,3 +146,26 @@ main { padding: 22px 0 64px; }
 .sm-region:hover { opacity: .8; }
 .sm-region.sel { stroke: var(--ok); stroke-width: 2; }
 .sm-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* FilterWorkspace */
+.ws-overlay { position: fixed; inset: 0; background: rgba(22,26,35,.45); z-index: 50; display: flex; align-items: stretch; justify-content: center; padding: 28px; }
+.ws-panel { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); width: min(1100px, 100%); display: flex; flex-direction: column; overflow: hidden; }
+.ws-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); font-weight: 700; }
+.ws-close { background: none; border: none; color: var(--muted); }
+.ws-body { display: flex; flex: 1; min-height: 0; }
+.ws-cats { flex: 0 0 190px; border-right: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
+.ws-cat { display: flex; align-items: center; gap: 9px; border: none; background: none; color: var(--ink); padding: 9px 11px; border-radius: 9px; font-size: 13.5px; font-weight: 600; text-align: left; }
+.ws-cat span { flex: 1; }
+.ws-cat:hover { background: var(--accent-soft); }
+.ws-cat.on { background: var(--accent); color: #fff; }
+.ws-badge { background: var(--accent-soft); color: var(--accent); border-radius: 999px; font-size: 11px; padding: 0 7px; min-width: 18px; text-align: center; }
+.ws-cat.on .ws-badge { background: #fff; color: var(--accent); }
+.ws-view { flex: 1; padding: 18px; overflow: auto; min-width: 0; }
+.ws-body .live-results { flex: 0 0 200px; border-left: 1px solid var(--line); padding: 14px; }
+.ws-foot { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-top: 1px solid var(--line); }
+.ws-foot-count { color: var(--ok); font-weight: 700; }
+.ws-apply { background: var(--accent); color: #fff; border: none; border-radius: 9px; padding: 9px 18px; font-weight: 600; }
+.ws-axis { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-bottom: 8px; }
+.ws-axis button { border: none; background: #fff; color: var(--muted); padding: 5px 14px; font-size: 12px; font-weight: 600; }
+.ws-axis button.on { background: var(--ink); color: #fff; }
+@media (max-width: 800px) { .ws-body { flex-direction: column; } .ws-cats { flex-direction: row; flex-wrap: wrap; flex-basis: auto; } .ws-body .live-results { border-left: none; border-top: 1px solid var(--line); } }
