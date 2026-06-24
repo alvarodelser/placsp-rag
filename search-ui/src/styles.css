@@ -125,3 +125,13 @@ main { padding: 22px 0 64px; }
 .cm-matches li { padding: 7px 9px; cursor: pointer; font-size: 13px; }
 .cm-matches li:hover { background: var(--accent-soft); }
 .cm-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+/* SpainMap */
+.sm-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-bottom: 10px; }
+.sm-toggle button { border: none; background: #fff; color: var(--muted); padding: 5px 14px; font-size: 12px; font-weight: 600; }
+.sm-toggle button.on { background: var(--ink); color: #fff; }
+.sm-svg { width: 100%; max-width: 460px; height: auto; display: block; }
+.sm-region { stroke: #fff; stroke-width: .5; cursor: pointer; transition: opacity .1s; }
+.sm-region:hover { opacity: .8; }
+.sm-region.sel { stroke: var(--ok); stroke-width: 2; }
+.sm-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
