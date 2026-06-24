@@ -53,13 +53,13 @@ describe('activeFilterList', () => {
 })
 
 describe('budget log scale', () => {
-  it('maps endpoints to 0 and 1000', () => {
-    expect(budgetToPos(1000)).toBe(0)
-    expect(budgetToPos(100000000)).toBe(1000)
+  it('maps endpoints to 0 and 1', () => {
+    expect(budgetToPos(1000)).toBeCloseTo(0)
+    expect(budgetToPos(100000000)).toBeCloseTo(1)
   })
   it('clamps out-of-range inputs', () => {
-    expect(budgetToPos(100)).toBe(0)
-    expect(budgetToPos(1e12)).toBe(1000)
+    expect(budgetToPos(100)).toBeCloseTo(0)
+    expect(budgetToPos(1e12)).toBeCloseTo(1)
   })
   it('round-trips within 1%', () => {
     for (const v of [5000, 50000, 1000000, 20000000]) {

@@ -67,6 +67,12 @@ function catCount(cat, f) {
   return 0
 }
 
+function fmtAvail(n) {
+  if (n == null) return null
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`
+  return String(n)
+}
+
 export default function FilterWorkspace({ filters, patch, setList, facetsData, total, previewResults, loading, onClose }) {
   const [active, setActive] = useState('cpv')
   const [dateAxis, setDateAxis] = useState('publication')
@@ -195,10 +201,11 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
           <nav className="ws-cats">
             {CATS.map((c) => {
               const n = catCount(c, filters)
+              const avail = facetsData?.totals?.[c.id]
               return (
                 <button key={c.id} type="button"
                   className={`ws-cat${active === c.id ? ' on' : ''}`} onClick={() => setActive(c.id)}>
-                  <c.Icon size={18} /> <span>{c.label}</span>
+                  <c.Icon size={18} /> <span>{c.label} {avail != null ? `(${fmtAvail(avail)})` : ''}</span>
                   {n > 0 && <span className="ws-badge">{n}</span>}
                 </button>
               )

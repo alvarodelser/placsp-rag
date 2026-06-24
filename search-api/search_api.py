@@ -175,7 +175,7 @@ def search(
             total = fac.parse_aggregate(tr.json(), [], [])["total"]
         except httpx.HTTPError:
             total = None  # degrade: client uses the page-size heuristic
-            "offset": offset, "results": results, "errors": data.get("errors")}
+    return {"total": total, "offset": offset, "results": results, "errors": data.get("errors")}
 
 
 @app.get("/api/weaviate/company/search")
@@ -240,15 +240,26 @@ def facets(
     budget_min: float | None = Query(None),
     budget_max: float | None = Query(None),
 ):
-    where = filt.build_where(
+    kwargs = dict(
         cpv=cpv, nuts=nuts, status=status, result=result,
         contract_type=contract_type, procedure=procedure,
         pub_from=pub_from, pub_to=pub_to,
         deadline_from=deadline_from, deadline_to=deadline_to,
         budget_min=budget_min, budget_max=budget_max,
     )
+    where = filt.build_where(**kwargs)
+    where_cpv = filt.build_where(**{**kwargs, "cpv": None})
+    where_nuts = filt.build_where(**{**kwargs, "nuts": None})
+    where_status = filt.build_where(**{**kwargs, "status": None})
+    where_result = filt.build_where(**{**kwargs, "result": None})
+    where_contract_type = filt.build_where(**{**kwargs, "contract_type": None})
+    where_procedure = filt.build_where(**{**kwargs, "procedure": None})
+    where_dates = filt.build_where(**{**kwargs, "pub_from": None, "pub_to": None, "deadline_from": None, "deadline_to": None})
+    where_budget = filt.build_where(**{**kwargs, "budget_min": None, "budget_max": None})
+
     pub_b = fac.month_buckets(pub_from, pub_to, cap=36)
     plazo_b = fac.month_buckets(deadline_from, deadline_to, cap=36)
+    budg_b = fac.budget_buckets()
     # Categorical group-bys: (Weaviate prop name, response alias)
     cat_fields = [
         ("status_code",        "status"),
@@ -258,10 +269,23 @@ def facets(
     ]
     fields = [
         fac.agg_total(CLASS, where),
-        fac.agg_groupby(CLASS, where, "nuts"),
-        *[fac.agg_groupby_field(CLASS, where, prop, alias) for prop, alias in cat_fields],
-        *fac.agg_month_counts(CLASS, where, "publication_date", pub_b),
-        *fac.agg_month_counts(CLASS, where, "submission_deadline", plazo_b),
+        fac.agg_total(CLASS, where_cpv, alias="t_cpv"),
+        fac.agg_total(CLASS, where_nuts, alias="t_nuts"),
+        fac.agg_total(CLASS, where_status, alias="t_status"),
+        fac.agg_total(CLASS, where_contract_type, alias="t_contract_type"),
+        fac.agg_total(CLASS, where_procedure, alias="t_procedure"),
+        fac.agg_total(CLASS, where_dates, alias="t_dates"),
+        fac.agg_total(CLASS, where_budget, alias="t_budget"),
+        
+        fac.agg_groupby_field(CLASS, where_nuts, "nuts", "nuts"),
+        fac.agg_groupby_field(CLASS, where_status, "status_code", "status"),
+        fac.agg_groupby_field(CLASS, where_result, "result_code", "result"),
+        fac.agg_groupby_field(CLASS, where_contract_type, "contract_type_code", "contract_type"),
+        fac.agg_groupby_field(CLASS, where_procedure, "procedure_code", "procedure"),
+        
+        *fac.agg_month_counts(CLASS, where_dates, "publication_date", pub_b, prefix="m_"),
+        *fac.agg_month_counts(CLASS, where_dates, "submission_deadline", plazo_b, prefix="p_"),
+        *fac.agg_budget_counts(CLASS, where_budget, budg_b),
     ]
     gql = fac.wrap_aggregate(fields)
     try:
@@ -270,7 +294,7 @@ def facets(
         r.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"weaviate error: {exc}")
-    return fac.parse_aggregate(r.json(), pub_b, plazo_b,
+    return fac.parse_aggregate(r.json(), pub_b, plazo_b, budg_b,
                                extra_groupby=[alias for _, alias in cat_fields])
 
 

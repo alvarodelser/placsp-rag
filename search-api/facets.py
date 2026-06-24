@@ -19,8 +19,8 @@ def _args(where, extra=None):
     return f"({', '.join(parts)})" if parts else ""
 
 
-def agg_total(class_name: str, where: dict | None) -> str:
-    return f"total: {class_name}{_args(where)} {{ meta {{ count }} }}"
+def agg_total(class_name: str, where: dict | None, alias: str = "total") -> str:
+    return f"{alias}: {class_name}{_args(where)} {{ meta {{ count }} }}"
 
 
 def agg_groupby(class_name: str, where: dict | None, prop: str) -> str:
@@ -71,14 +71,39 @@ def month_buckets(from_date, to_date, cap: int = 36, today: date | None = None):
     return out[-cap:]
 
 
-def parse_aggregate(raw: dict, pub_buckets, plazo_buckets, extra_groupby=None) -> dict:
+import math
+B_MIN = 1000
+B_MAX = 100000000
+B_LMIN = math.log(B_MIN)
+B_LSPAN = math.log(B_MAX) - B_LMIN
+
+def budget_buckets(num=30):
+    buckets = []
+    for i in range(num):
+        t1 = i / num
+        t2 = (i + 1) / num
+        min_v = math.exp(B_LMIN + t1 * B_LSPAN)
+        max_v = math.exp(B_LMIN + t2 * B_LSPAN)
+        if i == 0: min_v = 0
+        if i == num - 1: max_v = None
+        buckets.append({"min": min_v, "max": max_v})
+    return buckets
+
+
+def parse_aggregate(
+    res: dict,
+    pub_buckets: list[dict],
+    plazo_buckets: list[dict],
+    budg_buckets: list[dict] = None,
+    extra_groupby: list[str] = None
+) -> dict:
     """Parse Weaviate Aggregate response.
 
     extra_groupby: list of alias strings for additional group-by fields
     (e.g. ['status', 'result', 'contract_type', 'procedure']), each mapped
     from its corresponding alias in the Aggregate block.
     """
-    agg = ((raw.get("data") or {}).get("Aggregate") or {})
+    agg = ((res.get("data") or {}).get("Aggregate") or {})
     extra_groupby = extra_groupby or []
 
     def _count(alias):
@@ -95,24 +120,34 @@ def parse_aggregate(raw: dict, pub_buckets, plazo_buckets, extra_groupby=None) -
 
     nuts = _groupby_counts("nuts")
 
-    def _series(buckets, offset):
-        return [{"month": b["month"], "count": _count(f"m{offset + i}")}
+    def _series(buckets, prefix):
+        return [{"month": b.get("month"), "min": b.get("min"), "max": b.get("max"), "count": _count(f"{prefix}{i}")}
                 for i, b in enumerate(buckets)]
 
     result = {
         "total": _count("total"),
+        "totals": {
+            "cpv": _count("t_cpv"),
+            "nuts": _count("t_nuts"),
+            "status": _count("t_status"),
+            "contract_type": _count("t_contract_type"),
+            "procedure": _count("t_procedure"),
+            "dates": _count("t_dates"),
+            "budget": _count("t_budget"),
+        },
         "nuts": nuts,
         "dates": {
-            "publication": _series(pub_buckets, 0),
-            "plazo": _series(plazo_buckets, len(pub_buckets)),
+            "publication": _series(pub_buckets, "m_") if pub_buckets else [],
+            "plazo": _series(plazo_buckets, "p_") if plazo_buckets else [],
         },
+        "budget": _series(budg_buckets, "b") if budg_buckets else [],
     }
     for alias in extra_groupby:
         result[alias] = _groupby_counts(alias)
     return result
 
 
-def agg_month_counts(class_name, base_where, date_field, buckets):
+def agg_month_counts(class_name, base_where, date_field, buckets, prefix="m"):
     fields = []
     for i, b in enumerate(buckets):
         rng = filt.build_where(**{
@@ -123,5 +158,17 @@ def agg_month_counts(class_name, base_where, date_field, buckets):
         combined = rng if base_where is None else {
             "operator": "And", "operands": [base_where, rng]}
         fields.append(
-            f"m{i}: {class_name}({filt.where_to_gql(combined)}) {{ meta {{ count }} }}")
+            f"{prefix}{i}: {class_name}({filt.where_to_gql(combined)}) {{ meta {{ count }} }}")
+    return fields
+
+def agg_budget_counts(class_name, base_where, buckets):
+    fields = []
+    for i, b in enumerate(buckets):
+        rng = filt.build_where(**{
+            "budget_min": b["min"], "budget_max": b["max"],
+        })
+        combined = rng if base_where is None else {
+            "operator": "And", "operands": [base_where, rng]}
+        fields.append(
+            f"b{i}: {class_name}({filt.where_to_gql(combined)}) {{ meta {{ count }} }}")
     return fields
