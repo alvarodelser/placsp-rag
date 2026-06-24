@@ -77,7 +77,7 @@ B_MAX = 100000000
 B_LMIN = math.log(B_MIN)
 B_LSPAN = math.log(B_MAX) - B_LMIN
 
-def budget_buckets(num=30):
+def budget_buckets(num=15):
     buckets = []
     for i in range(num):
         t1 = i / num

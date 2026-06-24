@@ -12,9 +12,11 @@ Env:
   CORS_ORIGINS      comma-separated allowed origins, default "*"
 Run:  uvicorn search_api:app --host 0.0.0.0 --port 8092
 """
+import hashlib
 import json
 import os
 import subprocess
+import time
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
@@ -31,6 +33,16 @@ WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8087").rstrip("/")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY", "")
 CLASS = os.getenv("PLACSP_CLASS", "Placsp_licitaciones")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+
+# Simple TTL cache for /api/facets — the aggregate query is expensive (many
+# Weaviate aggregate calls). Cache for 5 minutes per unique filter combination.
+_facets_cache: dict[str, tuple[float, dict]] = {}
+_FACETS_TTL = 300  # seconds
+
+
+def _facets_key(**kwargs) -> str:
+    normalized = {k: sorted(v) if isinstance(v, list) else v for k, v in kwargs.items()}
+    return hashlib.sha1(json.dumps(normalized, sort_keys=True).encode()).hexdigest()
 
 
 def _resolve_version() -> str:
@@ -247,6 +259,11 @@ def facets(
         deadline_from=deadline_from, deadline_to=deadline_to,
         budget_min=budget_min, budget_max=budget_max,
     )
+    cache_key = _facets_key(**kwargs)
+    cached = _facets_cache.get(cache_key)
+    if cached and time.time() - cached[0] < _FACETS_TTL:
+        return cached[1]
+
     where = filt.build_where(**kwargs)
     where_cpv = filt.build_where(**{**kwargs, "cpv": None})
     where_nuts = filt.build_where(**{**kwargs, "nuts": None})
@@ -257,8 +274,8 @@ def facets(
     where_dates = filt.build_where(**{**kwargs, "pub_from": None, "pub_to": None, "deadline_from": None, "deadline_to": None})
     where_budget = filt.build_where(**{**kwargs, "budget_min": None, "budget_max": None})
 
-    pub_b = fac.month_buckets(pub_from, pub_to, cap=36)
-    plazo_b = fac.month_buckets(deadline_from, deadline_to, cap=36)
+    pub_b = fac.month_buckets(pub_from, pub_to, cap=24)
+    plazo_b = fac.month_buckets(deadline_from, deadline_to, cap=24)
     budg_b = fac.budget_buckets()
     # Categorical group-bys: (Weaviate prop name, response alias)
     cat_fields = [
@@ -295,8 +312,10 @@ def facets(
         r.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"weaviate error: {exc}")
-    return fac.parse_aggregate(r.json(), pub_b, plazo_b, budg_b,
-                               extra_groupby=[alias for _, alias in cat_fields])
+    result = fac.parse_aggregate(r.json(), pub_b, plazo_b, budg_b,
+                                extra_groupby=[alias for _, alias in cat_fields])
+    _facets_cache[cache_key] = (time.time(), result)
+    return result
 
 
 class ResultRef(BaseModel):
