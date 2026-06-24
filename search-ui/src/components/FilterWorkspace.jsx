@@ -4,7 +4,6 @@ import SpainMap from './SpainMap.jsx'
 import DensitySlider from './DensitySlider.jsx'
 import StatusDiagram from './StatusLifecycle.jsx'
 import MultiCheckIcons from './MultiCheckIcons.jsx'
-import LiveResults from './LiveResults.jsx'
 import { budgetToPos, posToBudget, presetRange, todayISO } from '../filters.js'
 import { money } from '../format.js'
 import {
@@ -212,7 +211,6 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
             })}
           </nav>
           <section className="ws-view">{center()}</section>
-          <LiveResults total={total} results={previewResults} loading={loading} />
         </div>
         <div className="ws-foot">
           <button type="button" className="ws-apply" onClick={onClose}>Ver resultados</button>
