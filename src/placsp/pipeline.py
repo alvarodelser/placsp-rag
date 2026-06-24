@@ -33,11 +33,12 @@ def collapse(items: Iterable, codelists) -> tuple[dict[str, ProcurementRecord], 
     return latest, tombs
 
 class Pipeline:
-    def __init__(self, cfg, embedder, upserter, codelists):
+    def __init__(self, cfg, embedder, upserter, codelists, graph_sink=None):
         self.cfg = cfg
         self.embedder = embedder
         self.upserter = upserter
         self.codelists = codelists
+        self.graph_sink = graph_sink
 
     def is_offpeak(self, now) -> bool:
         s, e = self.cfg.offpeak_start, self.cfg.offpeak_end
@@ -73,6 +74,12 @@ class Pipeline:
         vectors = self.embedder.embed(texts) if recs else []
         upserted = self.upserter.upsert(recs, vectors) if recs else 0
         deleted = self.upserter.apply_tombstones(tombs) if tombs else 0
+        if self.graph_sink is not None:
+            try:
+                self.graph_sink.upsert(recs)
+                self.graph_sink.apply_tombstones(tombs)
+            except Exception as exc:
+                log.error("graph_sink_failed", category=category, error=str(exc))
         log.info("processed", category=category, files=len(paths), upserted=upserted, deleted=deleted, skipped=skipped)
         return {"records": len(recs) + skipped, "upserted": upserted, "deleted": deleted, "skipped": skipped}
 

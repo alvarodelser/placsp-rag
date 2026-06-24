@@ -17,6 +17,9 @@ class Config:
     offpeak_start: int
     offpeak_end: int
     request_timeout: float
+    neo4j_url: str
+    neo4j_user: str
+    neo4j_password: str
 
 def load_config() -> Config:
     return Config(
@@ -32,4 +35,7 @@ def load_config() -> Config:
         offpeak_start=int(_env("PLACSP_OFFPEAK_START", "22")),
         offpeak_end=int(_env("PLACSP_OFFPEAK_END", "7")),
         request_timeout=float(_env("PLACSP_TIMEOUT", "600")),
+        neo4j_url=_env("NEO4J_URL", ""),
+        neo4j_user=_env("NEO4J_USER", "neo4j"),
+        neo4j_password=_env("NEO4J_PASSWORD", ""),
     )

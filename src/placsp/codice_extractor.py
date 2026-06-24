@@ -129,7 +129,7 @@ def extract(raw: RawEntry, codelists: Optional[Codelists] = None) -> Procurement
     rec.sme_awarded = {"true": True, "false": False}.get((sme or "").lower()) if sme else None
 
     # lots
-    from .models import Lot
+    from .models import Lot, LotResult
     for lot_el in (cfs.xpath("cac:ProcurementProjectLot", namespaces=NS) if cfs is not None else []):
         lid = lot_el.xpath("cbc:ID/text()", namespaces=NS)
         name = lot_el.xpath("cac:ProcurementProject/cbc:Name/text()", namespaces=NS)
@@ -139,5 +139,50 @@ def extract(raw: RawEntry, codelists: Optional[Codelists] = None) -> Procurement
                             name=(str(name[0]).strip() if name else None),
                             amount=_num(str(amt[0]) if amt else None),
                             cpv=cpv))
+
+    # per-lot winners for the graph (separate from rec.lots / Weaviate path)
+    def _int(s):
+        try:
+            return int(float(s)) if s is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    lot_meta = {}  # lot_id -> (name, cpv[])
+    for lot_el in (cfs.xpath("cac:ProcurementProjectLot", namespaces=NS) if cfs is not None else []):
+        lid = lot_el.xpath("cbc:ID/text()", namespaces=NS)
+        nm = lot_el.xpath("cac:ProcurementProject/cbc:Name/text()", namespaces=NS)
+        cpv = [str(x).strip() for x in lot_el.xpath(".//cbc:ItemClassificationCode/text()", namespaces=NS)]
+        if lid:
+            lot_meta[str(lid[0]).strip()] = (str(nm[0]).strip() if nm else None, cpv)
+
+    for tr in (cfs.xpath("cac:TenderResult", namespaces=NS) if cfs is not None else []):
+        lid = tr.xpath("cac:AwardedTenderedProject/cbc:ProcurementProjectLotID/text()", namespaces=NS)
+        lot_id = str(lid[0]).strip() if lid else "0"
+        nm = tr.xpath("cac:WinningParty/cac:PartyName/cbc:Name/text()", namespaces=NS)
+        nif = tr.xpath("cac:WinningParty/cac:PartyIdentification/cbc:ID/text()", namespaces=NS)
+        amt = tr.xpath("cac:AwardedTenderedProject/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount/text()",
+                       namespaces=NS) or \
+              tr.xpath("cac:AwardedTenderedProject/cac:LegalMonetaryTotal/cbc:PayableAmount/text()", namespaces=NS)
+        adate = tr.xpath("cbc:AwardDate/text()", namespaces=NS)
+        sme = tr.xpath("cbc:SMEAwardedIndicator/text()", namespaces=NS)
+        nbids = tr.xpath("cbc:ReceivedTenderQuantity/text()", namespaces=NS)
+        nsme = tr.xpath("cbc:SMEsReceivedTenderQuantity/text()", namespaces=NS)
+        low = tr.xpath("cbc:LowerTenderAmount/text()", namespaces=NS)
+        high = tr.xpath("cbc:HigherTenderAmount/text()", namespaces=NS)
+        meta = lot_meta.get(lot_id, (None, []))
+        rec.lot_results.append(LotResult(
+            lot_id=lot_id,
+            winner_name=(str(nm[0]).strip() if nm else None),
+            winner_nif=(str(nif[0]).strip() if nif else None),
+            amount=_num(str(amt[0]) if amt else None),
+            award_date=(str(adate[0]).strip() if adate else None),
+            sme_awarded={"true": True, "false": False}.get((str(sme[0]).lower() if sme else "")),
+            n_bids=_int(str(nbids[0]) if nbids else None),
+            n_sme_bids=_int(str(nsme[0]) if nsme else None),
+            lower_tender_amount=_num(str(low[0]) if low else None),
+            higher_tender_amount=_num(str(high[0]) if high else None),
+            name=meta[0],
+            cpv=meta[1],
+        ))
 
     return rec
