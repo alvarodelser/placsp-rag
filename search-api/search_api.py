@@ -286,11 +286,6 @@ def facets(
         fac.agg_total(CLASS, where_result,        alias="t_result"),
         fac.agg_total(CLASS, where_contract_type, alias="t_contract_type"),
         fac.agg_total(CLASS, where_procedure,     alias="t_procedure"),
-        fac.agg_groupby_field(CLASS, where_nuts,           "nuts",               "nuts"),
-        fac.agg_groupby_field(CLASS, where_status,         "status_code",        "status"),
-        fac.agg_groupby_field(CLASS, where_result,         "result_code",        "result"),
-        fac.agg_groupby_field(CLASS, where_contract_type,  "contract_type_code", "contract_type"),
-        fac.agg_groupby_field(CLASS, where_procedure,      "procedure_code",     "procedure"),
     ]
     gql = fac.wrap_aggregate(fields)
     try:
@@ -300,12 +295,32 @@ def facets(
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"weaviate error: {exc}")
 
-    return fac.parse_aggregate(r.json(), [], [], [],
-                               extra_groupby=["status", "result", "contract_type", "procedure"])
+    return fac.parse_aggregate(r.json(), [], [], [])
 
 
-@app.get("/api/facets/distributions")
-def facets_distributions(
+def _common_kwargs(cpv, nuts, status, result, contract_type, procedure,
+                   pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max):
+    return dict(cpv=cpv, nuts=nuts, status=status, result=result,
+                contract_type=contract_type, procedure=procedure,
+                pub_from=pub_from, pub_to=pub_to,
+                deadline_from=deadline_from, deadline_to=deadline_to,
+                budget_min=budget_min, budget_max=budget_max)
+
+
+def _run_groupby(where, wv_prop: str, alias: str) -> dict:
+    """Execute a single groupBy aggregate and return {value: count}."""
+    gql = fac.wrap_aggregate([fac.agg_groupby_field(CLASS, where, wv_prop, alias)])
+    try:
+        r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
+                       headers=_wv_headers(), timeout=30)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"weaviate error: {exc}")
+    return fac.parse_groupby(r.json(), alias)
+
+
+@app.get("/api/facets/budget")
+def facets_budget(
     cpv: list[str] | None = Query(None),
     nuts: list[str] | None = Query(None),
     status: list[str] | None = Query(None),
@@ -319,28 +334,46 @@ def facets_distributions(
     budget_min: float | None = Query(None),
     budget_max: float | None = Query(None),
 ):
-    """Budget histogram + date histograms via groupBy on pre-bucketed fields.
-    3 Weaviate queries instead of 60+. Called lazily when the user opens the
-    Budget or Dates tab in the filter panel.
-    """
-    kwargs = dict(
-        cpv=cpv, nuts=nuts, status=status, result=result,
-        contract_type=contract_type, procedure=procedure,
-        pub_from=pub_from, pub_to=pub_to,
-        deadline_from=deadline_from, deadline_to=deadline_to,
-        budget_min=budget_min, budget_max=budget_max,
-    )
-    # Each dimension excludes its own filter so the user sees the full range.
-    where_budget = filt.build_where(**{**kwargs, "budget_min": None, "budget_max": None})
-    where_dates  = filt.build_where(**{**kwargs,
-                                       "pub_from": None, "pub_to": None,
-                                       "deadline_from": None, "deadline_to": None})
+    """Budget histogram — 1 groupBy query. Excludes budget filter so the full range is visible."""
+    kwargs = _common_kwargs(cpv, nuts, status, result, contract_type, procedure,
+                            pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max)
+    where = filt.build_where(**{**kwargs, "budget_min": None, "budget_max": None})
+    budg_b = fac.budget_buckets()
+    gql = fac.wrap_aggregate([fac.agg_dist_groupby(CLASS, where, "budget_bucket", "budget")])
+    try:
+        r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
+                       headers=_wv_headers(), timeout=30)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"weaviate error: {exc}")
+    return fac.parse_distributions(r.json(), budg_b)
 
+
+@app.get("/api/facets/dates")
+def facets_dates(
+    cpv: list[str] | None = Query(None),
+    nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None),
+    result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None),
+    procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None),
+    pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None),
+    deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None),
+    budget_max: float | None = Query(None),
+):
+    """Date histograms — 2 groupBy queries. Excludes date filters so the full timeline is visible."""
+    kwargs = _common_kwargs(cpv, nuts, status, result, contract_type, procedure,
+                            pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max)
+    where = filt.build_where(**{**kwargs,
+                                "pub_from": None, "pub_to": None,
+                                "deadline_from": None, "deadline_to": None})
     budg_b = fac.budget_buckets()
     fields = [
-        fac.agg_dist_groupby(CLASS, where_budget, "budget_bucket",   "budget"),
-        fac.agg_dist_groupby(CLASS, where_dates,  "pub_month",       "pub_month"),
-        fac.agg_dist_groupby(CLASS, where_dates,  "deadline_month",  "deadline_month"),
+        fac.agg_dist_groupby(CLASS, where, "pub_month",      "pub_month"),
+        fac.agg_dist_groupby(CLASS, where, "deadline_month", "deadline_month"),
     ]
     gql = fac.wrap_aggregate(fields)
     try:
@@ -349,8 +382,132 @@ def facets_distributions(
         r.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"weaviate error: {exc}")
-
     return fac.parse_distributions(r.json(), budg_b)
+
+
+def _cat_endpoint(cpv, nuts, status, result, contract_type, procedure,
+                  pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max,
+                  exclude: str, wv_prop: str, alias: str):
+    kwargs = _common_kwargs(cpv, nuts, status, result, contract_type, procedure,
+                            pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max)
+    where = filt.build_where(**{**kwargs, exclude: None})
+    return _run_groupby(where, wv_prop, alias)
+
+
+def _cat_params():
+    """Shared Query params for all per-tab categorical endpoints."""
+    return (Query(None), Query(None), Query(None), Query(None), Query(None), Query(None),
+            Query(None), Query(None), Query(None), Query(None), Query(None), Query(None))
+
+
+@app.get("/api/facets/location")
+def facets_location(
+    cpv: list[str] | None = Query(None), nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None), result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None), procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None), pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None), deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None), budget_max: float | None = Query(None),
+):
+    return _cat_endpoint(cpv, nuts, status, result, contract_type, procedure,
+                         pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max,
+                         exclude="nuts", wv_prop="nuts", alias="nuts")
+
+
+@app.get("/api/facets/status")
+def facets_status(
+    cpv: list[str] | None = Query(None), nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None), result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None), procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None), pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None), deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None), budget_max: float | None = Query(None),
+):
+    return _cat_endpoint(cpv, nuts, status, result, contract_type, procedure,
+                         pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max,
+                         exclude="status", wv_prop="status_code", alias="status")
+
+
+@app.get("/api/facets/result")
+def facets_result(
+    cpv: list[str] | None = Query(None), nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None), result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None), procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None), pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None), deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None), budget_max: float | None = Query(None),
+):
+    return _cat_endpoint(cpv, nuts, status, result, contract_type, procedure,
+                         pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max,
+                         exclude="result", wv_prop="result_code", alias="result")
+
+
+@app.get("/api/facets/type")
+def facets_type(
+    cpv: list[str] | None = Query(None), nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None), result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None), procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None), pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None), deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None), budget_max: float | None = Query(None),
+):
+    return _cat_endpoint(cpv, nuts, status, result, contract_type, procedure,
+                         pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max,
+                         exclude="contract_type", wv_prop="contract_type_code", alias="contract_type")
+
+
+@app.get("/api/facets/procedure")
+def facets_procedure(
+    cpv: list[str] | None = Query(None), nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None), result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None), procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None), pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None), deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None), budget_max: float | None = Query(None),
+):
+    return _cat_endpoint(cpv, nuts, status, result, contract_type, procedure,
+                         pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max,
+                         exclude="procedure", wv_prop="procedure_code", alias="procedure")
+
+
+@app.get("/api/facets/cpv")
+def facets_cpv(
+    codes: list[str] | None = Query(None),   # CPV codes visible in current miller column
+    cpv: list[str] | None = Query(None), nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None), result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None), procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None), pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None), deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None), budget_max: float | None = Query(None),
+):
+    """Count documents per CPV node for the visible miller column.
+    `codes` = the CPV codes currently shown in the active column (max ~50).
+    Runs one alias per code (prefix-match), all in a single GraphQL request.
+    """
+    visible = (codes or [])[:50]
+    if not visible:
+        return {}
+    kwargs = _common_kwargs(cpv, nuts, status, result, contract_type, procedure,
+                            pub_from, pub_to, deadline_from, deadline_to, budget_min, budget_max)
+    base_where = filt.build_where(**{**kwargs, "cpv": None})
+    fields = []
+    for i, code in enumerate(visible):
+        code_where = filt.cpv_code_where(code)
+        combined   = ({"operator": "And", "operands": [base_where, code_where]}
+                      if base_where else code_where)
+        fields.append(fac.agg_total(CLASS, combined, alias=f"c{i}"))
+    gql = fac.wrap_aggregate(fields)
+    try:
+        r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
+                       headers=_wv_headers(), timeout=30)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"weaviate error: {exc}")
+    agg = ((r.json().get("data") or {}).get("Aggregate") or {})
+    return {
+        code: ((agg.get(f"c{i}") or [{}])[0].get("meta") or {}).get("count", 0)
+        for i, code in enumerate(visible)
+    }
 
 
 class ResultRef(BaseModel):

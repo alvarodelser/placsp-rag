@@ -1,16 +1,38 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import cpvMap from '../codelists/cpv.json'
 import { columns } from '../miller.js'
 import { cpvPath } from '../cpv.js'
 import { MagnifyingGlass, CaretRight, X } from '../icons.js'
+import { cpvDist } from '../api.js'
 
 const ENTRIES = Object.entries(cpvMap)
 
-export default function CpvMiller({ value, onChange }) {
+function useCpvCounts(activeCodes, filterParams) {
+  const [counts, setCounts] = useState({})
+  const cacheRef = useRef({})
+  const key = activeCodes.join(',') + '|' + JSON.stringify(filterParams)
+  useEffect(() => {
+    if (!activeCodes.length) return
+    if (cacheRef.current[key]) { setCounts(cacheRef.current[key]); return }
+    let cancelled = false
+    cpvDist({ ...filterParams, codes: activeCodes })
+      .then(d => { if (!cancelled) { cacheRef.current[key] = d; setCounts(d) } })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  return counts
+}
+
+export default function CpvMiller({ value, onChange, filterParams = {} }) {
   const [path, setPath] = useState([])
   const [term, setTerm] = useState('')
 
   const cols = useMemo(() => columns(path, cpvMap), [path])
+  const activeCodes = useMemo(
+    () => (cols[cols.length - 1]?.items || []).map(i => i.code),
+    [cols]
+  )
+  const counts = useCpvCounts(activeCodes, filterParams)
   const matches = useMemo(() => {
     const t = term.trim().toLowerCase()
     if (t.length < 2) return []
@@ -45,20 +67,26 @@ export default function CpvMiller({ value, onChange }) {
         </ul>
       ) : (
         <div className="cm-cols">
-          {cols.map((col, depth) => (
-            <div className="cm-col" key={depth}>
-              {col.items.map(({ code, label }) => (
-                <div key={code}
-                  className={`cm-item${col.activeCode === code ? ' path' : ''}`}
-                  onClick={() => drill(depth, code)}>
-                  <span className="cm-label"><span className="cpv-code">{code}</span> {label}</span>
-                  <button type="button" className="cm-add" aria-label="Añadir"
-                    onClick={(e) => { e.stopPropagation(); add(code) }}>+</button>
-                  <CaretRight size={12} />
-                </div>
-              ))}
-            </div>
-          ))}
+          {cols.map((col, depth) => {
+            const isActive = depth === cols.length - 1
+            return (
+              <div className="cm-col" key={depth}>
+                {col.items.map(({ code, label }) => (
+                  <div key={code}
+                    className={`cm-item${col.activeCode === code ? ' path' : ''}`}
+                    onClick={() => drill(depth, code)}>
+                    <span className="cm-label"><span className="cpv-code">{code}</span> {label}</span>
+                    {isActive && counts[code] != null && (
+                      <span className="cm-count">{counts[code].toLocaleString('es-ES')}</span>
+                    )}
+                    <button type="button" className="cm-add" aria-label="Añadir"
+                      onClick={(e) => { e.stopPropagation(); add(code) }}>+</button>
+                    <CaretRight size={12} />
+                  </div>
+                ))}
+              </div>
+            )
+          })}
         </div>
       )}
       {value.length > 0 && (

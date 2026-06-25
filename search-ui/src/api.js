@@ -32,13 +32,23 @@ export async function facets(params) {
   return data
 }
 
-export async function distributions(params) {
-  const url = `${BASE}/api/facets/distributions?${buildQuery(params)}`
-  const r = await fetch(url)
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.detail || r.statusText || 'request failed')
-  return data
+function tabFetcher(path) {
+  return async (params) => {
+    const r = await fetch(`${BASE}${path}?${buildQuery(params)}`)
+    const data = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(data.detail || r.statusText || 'request failed')
+    return data
+  }
 }
+
+export const budgetDist   = tabFetcher('/api/facets/budget')
+export const datesDist    = tabFetcher('/api/facets/dates')
+export const locationDist = tabFetcher('/api/facets/location')
+export const statusDist   = tabFetcher('/api/facets/status')
+export const resultDist   = tabFetcher('/api/facets/result')
+export const typeDist     = tabFetcher('/api/facets/type')
+export const procedureDist= tabFetcher('/api/facets/procedure')
+export const cpvDist      = tabFetcher('/api/facets/cpv')
 
 async function feedbackRequest(method, body) {
   const r = await fetch(`${BASE}/api/feedback`, {

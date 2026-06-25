@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { distributions } from '../api.js'
+import {
+  budgetDist, datesDist, locationDist,
+  statusDist, resultDist, typeDist, procedureDist,
+} from '../api.js'
 import { filtersToParams } from '../filters.js'
 import CpvMiller from './CpvMiller.jsx'
 import SpainMap from './SpainMap.jsx'
@@ -98,41 +101,54 @@ function fmtAvail(n) {
   return String(n)
 }
 
-const DIST_TABS = new Set(['budget', 'dates'])
+function useLazyTab(active, tabId, filters, fetcher) {
+  const [data, setData]       = useState(null)
+  const [loading, setLoading] = useState(false)
+  const keyRef = useRef(null)
+  useEffect(() => {
+    if (active !== tabId) return
+    const key = JSON.stringify(filtersToParams(filters))
+    if (key === keyRef.current) return
+    let cancelled = false
+    setLoading(true)
+    fetcher(filtersToParams(filters))
+      .then(d  => { if (!cancelled) { setData(d); keyRef.current = key } })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [active, filters]) // eslint-disable-line react-hooks/exhaustive-deps
+  return { data, loading }
+}
 
 export default function FilterWorkspace({ filters, patch, setList, facetsData, total, previewResults, loading, onClose }) {
   const [active, setActive] = useState('cpv')
   const [dateAxis, setDateAxis] = useState('publication')
 
-  // Lazy distributions — fetched only when the budget/dates tab is opened,
-  // re-fetched only when filters change while on those tabs.
-  const [distData, setDistData]       = useState(null)
-  const [distLoading, setDistLoading] = useState(false)
-  const distKeyRef = useRef(null)
-
-  useEffect(() => {
-    if (!DIST_TABS.has(active)) return
-    const key = JSON.stringify(filtersToParams(filters))
-    if (key === distKeyRef.current) return
-    let cancelled = false
-    setDistLoading(true)
-    distributions(filtersToParams(filters))
-      .then(d  => { if (!cancelled) { setDistData(d); distKeyRef.current = key } })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setDistLoading(false) })
-    return () => { cancelled = true }
-  }, [active, filters])
+  const { data: locationData,  loading: locationLoading }  = useLazyTab(active, 'nuts',          filters, locationDist)
+  const { data: statusData,    loading: statusLoading }    = useLazyTab(active, 'status',        filters, statusDist)
+  const { data: resultData,    loading: resultLoading }    = useLazyTab(active, 'result',        filters, resultDist)
+  const { data: typeData,      loading: typeLoading }      = useLazyTab(active, 'contract_type', filters, typeDist)
+  const { data: procedureData, loading: procedureLoading } = useLazyTab(active, 'procedure',     filters, procedureDist)
+  const { data: budgetData,    loading: budgetLoading }    = useLazyTab(active, 'budget',        filters, budgetDist)
+  const { data: datesData,     loading: datesLoading }     = useLazyTab(active, 'dates',         filters, datesDist)
 
   const center = () => {
     switch (active) {
       case 'cpv':
-        return <CpvMiller value={filters.cpv} onChange={(v) => setList('cpv', v)} />
+        return (
+          <CpvMiller
+            value={filters.cpv}
+            onChange={(v) => setList('cpv', v)}
+            filterParams={filtersToParams(filters)}
+          />
+        )
 
       case 'nuts':
         return (
           <SpainMap
             value={filters.nuts}
-            counts={facetsData?.nuts || {}}
+            counts={locationData?.nuts || {}}
+            loading={locationLoading}
             onChange={(v) => setList('nuts', v)}
           />
         )
@@ -141,7 +157,8 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
         return (
           <StatusDiagram
             value={filters.status}
-            counts={facetsData?.status || {}}
+            counts={statusData?.status || {}}
+            loading={statusLoading}
             onChange={(v) => setList('status', v)}
           />
         )
@@ -153,7 +170,8 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
             value={filters.result}
             onChange={(v) => setList('result', v)}
             icons={RESULT_ICONS}
-            counts={facetsData?.result || {}}
+            counts={resultData?.result || {}}
+            loading={resultLoading}
           />
         )
 
@@ -164,7 +182,8 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
             value={filters.contract_type}
             onChange={(v) => setList('contract_type', v)}
             icons={TYPE_ICONS}
-            counts={facetsData?.contract_type || {}}
+            counts={typeData?.contract_type || {}}
+            loading={typeLoading}
           />
         )
 
@@ -175,7 +194,8 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
             value={filters.procedure}
             onChange={(v) => setList('procedure', v)}
             icons={PROC_ICONS}
-            counts={facetsData?.procedure || {}}
+            counts={procedureData?.procedure || {}}
+            loading={procedureLoading}
           />
         )
 
@@ -183,11 +203,11 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
         const lo = Number(filters.budget_min) || 1000
         const hi = Number(filters.budget_max) || 100000000
         return (
-          <div className={distLoading ? 'dist-loading' : ''}>
+          <div className={budgetLoading ? 'dist-loading' : ''}>
             <DensitySlider
               min={1000} max={100000000}
               low={lo} high={hi}
-              density={(distData?.budget || []).map((b) => b.count)}
+              density={(budgetData?.budget || []).map((b) => b.count)}
               toPos={budgetToPos}
               toValue={posToBudget}
               format={(v) => money(v)}
@@ -198,7 +218,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
       }
 
       case 'dates': {
-        const series = (distData?.dates?.[dateAxis] || [])
+        const series = (datesData?.dates?.[dateAxis] || [])
         const months = series.map((s) => s.month)
         const n = Math.max(0, months.length - 1)
 
@@ -217,7 +237,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
               <button className={dateAxis === 'publication' ? 'on' : ''} onClick={() => setDateAxis('publication')}>Publicación</button>
               <button className={dateAxis === 'plazo' ? 'on' : ''} onClick={() => setDateAxis('plazo')}>Plazo de presentación</button>
             </div>
-            {distLoading ? (
+            {datesLoading ? (
               <div className="ds-skel" aria-hidden="true" />
             ) : months.length > 1 ? (
               <DensitySlider

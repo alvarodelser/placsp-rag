@@ -87,6 +87,14 @@ def where_to_gql(where: dict) -> str:
     return f"where: {_node_to_gql(where)}"
 
 
+def cpv_code_where(code: str) -> dict:
+    """WHERE clause that matches documents whose cpv array contains any code
+    under the given CPV node (uses its significant prefix, e.g. '45' for '45000000')."""
+    d = code.replace('-', '').ljust(8, '0')[:8]
+    prefix = d[:max(len(d.rstrip('0')), 2)]
+    return {"path": ["cpv"], "operator": "Like", "valueText": f"{prefix}*"}
+
+
 def build_sort(sort: str | None) -> list[dict]:
     if not sort:
         return list(_DEFAULT_SORT)

@@ -163,6 +163,7 @@ main { padding: 22px 0 72px; }
 .cm-item.path { background: var(--accent-soft); color: var(--accent-ink); }
 .cm-label { flex: 1; min-width: 0; }
 .cm-add { border: 1px solid var(--line); background: #fff; border-radius: 6px; color: var(--accent); width: 20px; height: 20px; padding: 0; }
+.cm-count { font-size: 11px; color: var(--muted); flex-shrink: 0; }
 .cm-matches { list-style: none; margin: 10px 0 0; padding: 0; max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .cm-matches li { padding: 7px 9px; cursor: pointer; font-size: 13px; }
 .cm-matches li:hover { background: var(--accent-soft); }

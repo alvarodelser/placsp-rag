@@ -155,6 +155,17 @@ def parse_aggregate(
     return result
 
 
+def parse_groupby(res: dict, alias: str) -> dict:
+    """Parse a single-alias groupBy Aggregate response → {value: count}."""
+    agg = ((res.get("data") or {}).get("Aggregate") or {})
+    out = {}
+    for g in (agg.get(alias) or []):
+        val = (g.get("groupedBy") or {}).get("value")
+        if val:
+            out[val] = g.get("meta", {}).get("count", 0)
+    return out
+
+
 def agg_dist_groupby(class_name: str, where: dict | None, field: str, alias: str) -> str:
     """GroupBy aggregate on a pre-bucketed text field (budget_bucket / pub_month / deadline_month)."""
     extra = f'groupBy: ["{field}"]'
