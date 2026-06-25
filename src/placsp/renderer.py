@@ -1,8 +1,33 @@
+import math
 import re
 from dataclasses import asdict
 from .models import ProcurementRecord
 
-_DATE_ONLY = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})")
+_DATE_ONLY  = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})")
+_MONTH_ONLY = re.compile(r"(\d{4}-\d{2})")
+
+# Log-space budget buckets — must stay in sync with facets.py budget_buckets().
+_B_MIN   = 1_000
+_B_MAX   = 100_000_000
+_B_LMIN  = math.log(_B_MIN)
+_B_LSPAN = math.log(_B_MAX) - _B_LMIN
+_B_NUM   = 15
+
+
+def _budget_bucket(amount) -> str | None:
+    if amount is None or amount <= 0:
+        return None
+    if amount < _B_MIN:
+        return "b00"
+    if amount >= _B_MAX:
+        return f"b{_B_NUM - 1:02d}"
+    t = (math.log(amount) - _B_LMIN) / _B_LSPAN
+    return f"b{min(int(t * _B_NUM), _B_NUM - 1):02d}"
+
+
+def _month(date_str) -> str | None:
+    m = _MONTH_ONLY.search(date_str or "")
+    return m.group(1) if m else None
 
 def _money(v):
     return f"{v:,.2f} EUR" if v is not None else None
@@ -61,6 +86,10 @@ def render(rec: ProcurementRecord) -> tuple[str, dict]:
             continue
         m = _DATE_ONLY.match(v)
         props[f] = m.group(1) + "T00:00:00Z" if m else None
+    props["budget_bucket"]   = _budget_bucket(rec.budget_amount)
+    props["pub_month"]       = _month(rec.publication_date)
+    props["deadline_month"]  = _month(rec.submission_deadline)
+
     # drop empty/None scalars (keep required + lists)
     keep_always = {"syndication_id", "category", "content", "status_history", "lots", "cpv", "document_urls"}
     props = {k: v for k, v in props.items()

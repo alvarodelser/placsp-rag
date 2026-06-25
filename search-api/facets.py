@@ -121,8 +121,15 @@ def parse_aggregate(
     nuts = _groupby_counts("nuts")
 
     def _series(buckets, prefix):
-        return [{"month": b.get("month"), "min": b.get("min"), "max": b.get("max"), "count": _count(f"{prefix}{i}")}
-                for i, b in enumerate(buckets)]
+        out = []
+        for i, b in enumerate(buckets):
+            entry = {"count": _count(f"{prefix}{i}")}
+            for k in ("month", "min", "max"):
+                v = b.get(k)
+                if v is not None:
+                    entry[k] = v
+            out.append(entry)
+        return out
 
     result = {
         "total": _count("total"),
@@ -146,6 +153,47 @@ def parse_aggregate(
     for alias in extra_groupby:
         result[alias] = _groupby_counts(alias)
     return result
+
+
+def agg_dist_groupby(class_name: str, where: dict | None, field: str, alias: str) -> str:
+    """GroupBy aggregate on a pre-bucketed text field (budget_bucket / pub_month / deadline_month)."""
+    extra = f'groupBy: ["{field}"]'
+    return (f"{alias}: {class_name}{_args(where, extra)} "
+            "{ groupedBy { value } meta { count } }")
+
+
+def parse_distributions(res: dict, budg_buckets: list[dict]) -> dict:
+    """Parse /api/facets/distributions response (3 groupBy queries)."""
+    agg = ((res.get("data") or {}).get("Aggregate") or {})
+
+    def _gb(alias):
+        out = {}
+        for g in (agg.get(alias) or []):
+            val = (g.get("groupedBy") or {}).get("value")
+            if val:
+                out[val] = g.get("meta", {}).get("count", 0)
+        return out
+
+    budget_counts   = _gb("budget")
+    pub_counts      = _gb("pub_month")
+    deadline_counts = _gb("deadline_month")
+
+    budget = [
+        {"min": b.get("min"), "max": b.get("max"),
+         "count": budget_counts.get(f"b{i:02d}", 0)}
+        for i, b in enumerate(budg_buckets)
+    ]
+
+    pub_months      = sorted(pub_counts)[-36:]
+    deadline_months = sorted(deadline_counts)[-36:]
+
+    return {
+        "budget": budget,
+        "dates": {
+            "publication": [{"month": m, "count": pub_counts[m]}      for m in pub_months],
+            "plazo":        [{"month": m, "count": deadline_counts[m]} for m in deadline_months],
+        },
+    }
 
 
 def agg_month_counts(class_name, base_where, date_field, buckets, prefix="m"):

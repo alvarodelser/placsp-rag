@@ -68,8 +68,8 @@ def test_parse_aggregate_response():
             {"groupedBy": {"value": "ES300"}, "meta": {"count": 900}},
             {"groupedBy": {"value": "ES511"}, "meta": {"count": 384}},
         ],
-        "m0": [{"meta": {"count": 10}}],
-        "m1": [{"meta": {"count": 20}}],
+        "m_0": [{"meta": {"count": 10}}],
+        "m_1": [{"meta": {"count": 20}}],
     }}}
     pub = [{"month": "2026-05"}, {"month": "2026-06"}]
     out = fac.parse_aggregate(raw, pub_buckets=pub, plazo_buckets=[])

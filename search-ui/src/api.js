@@ -32,6 +32,14 @@ export async function facets(params) {
   return data
 }
 
+export async function distributions(params) {
+  const url = `${BASE}/api/facets/distributions?${buildQuery(params)}`
+  const r = await fetch(url)
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'request failed')
+  return data
+}
+
 async function feedbackRequest(method, body) {
   const r = await fetch(`${BASE}/api/feedback`, {
     method,

@@ -12,6 +12,7 @@ def _props():
         "contracting_authority_id", "org_top_level", "adjudicatario",
         "adjudicatario_nif", "nuts", "nuts_label", "city", "country", "funding_program"]]
     out += [{"name": n, "dataType": ["text[]"]} for n in ["cpv", "document_urls"]]
+    out += [text(n) for n in ["budget_bucket", "pub_month", "deadline_month"]]
     out += [num("budget_amount"), num("estimated_value"), num("awarded_amount"),
             {"name": "n_bids", "dataType": ["int"]},
             {"name": "sme_awarded", "dataType": ["boolean"]}]

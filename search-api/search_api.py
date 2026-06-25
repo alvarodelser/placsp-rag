@@ -12,11 +12,9 @@ Env:
   CORS_ORIGINS      comma-separated allowed origins, default "*"
 Run:  uvicorn search_api:app --host 0.0.0.0 --port 8092
 """
-import hashlib
 import json
 import os
 import subprocess
-import time
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
@@ -33,16 +31,6 @@ WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8087").rstrip("/")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY", "")
 CLASS = os.getenv("PLACSP_CLASS", "Placsp_licitaciones")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
-
-# Simple TTL cache for /api/facets — the aggregate query is expensive (many
-# Weaviate aggregate calls). Cache for 5 minutes per unique filter combination.
-_facets_cache: dict[str, tuple[float, dict]] = {}
-_FACETS_TTL = 300  # seconds
-
-
-def _facets_key(**kwargs) -> str:
-    normalized = {k: sorted(v) if isinstance(v, list) else v for k, v in kwargs.items()}
-    return hashlib.sha1(json.dumps(normalized, sort_keys=True).encode()).hexdigest()
 
 
 def _resolve_version() -> str:
@@ -236,6 +224,26 @@ def weaviate_company_search(
     return {"query": q, "count": len(results), "results": results}
 
 
+_FILTER_PARAMS = dict(
+    cpv=None, nuts=None, status=None, result=None,
+    contract_type=None, procedure=None,
+    pub_from=None, pub_to=None,
+    deadline_from=None, deadline_to=None,
+    budget_min=None, budget_max=None,
+)
+
+def _filter_query_params():
+    return dict(
+        q=Query(None),
+        cpv=Query(None), nuts=Query(None), status=Query(None), result=Query(None),
+        contract_type=Query(None), procedure=Query(None),
+        pub_from=Query(None), pub_to=Query(None),
+        deadline_from=Query(None), deadline_to=Query(None),
+        budget_min=Query(None, alias="budget_min"),
+        budget_max=Query(None, alias="budget_max"),
+    )
+
+
 @app.get("/api/facets")
 def facets(
     q: str | None = Query(None),
@@ -252,6 +260,9 @@ def facets(
     budget_min: float | None = Query(None),
     budget_max: float | None = Query(None),
 ):
+    """Fast facets: total count + group-by counts for all categorical dims.
+    Budget/date histograms are served separately by /api/facets/distributions.
+    """
     kwargs = dict(
         cpv=cpv, nuts=nuts, status=status, result=result,
         contract_type=contract_type, procedure=procedure,
@@ -259,63 +270,87 @@ def facets(
         deadline_from=deadline_from, deadline_to=deadline_to,
         budget_min=budget_min, budget_max=budget_max,
     )
-    cache_key = _facets_key(**kwargs)
-    cached = _facets_cache.get(cache_key)
-    if cached and time.time() - cached[0] < _FACETS_TTL:
-        return cached[1]
-
-    where = filt.build_where(**kwargs)
-    where_cpv = filt.build_where(**{**kwargs, "cpv": None})
-    where_nuts = filt.build_where(**{**kwargs, "nuts": None})
-    where_status = filt.build_where(**{**kwargs, "status": None})
-    where_result = filt.build_where(**{**kwargs, "result": None})
+    where               = filt.build_where(**kwargs)
+    where_cpv           = filt.build_where(**{**kwargs, "cpv": None})
+    where_nuts          = filt.build_where(**{**kwargs, "nuts": None})
+    where_status        = filt.build_where(**{**kwargs, "status": None})
+    where_result        = filt.build_where(**{**kwargs, "result": None})
     where_contract_type = filt.build_where(**{**kwargs, "contract_type": None})
-    where_procedure = filt.build_where(**{**kwargs, "procedure": None})
-    where_dates = filt.build_where(**{**kwargs, "pub_from": None, "pub_to": None, "deadline_from": None, "deadline_to": None})
-    where_budget = filt.build_where(**{**kwargs, "budget_min": None, "budget_max": None})
+    where_procedure     = filt.build_where(**{**kwargs, "procedure": None})
 
-    pub_b = fac.month_buckets(pub_from, pub_to, cap=24)
-    plazo_b = fac.month_buckets(deadline_from, deadline_to, cap=24)
-    budg_b = fac.budget_buckets()
-    # Categorical group-bys: (Weaviate prop name, response alias)
-    cat_fields = [
-        ("status_code",        "status"),
-        ("result_code",        "result"),
-        ("contract_type_code", "contract_type"),
-        ("procedure_code",     "procedure"),
-    ]
     fields = [
         fac.agg_total(CLASS, where),
-        fac.agg_total(CLASS, where_cpv, alias="t_cpv"),
-        fac.agg_total(CLASS, where_nuts, alias="t_nuts"),
-        fac.agg_total(CLASS, where_status, alias="t_status"),
-        fac.agg_total(CLASS, where_result, alias="t_result"),
+        fac.agg_total(CLASS, where_cpv,           alias="t_cpv"),
+        fac.agg_total(CLASS, where_nuts,          alias="t_nuts"),
+        fac.agg_total(CLASS, where_status,        alias="t_status"),
+        fac.agg_total(CLASS, where_result,        alias="t_result"),
         fac.agg_total(CLASS, where_contract_type, alias="t_contract_type"),
-        fac.agg_total(CLASS, where_procedure, alias="t_procedure"),
-        fac.agg_total(CLASS, where_dates, alias="t_dates"),
-        fac.agg_total(CLASS, where_budget, alias="t_budget"),
-        
-        fac.agg_groupby_field(CLASS, where_nuts, "nuts", "nuts"),
-        fac.agg_groupby_field(CLASS, where_status, "status_code", "status"),
-        fac.agg_groupby_field(CLASS, where_result, "result_code", "result"),
-        fac.agg_groupby_field(CLASS, where_contract_type, "contract_type_code", "contract_type"),
-        fac.agg_groupby_field(CLASS, where_procedure, "procedure_code", "procedure"),
-        
-        *fac.agg_month_counts(CLASS, where_dates, "publication_date", pub_b, prefix="m_"),
-        *fac.agg_month_counts(CLASS, where_dates, "submission_deadline", plazo_b, prefix="p_"),
-        *fac.agg_budget_counts(CLASS, where_budget, budg_b),
+        fac.agg_total(CLASS, where_procedure,     alias="t_procedure"),
+        fac.agg_groupby_field(CLASS, where_nuts,           "nuts",               "nuts"),
+        fac.agg_groupby_field(CLASS, where_status,         "status_code",        "status"),
+        fac.agg_groupby_field(CLASS, where_result,         "result_code",        "result"),
+        fac.agg_groupby_field(CLASS, where_contract_type,  "contract_type_code", "contract_type"),
+        fac.agg_groupby_field(CLASS, where_procedure,      "procedure_code",     "procedure"),
     ]
     gql = fac.wrap_aggregate(fields)
     try:
         r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
-                       headers=_wv_headers(), timeout=120)
+                       headers=_wv_headers(), timeout=30)
         r.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"weaviate error: {exc}")
-    result = fac.parse_aggregate(r.json(), pub_b, plazo_b, budg_b,
-                                extra_groupby=[alias for _, alias in cat_fields])
-    _facets_cache[cache_key] = (time.time(), result)
-    return result
+
+    return fac.parse_aggregate(r.json(), [], [], [],
+                               extra_groupby=["status", "result", "contract_type", "procedure"])
+
+
+@app.get("/api/facets/distributions")
+def facets_distributions(
+    cpv: list[str] | None = Query(None),
+    nuts: list[str] | None = Query(None),
+    status: list[str] | None = Query(None),
+    result: list[str] | None = Query(None),
+    contract_type: list[str] | None = Query(None),
+    procedure: list[str] | None = Query(None),
+    pub_from: str | None = Query(None),
+    pub_to: str | None = Query(None),
+    deadline_from: str | None = Query(None),
+    deadline_to: str | None = Query(None),
+    budget_min: float | None = Query(None),
+    budget_max: float | None = Query(None),
+):
+    """Budget histogram + date histograms via groupBy on pre-bucketed fields.
+    3 Weaviate queries instead of 60+. Called lazily when the user opens the
+    Budget or Dates tab in the filter panel.
+    """
+    kwargs = dict(
+        cpv=cpv, nuts=nuts, status=status, result=result,
+        contract_type=contract_type, procedure=procedure,
+        pub_from=pub_from, pub_to=pub_to,
+        deadline_from=deadline_from, deadline_to=deadline_to,
+        budget_min=budget_min, budget_max=budget_max,
+    )
+    # Each dimension excludes its own filter so the user sees the full range.
+    where_budget = filt.build_where(**{**kwargs, "budget_min": None, "budget_max": None})
+    where_dates  = filt.build_where(**{**kwargs,
+                                       "pub_from": None, "pub_to": None,
+                                       "deadline_from": None, "deadline_to": None})
+
+    budg_b = fac.budget_buckets()
+    fields = [
+        fac.agg_dist_groupby(CLASS, where_budget, "budget_bucket",   "budget"),
+        fac.agg_dist_groupby(CLASS, where_dates,  "pub_month",       "pub_month"),
+        fac.agg_dist_groupby(CLASS, where_dates,  "deadline_month",  "deadline_month"),
+    ]
+    gql = fac.wrap_aggregate(fields)
+    try:
+        r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
+                       headers=_wv_headers(), timeout=30)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"weaviate error: {exc}")
+
+    return fac.parse_distributions(r.json(), budg_b)
 
 
 class ResultRef(BaseModel):
