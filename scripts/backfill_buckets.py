@@ -81,10 +81,7 @@ def main():
 
         print("Scanning objects …")
         while True:
-            params = {"class": args.cls, "limit": args.batch,
-                      "include": "vector=false",
-                      "properties": "budget_amount,publication_date,submission_deadline,"
-                                    "budget_bucket,pub_month,deadline_month"}
+            params = {"class": args.cls, "limit": args.batch}
             if cursor:
                 params["after"] = cursor
 
