@@ -43,19 +43,19 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
         {loading && <div className="modal-body"><div className="loader">Analizando...</div></div>}
         {error && <div className="modal-body error">Error: {error}</div>}
         
-        {!loading && !error && !data && (
+        {!loading && !error && !data && !analysis && (
           <div className="modal-body">
             <p>El análisis inteligente aún no está disponible para esta licitación.</p>
           </div>
         )}
 
-        {!loading && !error && data && (
+        {!loading && !error && (data || analysis) && (
           <div className="modal-body">
             <div className="tabs">
               <button className={activeTab === 'match' ? 'active' : ''} onClick={() => setActiveTab('match')}>Compatibilidad (Match)</button>
               <button className={activeTab === 'technical' ? 'active' : ''} onClick={() => setActiveTab('technical')}>Specs Técnicas (PPT)</button>
               <button className={activeTab === 'risks' ? 'active' : ''} onClick={() => setActiveTab('risks')}>Riesgos Legales (PCAP)</button>
-              <button className={activeTab === 'criteria' ? 'active' : ''} onClick={() => setActiveTab('criteria')}>Criterios de Valoración</button>
+              {data && <button className={activeTab === 'criteria' ? 'active' : ''} onClick={() => setActiveTab('criteria')}>Criterios de Valoración</button>}
             </div>
 
             <div className="tab-content">
@@ -120,7 +120,7 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
 
               )}
 
-              {activeTab === 'criteria' && (
+              {activeTab === 'criteria' && data && (
                 <div className="tab-pane">
                   <h3>Estrategia de Puntuación</h3>
                   {data.scoring_strategy_json ? (
