@@ -119,16 +119,13 @@ class NLPPipeline:
         # In a real microservice architecture, we would call an API, but since we share the volume:
         profile = self._get_user_profile(user_id)
         
-        match_score = 0
-        blockers = []
+        match_result = {}
         if profile:
             # Run generative match
             match_result = self.extractor.match_profile(profile, pcap_json, ppt_json)
-            match_score = match_result.get("match_score", 0)
-            blockers = match_result.get("blockers", [])
 
         # Save to DB
-        self._save_analysis(user_id, item_id, pcap_json, ppt_json, match_score, blockers)
+        self._save_analysis(user_id, item_id, pcap_json, ppt_json, match_result)
         log.info("nlp_pipeline_finished", syndication_id=syndication_id)
 
     def _get_user_profile(self, user_id: str) -> dict:
@@ -145,7 +142,7 @@ class NLPPipeline:
             conn.close()
         return {}
 
-    def _save_analysis(self, user_id: str, item_id: str, pcap: dict, ppt: dict, score: int, blockers: list):
+    def _save_analysis(self, user_id: str, item_id: str, pcap: dict, ppt: dict, match_result: dict):
         db_path = os.getenv("USERS_DB", "/data/users.db")
         if not os.path.exists(db_path):
             return
@@ -153,10 +150,10 @@ class NLPPipeline:
         try:
             conn.execute(
                 "INSERT OR REPLACE INTO saved_items_analysis "
-                "(user_id, item_id, pcap_json, ppt_json, match_score, blockers_json, analyzed_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(user_id, item_id, pcap_json, ppt_json, veredicto, razonamiento, requisitos_evaluados, analyzed_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (user_id, item_id, json.dumps(pcap), json.dumps(ppt),
-                 score, json.dumps(blockers), datetime.utcnow().isoformat())
+                 match_result.get("veredicto"), match_result.get("razonamiento_general"), json.dumps(match_result.get("requisitos_evaluados", [])), datetime.utcnow().isoformat())
             )
             conn.commit()
         finally:

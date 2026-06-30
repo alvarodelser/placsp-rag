@@ -65,17 +65,32 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
                   {analysis ? (
                     <div className="ai-content">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                        <div style={{ fontSize: '2rem', fontWeight: 'bold', color: analysis.match_score > 70 ? '#38a169' : '#e53e3e' }}>
-                          {analysis.match_score}%
+                        <div style={{ 
+                          fontSize: '1.5rem', fontWeight: 'bold', padding: '4px 12px', borderRadius: '4px',
+                          backgroundColor: analysis.veredicto === 'YES' ? '#c6f6d5' : analysis.veredicto === 'NO' ? '#fed7d7' : '#feebc8',
+                          color: analysis.veredicto === 'YES' ? '#276749' : analysis.veredicto === 'NO' ? '#9b2c2c' : '#c05621'
+                        }}>
+                          {analysis.veredicto === 'YES' ? 'APTO' : analysis.veredicto === 'NO' ? 'NO APTO' : 'DUDOSO'}
                         </div>
-                        <div style={{ fontSize: '1.2rem' }}>Match con tu Perfil</div>
+                        <div style={{ fontSize: '1.1rem' }}>Match con tu Perfil</div>
                       </div>
                       
-                      {analysis.blockers_json && analysis.blockers_json.length > 0 && (
-                        <div className="blockers-box">
-                          <h4 style={{ color: '#c53030' }}>⚠️ Factores Bloqueantes</h4>
-                          <ul>
-                            {analysis.blockers_json.map((b, i) => <li key={i}>{b}</li>)}
+                      {analysis.razonamiento && (
+                        <p style={{ marginBottom: '16px' }}>{analysis.razonamiento}</p>
+                      )}
+                      
+                      {analysis.requisitos_evaluados && analysis.requisitos_evaluados.length > 0 && (
+                        <div className="requirements-box">
+                          <h4>Evaluación de Requisitos</h4>
+                          <ul className="req-list">
+                            {analysis.requisitos_evaluados.map((req, i) => (
+                              <li key={i} className={req.cumple ? 'req-pass' : 'req-fail'}>
+                                <div className="req-header">
+                                  <strong>{req.cumple ? '✅' : '❌'} {req.requisito}</strong>
+                                </div>
+                                <div className="req-reason">{req.razon}</div>
+                              </li>
+                            ))}
                           </ul>
                         </div>
                       )}
@@ -201,8 +216,13 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
         .trigger-btn { background: #3182ce; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 12px; }
         .trigger-btn:hover { background: #2b6cb0; }
         .ai-content { background: #f0fff4; border: 1px solid #c6f6d5; border-radius: 6px; padding: 16px; }
-        .blockers-box { background: #fff5f5; border: 1px solid #feb2b2; padding: 12px; border-radius: 6px; margin-top: 12px; }
-        .blockers-box ul { margin: 8px 0 0 16px; padding: 0; color: #c53030; }
+        .requirements-box { background: #ffffff; border: 1px solid #e2e8f0; padding: 16px; border-radius: 6px; margin-top: 12px; }
+        .req-list { list-style: none; padding: 0; margin: 0; }
+        .req-list li { padding: 12px; border-bottom: 1px solid #edf2f7; }
+        .req-list li:last-child { border-bottom: none; }
+        .req-pass { border-left: 4px solid #48bb78; }
+        .req-fail { border-left: 4px solid #f56565; background: #fff5f5; }
+        .req-reason { margin-top: 6px; font-size: 0.9rem; color: #4a5568; }
         .loading-state { padding: 32px; text-align: center; color: #718096; background: #f7fafc; border-radius: 8px; border: 1px dashed #cbd5e0; }
       `}</style>
     </div>

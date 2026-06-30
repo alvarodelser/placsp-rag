@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../AuthContext.jsx'
-import { Tray, SignOut } from '../icons.js'
+import { Tray, SignOut, User } from '../icons.js'
 
-export default function UserMenu({ onOpenSaved }) {
+export default function UserMenu({ onOpenSaved, onOpenProfile }) {
   const { user, logout } = useAuth()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -34,6 +34,12 @@ export default function UserMenu({ onOpenSaved }) {
 
       {open && (
         <div className="user-dropdown">
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onOpenProfile?.() }}
+          >
+            <User size={16} /> Mi Perfil
+          </button>
           <button
             type="button"
             onClick={() => { setOpen(false); onOpenSaved?.() }}

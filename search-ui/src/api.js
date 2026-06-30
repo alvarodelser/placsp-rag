@@ -193,7 +193,7 @@ export async function triggerPliegosAnalysis(syndicationId) {
 
 export async function getSavedAnalysis(itemId) {
   const r = await fetch(`${BASE}/api/users/me/saved/${encodeURIComponent(itemId)}/analysis`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    credentials: 'include'
   })
   const data = await r.json().catch(() => ({}))
   if (!r.ok) {

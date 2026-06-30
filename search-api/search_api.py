@@ -17,6 +17,9 @@ import os
 import sqlite3
 import subprocess
 import urllib.parse
+import logging
+
+log = logging.getLogger(__name__)
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -864,14 +867,15 @@ def save_user_item(body: SaveItemIn,
         conn.close()
         
     # Trigger NLP pipeline asynchronously
-    try:
-        httpx.post(
-            f"http://placsp-ingester-api:8093/internal/analyze/{urllib.parse.quote(body.syndication_id)}", 
-            json={"user_id": current["user_id"], "item_id": body.item_id}, 
-            timeout=5
-        )
-    except Exception as e:
-        log.warning("failed_to_trigger_nlp", error=str(e))
+    if body.syndication_id:
+        try:
+            httpx.post(
+                f"http://placsp-ingester-api:8093/internal/analyze/{urllib.parse.quote(body.syndication_id)}", 
+                json={"user_id": current["user_id"], "item_id": body.item_id}, 
+                timeout=5
+            )
+        except Exception as e:
+            log.warning(f"failed_to_trigger_nlp: {e}")
         
     return {"ok": True, "item": item}
 

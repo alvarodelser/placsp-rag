@@ -64,8 +64,9 @@ CREATE TABLE IF NOT EXISTS saved_items_analysis (
     item_id         TEXT NOT NULL,
     pcap_json       TEXT,
     ppt_json        TEXT,
-    match_score     INTEGER,
-    blockers_json   TEXT,
+    veredicto       TEXT,
+    razonamiento    TEXT,
+    requisitos_evaluados TEXT,
     analyzed_at     TEXT NOT NULL,
     UNIQUE(user_id, item_id)
 );
@@ -269,13 +270,13 @@ def update_user_profile(conn: sqlite3.Connection, user_id: str, profile: dict) -
 # ── Saved Items Analysis ───────────────────────────────────────────────────
 
 def save_item_analysis(conn: sqlite3.Connection, *, user_id: str, item_id: str,
-                       pcap_json: dict, ppt_json: dict, match_score: int, blockers: list) -> None:
+                       pcap_json: dict, ppt_json: dict, match_result: dict) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO saved_items_analysis "
-        "(user_id, item_id, pcap_json, ppt_json, match_score, blockers_json, analyzed_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "(user_id, item_id, pcap_json, ppt_json, veredicto, razonamiento, requisitos_evaluados, analyzed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (user_id, item_id, json.dumps(pcap_json), json.dumps(ppt_json),
-         match_score, json.dumps(blockers), _now())
+         match_result.get("veredicto"), match_result.get("razonamiento_general"), json.dumps(match_result.get("requisitos_evaluados", [])), _now())
     )
     conn.commit()
 
@@ -289,5 +290,5 @@ def get_item_analysis(conn: sqlite3.Connection, user_id: str, item_id: str) -> d
     d = dict(row)
     d["pcap_json"] = json.loads(d["pcap_json"]) if d["pcap_json"] else {}
     d["ppt_json"] = json.loads(d["ppt_json"]) if d["ppt_json"] else {}
-    d["blockers_json"] = json.loads(d["blockers_json"]) if d["blockers_json"] else []
+    d["requisitos_evaluados"] = json.loads(d["requisitos_evaluados"]) if d["requisitos_evaluados"] else []
     return d

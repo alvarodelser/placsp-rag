@@ -7,6 +7,7 @@ import ResultCard from './components/ResultCard.jsx'
 import AuthPage from './components/AuthPage.jsx'
 import UserMenu from './components/UserMenu.jsx'
 import SavedSpace from './components/SavedSpace.jsx'
+import UserProfile from './components/UserProfile.jsx'
 import { useAuth } from './AuthContext.jsx'
 import { SlidersHorizontal, CircleNotch } from './icons.js'
 import statusMap from './codelists/status.json'
@@ -27,6 +28,7 @@ const [filtersOpen, setFiltersOpen] = useState(false)
   const [state, setState] = useState({ status: 'idle' })
   const { user, savedIds, toggleSave } = useAuth()
   const [savedOpen, setSavedOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const didMount = useRef(false)
 
   async function run(offset = 0, f = filters, query = q) {
@@ -103,7 +105,7 @@ const [filtersOpen, setFiltersOpen] = useState(false)
               <h1>Búsqueda de licitaciones · PLACSP</h1>
               <div className="sub">Contratación del sector público — búsqueda y filtros</div>
             </div>
-            <UserMenu onOpenSaved={() => setSavedOpen(true)} />
+            <UserMenu onOpenSaved={() => setSavedOpen(true)} onOpenProfile={() => setProfileOpen(true)} />
           </div>
           <form onSubmit={(e) => { e.preventDefault(); run(0) }}>
             <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
@@ -178,6 +180,10 @@ const [filtersOpen, setFiltersOpen] = useState(false)
 
           {savedOpen && (
             <SavedSpace onClose={() => setSavedOpen(false)} />
+          )}
+
+          {profileOpen && (
+            <UserProfile onClose={() => setProfileOpen(false)} />
           )}
         </div>
       </main>
