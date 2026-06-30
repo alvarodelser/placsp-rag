@@ -1,17 +1,42 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import cpvMap from '../codelists/cpv.json'
 import { cpvChildren, cpvLevel } from '../cpv.js'
 import { MagnifyingGlass, CaretRight, X } from '../icons.js'
+import { cpvDist } from '../api.js'
 
 const ENTRIES = Object.entries(cpvMap)
 
-function cpvShort(code) {
-  const base = code.split('-')[0].replace(/0+$/, '')
-  return base + '_'
+function shortBase(code) {
+  return code.split('-')[0].replace(/0+$/, '')
+}
+
+function ShortCode({ code }) {
+  const base = shortBase(code)
+  return (
+    <span className="cm-short">
+      {base}<span className="cm-cursor">_</span>
+    </span>
+  )
 }
 
 function topLevel() {
   return Object.keys(cpvMap).filter(c => cpvLevel(c) === 2).sort()
+}
+
+function useCpvCounts(codes, filterParams) {
+  const [counts, setCounts] = useState({})
+  const cacheRef = useRef({})
+  const key = codes.join(',') + '|' + JSON.stringify(filterParams)
+  useEffect(() => {
+    if (!codes.length) return
+    if (cacheRef.current[key]) { setCounts(cacheRef.current[key]); return }
+    let cancelled = false
+    cpvDist({ ...filterParams, codes })
+      .then(d => { if (!cancelled) { cacheRef.current[key] = d; setCounts(d) } })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  return counts
 }
 
 export default function CpvMiller({ value, onChange, filterParams = {} }) {
@@ -42,18 +67,24 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
 
   const add = (code) => { if (!value.includes(code)) onChange([...value, code]) }
   const remove = (code) => onChange(value.filter(c => c !== code))
+  const isSearching = term.length >= 2
 
   const navigateTo = (depth) => {
     setMidPath(prev => prev.slice(0, depth))
     setMidSelected(null)
   }
 
+  const goBack = () => {
+    setMidPath(prev => prev.slice(0, -1))
+    setMidSelected(null)
+  }
+
   const clickMid = (code) => {
     const kids = cpvChildren(code, cpvMap)
-    if (kids.length > 0) {
-      setMidSelected(prev => prev === code ? null : code)
-    } else {
+    if (kids.length === 0) {
       add(code)
+    } else {
+      setMidSelected(prev => prev === code ? null : code)
     }
   }
 
@@ -68,8 +99,8 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
     }
   }
 
-  const browseItems = term.length >= 2 ? matches : midItems
-  const isSearching = term.length >= 2
+  const browseItems = isSearching ? matches : midItems
+  const counts = useCpvCounts(browseItems, filterParams)
 
   return (
     <div className="cpv-miller">
@@ -87,7 +118,7 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
             ? <div className="cm-empty">Ninguno</div>
             : value.map(code => (
               <div key={code} className="cm-item">
-                <span className="cm-short">{cpvShort(code)}</span>
+                <ShortCode code={code} />
                 <span className="cm-label">{cpvMap[code] || '—'}</span>
                 <button type="button" className="cm-remove" aria-label="Quitar" onClick={() => remove(code)}>
                   <X size={11} />
@@ -101,28 +132,31 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
         <div className="cm-pane cm-browse">
           {!isSearching && midPath.length > 0 && (
             <div className="cm-breadcrumb">
+              <button type="button" className="cm-back-btn" onClick={goBack}>← Atrás</button>
               <span className="cm-bc-link" onClick={() => navigateTo(0)}>Inicio</span>
               {midPath.map((code, i) => (
                 <span key={code}>
                   <span className="cm-bc-sep">›</span>
-                  <span className="cm-bc-link" onClick={() => navigateTo(i + 1)}>{cpvShort(code)}</span>
+                  <span className="cm-bc-link" onClick={() => navigateTo(i + 1)}>
+                    {shortBase(code)}_
+                  </span>
                 </span>
               ))}
             </div>
           )}
           {browseItems.map(code => {
             const hasKids = cpvChildren(code, cpvMap).length > 0
+            const n = counts[code]
             return (
               <div key={code}
                 className={`cm-item${midSelected === code && !isSearching ? ' cm-active' : ''}`}
                 onClick={() => clickMid(code)}>
-                <span className="cm-short">{cpvShort(code)}</span>
+                <ShortCode code={code} />
                 <span className="cm-label">{cpvMap[code] || '—'}</span>
-                {hasKids
-                  ? <CaretRight size={12} className="cm-caret" />
-                  : <button type="button" className="cm-add-btn" aria-label="Añadir"
-                      onClick={e => { e.stopPropagation(); add(code) }}>+</button>
-                }
+                {n != null && <span className="cm-count">{n.toLocaleString('es-ES')}</span>}
+                <button type="button" className="cm-add-btn" aria-label="Añadir"
+                  onClick={e => { e.stopPropagation(); add(code) }}>+</button>
+                {hasKids && <CaretRight size={12} className="cm-caret" />}
               </div>
             )
           })}
@@ -133,20 +167,18 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
           {midSelected && !isSearching ? (
             <>
               <div className="cm-pane-title">
-                <span className="cm-short">{cpvShort(midSelected)}</span> {cpvMap[midSelected]}
+                <ShortCode code={midSelected} /> {cpvMap[midSelected]}
               </div>
               {rightItems.length === 0
                 ? <div className="cm-empty">Sin subcódigos</div>
                 : rightItems.map(code => {
                   const hasKids = cpvChildren(code, cpvMap).length > 0
-                  const parentLen = cpvLevel(midSelected)
-                  const base = code.split('-')[0].replace(/0+$/, '')
-                  const newPart = base.slice(parentLen)
                   return (
                     <div key={code} className="cm-item" onClick={() => clickRight(code)}>
-                      <span className="cm-short cm-short-dim">{cpvShort(midSelected).slice(0, -1)}</span>
-                      <span className="cm-short">{newPart}_</span>
+                      <ShortCode code={code} />
                       <span className="cm-label">{cpvMap[code] || '—'}</span>
+                      <button type="button" className="cm-add-btn" aria-label="Añadir"
+                        onClick={e => { e.stopPropagation(); add(code) }}>+</button>
                       {hasKids && <CaretRight size={12} className="cm-caret" />}
                     </div>
                   )

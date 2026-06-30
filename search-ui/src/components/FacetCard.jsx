@@ -10,12 +10,12 @@ function fmt(n) {
   return String(n)
 }
 
-export default function FacetCard({ label, Icon, active, count, color, onToggle }) {
+export default function FacetCard({ label, Icon, active, partial, count, color, onToggle }) {
   const label_n = fmt(count)
   return (
     <button
       type="button"
-      className={`mci-card${active ? ' on' : ''}${color ? ` mci-${color}` : ''}`}
+      className={`mci-card${active ? ' on' : ''}${partial ? ' mci-partial' : ''}${color ? ` mci-${color}` : ''}`}
       onClick={onToggle}
       aria-pressed={active}
     >

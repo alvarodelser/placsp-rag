@@ -10,24 +10,36 @@ import {
   Wrench, FileText, Package, Scales,
   ArrowsLeftRight, ListChecks, Gavel, Stack, Archive,
 } from './icons.js'
+import resultMap from './codelists/result.json'
+import typeMap from './codelists/contract_type.json'
+import procMap from './codelists/procedure.json'
+
+// Attach an `options` array ({ code, label }) to each group from its codelist,
+// so a card can reveal the granular sub-codes it folds together.
+function withOptions(groups, map) {
+  return groups.map((g) => ({
+    ...g,
+    options: g.codes.map((c) => ({ code: c, label: map[c] || c })),
+  }))
+}
 
 // Resultado — 3 outcome cards (was 11 codes)
-export const RESULT_GROUPS = [
+export const RESULT_GROUPS = withOptions([
   { key: 'adj', label: 'Adjudicado', Icon: Trophy,   color: 'green', codes: ['1', '2', '8', '9', '10', '11'] },
   { key: 'des', label: 'Desierto',   Icon: XCircle,  color: 'gray',  codes: ['3', '6', '7'] },
   { key: 'can', label: 'Cancelado',  Icon: Prohibit, color: 'red',   codes: ['4', '5'] },
-]
+], resultMap)
 
 // Tipo — 4 object-family cards (was 11 codes); concessions folded into parent
-export const TYPE_GROUPS = [
+export const TYPE_GROUPS = withOptions([
   { key: 'obras', label: 'Obras',       Icon: Wrench,   codes: ['3', '31', '32'] },
   { key: 'serv',  label: 'Servicios',   Icon: FileText, codes: ['2', '21', '22'] },
   { key: 'sum',   label: 'Suministros', Icon: Package,  codes: ['1'] },
   { key: 'otros', label: 'Otros',       Icon: Scales,   codes: ['40', '50', '7', '8'] },
-]
+], typeMap)
 
 // Procedimiento — 6 cards on a concurrence axis + Otros off-axis (was 15 codes)
-export const PROC_GROUPS = [
+export const PROC_GROUPS = withOptions([
   { key: 'abierto',   label: 'Abierto',              Icon: ArrowsLeftRight, codes: ['1'] },
   { key: 'abierto_s', label: 'Abierto simplificado', Icon: ArrowsLeftRight, codes: ['9'] },
   { key: 'restr',     label: 'Restringido',          Icon: ListChecks,      codes: ['2'] },
@@ -35,7 +47,7 @@ export const PROC_GROUPS = [
   { key: 'deriv',     label: 'Derivados',            Icon: Stack,           codes: ['7', '12'] },
   { key: 'menor',     label: 'Contrato menor',       Icon: FileText,        codes: ['6'] },
   { key: 'otros',     label: 'Otros',                Icon: Archive,         codes: ['8', '100', '999'], axis: false },
-]
+], procMap)
 
 export const GROUPS_BY_FIELD = {
   result:        RESULT_GROUPS,
@@ -67,6 +79,12 @@ export function toggleGroup(group, value = []) {
   const set = new Set(v)
   for (const c of group.codes) set.add(c)
   return [...set]
+}
+
+/** Toggle a single granular code in a value list. */
+export function toggleCode(code, value = []) {
+  const v = value || []
+  return v.includes(code) ? v.filter((c) => c !== code) : [...v, code]
 }
 
 /** The group owning a granular code within a field, or null. */

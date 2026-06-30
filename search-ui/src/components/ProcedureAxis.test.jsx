@@ -30,7 +30,7 @@ describe('ProcedureAxis', () => {
   it('emits the full code set of a group when toggled', () => {
     const onChange = vi.fn()
     render(<ProcedureAxis groups={PROC_GROUPS} value={[]} counts={{}} onChange={onChange} />)
-    fireEvent.click(screen.getByRole('button', { name: /Negociado/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Negociado/ }))
     expect(onChange).toHaveBeenCalledWith(['3', '4', '5', '10', '11', '13'])
   })
 })

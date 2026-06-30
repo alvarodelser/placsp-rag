@@ -3,19 +3,10 @@
  * (más concurrencia → más directo). On-axis groups render in order on a
  * gradient strip; off-axis groups (e.g. Otros) sit on a separate row below.
  */
-import FacetCard from './FacetCard.jsx'
-import { groupActive, groupCount, toggleGroup } from '../facetGroups.js'
+import GroupCard from './GroupCard.jsx'
 
 function Card({ group, value, counts, onChange }) {
-  return (
-    <FacetCard
-      label={group.label}
-      Icon={group.Icon}
-      active={groupActive(group, value)}
-      count={groupCount(group, counts)}
-      onToggle={() => onChange(toggleGroup(group, value))}
-    />
-  )
+  return <GroupCard group={group} value={value} counts={counts} onChange={onChange} />
 }
 
 export default function ProcedureAxis({ groups, value = [], counts = {}, onChange }) {

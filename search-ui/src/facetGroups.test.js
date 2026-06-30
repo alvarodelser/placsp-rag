@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   RESULT_GROUPS, TYPE_GROUPS, PROC_GROUPS, GROUPS_BY_FIELD,
-  groupActive, groupCount, toggleGroup, findGroup,
+  groupActive, groupCount, toggleGroup, toggleCode, findGroup,
 } from './facetGroups.js'
 
 describe('facetGroups config', () => {
@@ -23,6 +23,37 @@ describe('facetGroups config', () => {
     const otros = PROC_GROUPS.find((g) => g.label === 'Otros')
     expect(otros.axis).toBe(false)
     expect(PROC_GROUPS.filter((g) => g.axis !== false)).toHaveLength(6)
+  })
+})
+
+describe('group options (granular sub-codes with codelist labels)', () => {
+  it('exposes each code with its human label', () => {
+    const adj = RESULT_GROUPS.find((g) => g.key === 'adj')
+    expect(adj.options).toContainEqual({ code: '1', label: 'Adjudicado Provisionalmente' })
+    expect(adj.options).toContainEqual({ code: '9', label: 'Formalizado' })
+    const obras = TYPE_GROUPS.find((g) => g.key === 'obras')
+    expect(obras.options).toContainEqual({ code: '31', label: 'Concesión de Obras Públicas' })
+    const negoc = PROC_GROUPS.find((g) => g.key === 'negoc')
+    expect(negoc.options).toContainEqual({ code: '5', label: 'Diálogo competitivo' })
+  })
+  it('keeps options aligned with codes', () => {
+    for (const groups of [RESULT_GROUPS, TYPE_GROUPS, PROC_GROUPS]) {
+      for (const g of groups) {
+        expect(g.options.map((o) => o.code)).toEqual(g.codes)
+      }
+    }
+  })
+})
+
+describe('toggleCode', () => {
+  it('adds a single code when absent', () => {
+    expect(toggleCode('9', ['1']).sort()).toEqual(['1', '9'])
+  })
+  it('removes a single code when present, leaving siblings', () => {
+    expect(toggleCode('1', ['1', '2', '8'])).toEqual(['2', '8'])
+  })
+  it('tolerates empty input', () => {
+    expect(toggleCode('1', undefined)).toEqual(['1'])
   })
 })
 

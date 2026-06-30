@@ -43,11 +43,16 @@ function fmtTotal(n) {
   return n.toLocaleString('es-ES')
 }
 
-function fmtAvail(n) {
-  if (n == null) return null
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`
-  return String(n)
+function last36Months() {
+  const out = []
+  const now = new Date()
+  for (let i = 35; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return out
 }
+const STATIC_MONTHS = last36Months()
 
 function useLazyTab(active, tabId, filters, fetcher) {
   const [data, setData]       = useState(null)
@@ -95,7 +100,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
         return (
           <SpainMap
             value={filters.nuts}
-            counts={locationData?.nuts || {}}
+            counts={locationData || {}}
             loading={locationLoading}
             onChange={(v) => setList('nuts', v)}
           />
@@ -105,7 +110,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
         return (
           <StatusDiagram
             value={filters.status}
-            counts={statusData?.status || {}}
+            counts={statusData || {}}
             loading={statusLoading}
             onChange={(v) => setList('status', v)}
           />
@@ -117,7 +122,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
             <GroupedFacet
               groups={RESULT_GROUPS}
               value={filters.result}
-              counts={resultData?.result || {}}
+              counts={resultData || {}}
               onChange={(v) => setList('result', v)}
             />
           </div>
@@ -129,7 +134,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
             <GroupedFacet
               groups={TYPE_GROUPS}
               value={filters.contract_type}
-              counts={typeData?.contract_type || {}}
+              counts={typeData || {}}
               onChange={(v) => setList('contract_type', v)}
             />
           </div>
@@ -141,7 +146,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
             <ProcedureAxis
               groups={PROC_GROUPS}
               value={filters.procedure}
-              counts={procedureData?.procedure || {}}
+              counts={procedureData || {}}
               onChange={(v) => setList('procedure', v)}
             />
           </div>
@@ -166,11 +171,13 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
       }
 
       case 'dates': {
-        const series = (datesData?.dates?.[dateAxis] || [])
-        const months = series.map((s) => s.month)
+        // Months come from loaded data when available; fall back to last 36 months
+        // computed client-side so the slider is usable immediately without a DB call.
+        const loadedSeries = datesData?.dates?.[dateAxis] || []
+        const months  = loadedSeries.length > 0 ? loadedSeries.map(s => s.month) : STATIC_MONTHS
+        const density = loadedSeries.length > 0 ? loadedSeries.map(s => s.count) : []
         const n = Math.max(0, months.length - 1)
 
-        // Map current filter dates to slider indices
         const fromKey = dateAxis === 'publication' ? 'pub_from' : 'deadline_from'
         const toKey   = dateAxis === 'publication' ? 'pub_to'   : 'deadline_to'
         const currentFrom = filters[fromKey] ? filters[fromKey].slice(0, 7) : null
@@ -185,13 +192,11 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
               <button className={dateAxis === 'publication' ? 'on' : ''} onClick={() => setDateAxis('publication')}>Publicación</button>
               <button className={dateAxis === 'plazo' ? 'on' : ''} onClick={() => setDateAxis('plazo')}>Plazo de presentación</button>
             </div>
-            {datesLoading ? (
-              <div className="ds-skel" aria-hidden="true" />
-            ) : months.length > 1 ? (
+            <div className={datesLoading ? 'dist-loading' : ''}>
               <DensitySlider
                 min={0} max={n}
                 low={loIdx} high={hiIdx < 0 ? n : hiIdx}
-                density={series.map((s) => s.count)}
+                density={density}
                 format={(i) => months[Math.round(Math.max(0, Math.min(n, i)))] || ''}
                 toPos={(v, lo, hi) => hi <= lo ? 0 : Math.max(0, Math.min(1, (v - lo) / (hi - lo)))}
                 toValue={(p, lo, hi) => Math.round(lo + p * (hi - lo))}
@@ -202,9 +207,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
                   else patch({ deadline_from: from ? `${from}-01` : '', deadline_to: to ? `${to}-28` : '' })
                 }}
               />
-            ) : (
-              <div className="ds-empty">Sin datos de fechas.</div>
-            )}
+            </div>
             <div className="presets">
               {['month', 'quarter', 'year', 'all'].map((p) => (
                 <button key={p} className="preset" onClick={() => patch(presetRange(p))}>
@@ -230,11 +233,10 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
           <nav className="ws-cats">
             {CATS.map((c) => {
               const n = catCount(c, filters)
-              const avail = facetsData?.totals?.[c.id]
               return (
                 <button key={c.id} type="button"
                   className={`ws-cat${active === c.id ? ' on' : ''}`} onClick={() => setActive(c.id)}>
-                  <c.Icon size={18} /> <span>{c.label} {avail != null ? `(${fmtAvail(avail)})` : ''}</span>
+                  <c.Icon size={18} /> <span>{c.label}</span>
                   {n > 0 && <span className="ws-badge">{n}</span>}
                 </button>
               )

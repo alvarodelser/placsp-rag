@@ -4,7 +4,7 @@ import { EMPTY, EXPLORE, filtersToParams, activeFilterList, removeValues } from 
 import FilterWorkspace from './components/FilterWorkspace.jsx'
 import ActiveFilters from './components/ActiveFilters.jsx'
 import ResultCard from './components/ResultCard.jsx'
-import { SlidersHorizontal } from './icons.js'
+import { SlidersHorizontal, CircleNotch } from './icons.js'
 import statusMap from './codelists/status.json'
 
 const K = 15
@@ -154,6 +154,13 @@ const [filtersOpen, setFiltersOpen] = useState(false)
             <ActiveFilters filters={filters} onRemove={removeFilter} />
 
             {state.status === 'error' && <div className="err">Error: {state.message}</div>}
+
+            {state.status === 'loading' && (
+              <div className="loading-state">
+                <CircleNotch size={32} className="spinner" />
+                <span>Buscando…</span>
+              </div>
+            )}
 
             {state.status === 'done' && (
               <>
