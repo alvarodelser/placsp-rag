@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { getPliegos, triggerPliegosAnalysis } from '../api.js'
+import { getPliegos, getSavedAnalysis } from '../api.js'
 
-export default function PliegosModal({ syndicationId, title, onClose }) {
+export default function PliegosModal({ syndicationId, itemId, title, onClose }) {
   const [data, setData] = useState(null)
+  const [analysis, setAnalysis] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('executive')
@@ -10,30 +11,20 @@ export default function PliegosModal({ syndicationId, title, onClose }) {
   useEffect(() => {
     let active = true
     setLoading(true)
-    getPliegos(syndicationId)
-      .then((res) => {
-        if (!active) return
-        setData(res)
-        setLoading(false)
-      })
-      .catch((err) => {
-        if (!active) return
-        setError(err.message)
-        setLoading(false)
-      })
+    
+    Promise.all([
+      getPliegos(syndicationId).catch(() => null),
+      itemId ? getSavedAnalysis(itemId).catch(() => null) : Promise.resolve(null)
+    ]).then(([weaviateData, sqlAnalysis]) => {
+      if (!active) return
+      setData(weaviateData)
+      setAnalysis(sqlAnalysis)
+      setLoading(false)
+    })
+    
     return () => { active = false }
-  }, [syndicationId])
+  }, [syndicationId, itemId])
 
-  const handleTriggerAnalysis = async () => {
-    try {
-      await triggerPliegosAnalysis(syndicationId)
-      alert("El análisis profundo se está generando en segundo plano. Esto puede tardar varios minutos (OCR + IA). Vuelve más tarde.")
-    } catch (err) {
-      alert("Error al iniciar el análisis: " + err.message)
-    }
-  }
-
-  // Click outside to close
   const handleBackdrop = (e) => {
     if (e.target === e.currentTarget) onClose()
   }
@@ -61,42 +52,57 @@ export default function PliegosModal({ syndicationId, title, onClose }) {
         {!loading && !error && data && (
           <div className="modal-body">
             <div className="tabs">
-              <button 
-                className={activeTab === 'executive' ? 'active' : ''} 
-                onClick={() => setActiveTab('executive')}>
-                Resumen Ejecutivo
-              </button>
-              <button 
-                className={activeTab === 'criteria' ? 'active' : ''} 
-                onClick={() => setActiveTab('criteria')}>
-                Criterios y Estrategia
-              </button>
-              <button 
-                className={activeTab === 'risks' ? 'active' : ''} 
-                onClick={() => setActiveTab('risks')}>
-                Riesgos Legales
-              </button>
+              <button className={activeTab === 'match' ? 'active' : ''} onClick={() => setActiveTab('match')}>Compatibilidad (Match)</button>
+              <button className={activeTab === 'technical' ? 'active' : ''} onClick={() => setActiveTab('technical')}>Specs Técnicas (PPT)</button>
+              <button className={activeTab === 'risks' ? 'active' : ''} onClick={() => setActiveTab('risks')}>Riesgos Legales (PCAP)</button>
+              <button className={activeTab === 'criteria' ? 'active' : ''} onClick={() => setActiveTab('criteria')}>Criterios de Valoración</button>
             </div>
 
             <div className="tab-content">
-              {activeTab === 'executive' && (
+              {activeTab === 'match' && (
                 <div className="tab-pane">
-                  <h3>Resumen Ejecutivo (AI)</h3>
-                  {data.executive_summary_json ? (
+                  <h3>Análisis de Compatibilidad (IA)</h3>
+                  {analysis ? (
                     <div className="ai-content">
-                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
-                        {data.executive_summary_json}
-                      </pre>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                        <div style={{ fontSize: '2rem', fontWeight: 'bold', color: analysis.match_score > 70 ? '#38a169' : '#e53e3e' }}>
+                          {analysis.match_score}%
+                        </div>
+                        <div style={{ fontSize: '1.2rem' }}>Match con tu Perfil</div>
+                      </div>
+                      
+                      {analysis.blockers_json && analysis.blockers_json.length > 0 && (
+                        <div className="blockers-box">
+                          <h4 style={{ color: '#c53030' }}>⚠️ Factores Bloqueantes</h4>
+                          <ul>
+                            {analysis.blockers_json.map((b, i) => <li key={i}>{b}</li>)}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <div>
-                      <p>El análisis ejecutivo (Tier 2) aún no se ha generado para esta licitación.</p>
-                      <button className="trigger-btn" onClick={handleTriggerAnalysis}>
-                        Generar Análisis Completo (OCR + IA)
-                      </button>
+                    <div className="loading-state">
+                      <p>El análisis de compatibilidad se está procesando o tu perfil no está configurado.</p>
+                      <p className="subtext">El análisis se ejecuta automáticamente al guardar la licitación.</p>
                     </div>
                   )}
                 </div>
+              )}
+
+              {activeTab === 'technical' && (
+                <div className="tab-pane">
+                  <h3>Prescripciones Técnicas (PPT)</h3>
+                  {analysis && analysis.ppt_json ? (
+                    <div className="ai-content">
+                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                        {JSON.stringify(analysis.ppt_json, null, 2)}
+                      </pre>
+                    </div>
+                  ) : (
+                    <p>Análisis en proceso...</p>
+                  )}
+                </div>
+
               )}
 
               {activeTab === 'criteria' && (
@@ -139,24 +145,14 @@ export default function PliegosModal({ syndicationId, title, onClose }) {
               {activeTab === 'risks' && (
                 <div className="tab-pane">
                   <h3>Análisis de Riesgos Legales (PCAP)</h3>
-                  {data.risk_analysis_json ? (
+                  {analysis && analysis.pcap_json ? (
                     <div className="ai-content">
-                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
-                        {data.risk_analysis_json}
-                      </pre>
-                      
-                      <h4 style={{ marginTop: '24px' }}>Datos Extraídos</h4>
-                      <pre style={{ background: '#f4f4f4', padding: '10px', overflowX: 'auto', fontSize: '0.85rem' }}>
-                        {data.pcap_analysis_json}
+                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: '0.9rem' }}>
+                        {JSON.stringify(analysis.pcap_json, null, 2)}
                       </pre>
                     </div>
                   ) : (
-                    <div>
-                      <p>Este análisis requiere descargar y procesar el PDF del Pliego de Cláusulas Administrativas usando IA profunda.</p>
-                      <button className="trigger-btn" onClick={handleTriggerAnalysis}>
-                        Generar Análisis Completo (OCR + IA)
-                      </button>
-                    </div>
+                    <p>Análisis en proceso...</p>
                   )}
                 </div>
               )}
@@ -205,6 +201,9 @@ export default function PliegosModal({ syndicationId, title, onClose }) {
         .trigger-btn { background: #3182ce; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 12px; }
         .trigger-btn:hover { background: #2b6cb0; }
         .ai-content { background: #f0fff4; border: 1px solid #c6f6d5; border-radius: 6px; padding: 16px; }
+        .blockers-box { background: #fff5f5; border: 1px solid #feb2b2; padding: 12px; border-radius: 6px; margin-top: 12px; }
+        .blockers-box ul { margin: 8px 0 0 16px; padding: 0; color: #c53030; }
+        .loading-state { padding: 32px; text-align: center; color: #718096; background: #f7fafc; border-radius: 8px; border: 1px dashed #cbd5e0; }
       `}</style>
     </div>
   )

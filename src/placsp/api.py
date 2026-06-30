@@ -1,4 +1,5 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException
+from pydantic import BaseModel
 import httpx
 import uuid
 import json
@@ -127,9 +128,31 @@ def run_tier2_analysis(syndication_id: str):
     except Exception as e:
         log.error("tier2_failed", syndication_id=syndication_id, error=str(e))
 
+class AnalyzeRequest(BaseModel):
+    user_id: str
+    item_id: str
 
 @app.post("/internal/analyze/{syndication_id}")
-def trigger_analysis(syndication_id: str, background_tasks: BackgroundTasks):
+def trigger_analysis(syndication_id: str, body: AnalyzeRequest, background_tasks: BackgroundTasks):
     """Triggers the async Tier 2 analysis."""
-    background_tasks.add_task(run_tier2_analysis, syndication_id)
-    return {"status": "accepted", "message": "Tier 2 analysis queued"}
+    background_tasks.add_task(run_nlp_pipeline, syndication_id, body.user_id, body.item_id)
+    return {"status": "accepted", "message": "Analysis queued"}
+
+def run_nlp_pipeline(syndication_id: str, user_id: str, item_id: str):
+    """Background task to run the NLP pipeline."""
+    try:
+        from placsp.ai.nlp_pipeline import NLPPipeline
+        from placsp.storage.upserter import Upserter
+        
+        # 1. Fetch criteria from DB
+        upserter = Upserter(cfg)
+        licitacion = upserter.get_licitacion_by_syndication_id(syndication_id)
+        if not licitacion or not licitacion.get("criteria"):
+            log.error("licitacion_not_found_for_nlp", syndication_id=syndication_id)
+            return
+            
+        # 2. Run Pipeline
+        pipeline = NLPPipeline(cfg)
+        pipeline.run_pipeline(syndication_id, user_id, item_id, licitacion["criteria"])
+    except Exception as e:
+        log.error("nlp_pipeline_failed", syndication_id=syndication_id, error=str(e))

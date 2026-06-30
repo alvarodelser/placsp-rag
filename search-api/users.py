@@ -51,6 +51,24 @@ CREATE TABLE IF NOT EXISTS user_events (
     context_json    TEXT,
     ts              TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id         TEXT PRIMARY KEY REFERENCES users(user_id),
+    profile_json    TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS saved_items_analysis (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT NOT NULL REFERENCES users(user_id),
+    item_id         TEXT NOT NULL,
+    pcap_json       TEXT,
+    ppt_json        TEXT,
+    match_score     INTEGER,
+    blockers_json   TEXT,
+    analyzed_at     TEXT NOT NULL,
+    UNIQUE(user_id, item_id)
+);
 """
 
 
@@ -232,3 +250,44 @@ def log_event(conn: sqlite3.Connection, *, user_id: str, event_type: str,
          json.dumps(context) if context else None, _now()),
     )
     conn.commit()
+
+# ── User Profiles ──────────────────────────────────────────────────────────
+
+def get_user_profile(conn: sqlite3.Connection, user_id: str) -> dict:
+    row = conn.execute("SELECT profile_json FROM user_profiles WHERE user_id = ?", (user_id,)).fetchone()
+    if row and row["profile_json"]:
+        return json.loads(row["profile_json"])
+    return {}
+
+def update_user_profile(conn: sqlite3.Connection, user_id: str, profile: dict) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO user_profiles (user_id, profile_json, updated_at) VALUES (?, ?, ?)",
+        (user_id, json.dumps(profile), _now())
+    )
+    conn.commit()
+
+# ── Saved Items Analysis ───────────────────────────────────────────────────
+
+def save_item_analysis(conn: sqlite3.Connection, *, user_id: str, item_id: str,
+                       pcap_json: dict, ppt_json: dict, match_score: int, blockers: list) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO saved_items_analysis "
+        "(user_id, item_id, pcap_json, ppt_json, match_score, blockers_json, analyzed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (user_id, item_id, json.dumps(pcap_json), json.dumps(ppt_json),
+         match_score, json.dumps(blockers), _now())
+    )
+    conn.commit()
+
+def get_item_analysis(conn: sqlite3.Connection, user_id: str, item_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM saved_items_analysis WHERE user_id = ? AND item_id = ?",
+        (user_id, item_id)
+    ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["pcap_json"] = json.loads(d["pcap_json"]) if d["pcap_json"] else {}
+    d["ppt_json"] = json.loads(d["ppt_json"]) if d["ppt_json"] else {}
+    d["blockers_json"] = json.loads(d["blockers_json"]) if d["blockers_json"] else []
+    return d

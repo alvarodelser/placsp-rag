@@ -47,6 +47,22 @@ class PliegoExtractor:
         prompt = RISK_ANALYSIS_PROMPT.format(pcap_json=pcap_json, criteria_json=criteria_str)
         return self._call_ollama(prompt)
 
+    def extract_from_ppt(self, ppt_text: str) -> dict:
+        """Extracts technical requirements from PPT using Gemma."""
+        from placsp.ai.prompts.pliego import PLIEGO_PPT_EXTRACTION_PROMPT
+        prompt = PLIEGO_PPT_EXTRACTION_PROMPT.format(ppt_text=ppt_text)
+        return self._call_llm_json(prompt)
+
+    def match_profile(self, profile: dict, pcap_json: dict, ppt_json: dict) -> dict:
+        """Matches a user's profile against the extracted requirements."""
+        from placsp.ai.prompts.pliego import PLIEGO_MATCH_PROMPT
+        prompt = PLIEGO_MATCH_PROMPT.format(
+            profile_json=json.dumps(profile, ensure_ascii=False),
+            pcap_json=json.dumps(pcap_json, ensure_ascii=False),
+            ppt_json=json.dumps(ppt_json, ensure_ascii=False)
+        )
+        return self._call_llm_json(prompt)
+
     def analyze_scoring_strategy(self, criteria_dict: dict) -> Optional[str]:
         criteria_str = json.dumps(criteria_dict, ensure_ascii=False, indent=2)
         prompt = SCORING_STRATEGY_PROMPT.format(criteria_json=criteria_str)

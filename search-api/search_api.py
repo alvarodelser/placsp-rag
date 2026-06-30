@@ -620,6 +620,31 @@ def delete_feedback(body: FeedbackDel):
     return {"ok": True}
 
 
+@app.get("/api/users/me/profile")
+def get_profile(current: dict = Depends(auth.get_current_user)):
+    """Get the current user's profile."""
+    conn = _users_conn()
+    try:
+        profile = users.get_user_profile(conn, current["user_id"])
+    finally:
+        conn.close()
+    return {"profile": profile}
+
+
+@app.put("/api/users/me/profile")
+def update_profile(body: dict, current: dict = Depends(auth.get_current_user)):
+    """Update the current user's profile."""
+    conn = _users_conn()
+    try:
+        users.update_user_profile(conn, current["user_id"], body)
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
+# ── Saved items ────────────────────────────────────────────────────────────
+
+
 # ── Auth endpoints ──────────────────────────────────────────────────────────
 
 class RegisterIn(BaseModel):
@@ -837,7 +862,31 @@ def save_user_item(body: SaveItemIn,
         )
     finally:
         conn.close()
+        
+    # Trigger NLP pipeline asynchronously
+    try:
+        httpx.post(
+            f"http://placsp-ingester-api:8093/internal/analyze/{urllib.parse.quote(body.syndication_id)}", 
+            json={"user_id": current["user_id"], "item_id": body.item_id}, 
+            timeout=5
+        )
+    except Exception as e:
+        log.warning("failed_to_trigger_nlp", error=str(e))
+        
     return {"ok": True, "item": item}
+
+
+@app.get("/api/users/me/saved/{item_id}/analysis")
+def get_user_item_analysis(item_id: str, current: dict = Depends(auth.get_current_user)):
+    """Get the AI analysis (MatchResult) for a saved item."""
+    conn = _users_conn()
+    try:
+        analysis = users.get_item_analysis(conn, current["user_id"], item_id)
+        if not analysis:
+            raise HTTPException(404, "Analysis not found or pending.")
+        return analysis
+    finally:
+        conn.close()
 
 
 @app.delete("/api/users/me/saved/{item_id}")

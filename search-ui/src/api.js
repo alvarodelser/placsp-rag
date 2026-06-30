@@ -190,3 +190,15 @@ export async function triggerPliegosAnalysis(syndicationId) {
   if (!r.ok) throw new Error(data.detail || r.statusText || 'failed to trigger analysis')
   return data
 }
+
+export async function getSavedAnalysis(itemId) {
+  const r = await fetch(`${BASE}/api/users/me/saved/${encodeURIComponent(itemId)}/analysis`, {
+    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) {
+    if (r.status === 404) return null;
+    throw new Error(data.detail || r.statusText || 'fetch analysis failed')
+  }
+  return data
+}

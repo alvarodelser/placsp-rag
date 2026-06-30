@@ -1,7 +1,6 @@
 from typing import Iterable, Optional
 import structlog
 from placsp.core.models import RawEntry, Tombstone, ProcurementRecord, StatusEvent
-from placsp.core.codelists import collapse
 from placsp.ingestion.pliego_pipeline import PliegoPipeline
 from placsp.parsers.atom_parser import parse_feed
 from placsp.parsers.codice_extractor import extract
