@@ -67,6 +67,13 @@ function next18Months() {
 }
 const STATIC_FUTURE_MONTHS = next18Months()
 
+const BUDGET_TICKS = [
+  { pos: budgetToPos(10_000),     label: '10k' },
+  { pos: budgetToPos(100_000),    label: '100k' },
+  { pos: budgetToPos(1_000_000),  label: '1M' },
+  { pos: budgetToPos(10_000_000), label: '10M' },
+]
+
 function useLazyTab(active, tabId, filters, fetcher) {
   const tabIds = Array.isArray(tabId) ? tabId : [tabId]
   const [data, setData]       = useState(null)
@@ -177,6 +184,8 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
               toPos={budgetToPos}
               toValue={posToBudget}
               format={(v) => money(v)}
+              ticks={BUDGET_TICKS}
+              loading={budgetLoading}
               onChange={({ low, high }) => patch({ budget_min: String(low), budget_max: String(high) })}
             />
           </div>
@@ -192,6 +201,10 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
         const currentTo   = filters.pub_to   ? filters.pub_to.slice(0, 7)   : null
         const loIdx = currentFrom ? Math.max(0, months.indexOf(currentFrom)) : 0
         const hiIdx = currentTo   ? Math.max(0, months.indexOf(currentTo))   : n
+        const dateTicks = n > 0
+          ? months.map((m, i) => ({ m, i })).filter(({ m }) => m.slice(5) === '01')
+              .map(({ m, i }) => ({ pos: i / n, label: m.slice(0, 4) }))
+          : []
         return (
           <div className="dates-filter">
             <div className={datesLoading ? 'dist-loading' : ''}>
@@ -202,6 +215,8 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
                 format={(i) => months[Math.round(Math.max(0, Math.min(n, i)))] || ''}
                 toPos={(v, lo, hi) => hi <= lo ? 0 : Math.max(0, Math.min(1, (v - lo) / (hi - lo)))}
                 toValue={(p, lo, hi) => Math.round(lo + p * (hi - lo))}
+                ticks={dateTicks}
+                loading={datesLoading}
                 onChange={({ low, high }) => {
                   const from = months[Math.round(low)]
                   const to   = months[Math.round(high)]
@@ -230,6 +245,10 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
         const currentTo   = filters.deadline_to   ? filters.deadline_to.slice(0, 7)   : null
         const loIdx = currentFrom ? Math.max(0, months.indexOf(currentFrom)) : 0
         const hiIdx = currentTo   ? Math.max(0, months.indexOf(currentTo))   : n
+        const dateTicks = n > 0
+          ? months.map((m, i) => ({ m, i })).filter(({ m }) => m.slice(5) === '01')
+              .map(({ m, i }) => ({ pos: i / n, label: m.slice(0, 4) }))
+          : []
         return (
           <div className="dates-filter">
             <div className={datesLoading ? 'dist-loading' : ''}>
@@ -240,6 +259,8 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
                 format={(i) => months[Math.round(Math.max(0, Math.min(n, i)))] || ''}
                 toPos={(v, lo, hi) => hi <= lo ? 0 : Math.max(0, Math.min(1, (v - lo) / (hi - lo)))}
                 toValue={(p, lo, hi) => Math.round(lo + p * (hi - lo))}
+                ticks={dateTicks}
+                loading={datesLoading}
                 onChange={({ low, high }) => {
                   const from = months[Math.round(low)]
                   const to   = months[Math.round(high)]
@@ -248,9 +269,9 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
               />
             </div>
             <div className="presets">
-              {['week', 'month', 'quarter', 'all'].map((p) => (
+              {['day', 'week', 'twoweeks', 'month'].map((p) => (
                 <button key={p} className="preset" onClick={() => patch(presetDeadlineRange(p))}>
-                  {{ week: '1 semana', month: '1 mes', quarter: '3 meses', all: 'Todo' }[p]}
+                  {{ day: '1 día en adelante', week: '1 semana en adelante', twoweeks: '2 semanas en adelante', month: '1 mes en adelante' }[p]}
                 </button>
               ))}
             </div>

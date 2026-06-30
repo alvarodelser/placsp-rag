@@ -116,11 +116,6 @@ export default function StatusDiagram({ value = [], counts = {}, onChange }) {
             refX="5" refY="2.5" orient="auto">
             <path d="M0,0 L6,2.5 L0,5 Z" fill="#94a3b8" />
           </marker>
-          {/* Same shape, red for elbow */}
-          <marker id="sd-arr-red" markerWidth="6" markerHeight="5"
-            refX="5" refY="2.5" orient="auto">
-            <path d="M0,0 L6,2.5 L0,5 Z" fill="#fca5a5" />
-          </marker>
         </defs>
 
         {/* ── Sequential flow arrows — thin gray lines ── */}
@@ -133,36 +128,6 @@ export default function StatusDiagram({ value = [], counts = {}, onChange }) {
             markerEnd="url(#sd-arr)"
           />
         ))}
-
-        {/* ── RES → ANULADA (straight vertical, gray) ── */}
-        <line
-          x1={ANUL_CX} y1={nBot + 1}
-          x2={ANUL_CX} y2={ANUL_Y - 1}
-          stroke="#cbd5e1" strokeWidth={1}
-          markerEnd="url(#sd-arr)"
-        />
-
-        {/* ── L-elbow "from any state" — thin dashed, muted red ── */}
-        <polyline
-          points={`${ELBOW_X},${ELBOW_Y1} ${ELBOW_X},${ELBOW_Y2} ${ANUL_X - 1},${ELBOW_Y2}`}
-          fill="none"
-          stroke="#fca5a5" strokeWidth={1}
-          strokeDasharray="4 3"
-          markerEnd="url(#sd-arr-red)"
-        />
-        {/* ··· floating origin hint */}
-        <text x={ELBOW_X} y={ELBOW_Y1 - 5}
-          textAnchor="middle" fontSize={9} fill="#fca5a5"
-          letterSpacing="2" fontFamily="inherit">
-          ···
-        </text>
-        {/* Label */}
-        <text
-          x={(ELBOW_X + ANUL_X) / 2} y={ELBOW_Y2 - 5}
-          textAnchor="middle" fontSize={7.5} fill="#fca5a5"
-          fontStyle="italic" fontFamily="inherit">
-          desde cualquier estado
-        </text>
 
         {/* ── Main flow node cards ── */}
         {FLOW.map((s, i) => (

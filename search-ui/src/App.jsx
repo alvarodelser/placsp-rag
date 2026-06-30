@@ -98,8 +98,13 @@ const [filtersOpen, setFiltersOpen] = useState(false)
     <>
       <header>
         <div className="wrap">
-          <h1>Búsqueda de licitaciones · PLACSP</h1>
-          <div className="sub">Contratación del sector público — búsqueda y filtros</div>
+          <div className="header-top">
+            <div className="brand">
+              <h1>Búsqueda de licitaciones · PLACSP</h1>
+              <div className="sub">Contratación del sector público — búsqueda y filtros</div>
+            </div>
+            <UserMenu onOpenSaved={() => setSavedOpen(true)} />
+          </div>
           <form onSubmit={(e) => { e.preventDefault(); run(0) }}>
             <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
               placeholder="p. ej. servicios de limpieza (o deja vacío y filtra)" autoFocus />
@@ -111,7 +116,6 @@ const [filtersOpen, setFiltersOpen] = useState(false)
               {activeFilterList(filters).length > 0 && <span className="filtros-badge">{activeFilterList(filters).length}</span>}
             </button>
           </form>
-          <UserMenu onOpenSaved={() => setSavedOpen(true)} />
         </div>
       </header>
 

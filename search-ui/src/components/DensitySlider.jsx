@@ -20,6 +20,8 @@ export default function DensitySlider({
   format = (v) => v,
   toPos = (v, lo, hi) => hi <= lo ? 0 : Math.max(0, Math.min(1, (v - lo) / (hi - lo))),
   toValue = (p, lo, hi) => lo + Math.max(0, Math.min(1, p)) * (hi - lo),
+  ticks = [],
+  loading = false,
 }) {
   const uid = useId()
   const trackRef = useRef(null)
@@ -69,6 +71,7 @@ export default function DensitySlider({
 
   return (
     <div className="density-slider">
+      {loading && <span className="ds-loading-dot" aria-hidden="true" />}
       {/* Sparkline */}
       <svg className="density-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         {/* Unselected dimmed area */}
@@ -117,6 +120,17 @@ export default function DensitySlider({
           }}
         />
       </div>
+
+      {ticks.length > 0 && (
+        <div className="ds-ticks" aria-hidden="true">
+          {ticks.map(({ pos, label }) => (
+            <span key={label} className="ds-tick" style={{ left: `${pos * 100}%` }}>
+              <span className="ds-tick-mark" />
+              <span className="ds-tick-lbl">{label}</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="ds-labels">
         <span className="ds-val">{format(low)}</span>

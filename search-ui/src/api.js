@@ -168,3 +168,15 @@ export async function getSavedIds() {
   return data
 }
 
+
+// ── Pliegos ─────────────────────────────────────────────────────────────────
+
+export async function getPliegos(syndicationId) {
+  const r = await fetch(`${BASE}/api/pliegos/${encodeURIComponent(syndicationId)}`)
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) {
+    if (r.status === 404) return null;
+    throw new Error(data.detail || r.statusText || 'fetch pliegos failed')
+  }
+  return data
+}

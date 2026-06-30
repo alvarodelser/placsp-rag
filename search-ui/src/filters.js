@@ -39,14 +39,14 @@ export function presetRange(name, today = new Date()) {
   return { pub_from: todayISO(d), pub_to: todayISO(today) }
 }
 
+// Presets for presentacion: "from N days out, onwards" — deadline_from = today+N, no upper bound.
 export function presetDeadlineRange(name, today = new Date()) {
-  const from = todayISO(today)
-  if (name === 'all') return { deadline_from: from, deadline_to: '' }
   const d = new Date(today.getTime())
-  if (name === 'week')    d.setUTCDate(d.getUTCDate() + 7)
-  else if (name === 'month')   d.setUTCMonth(d.getUTCMonth() + 1)
-  else if (name === 'quarter') d.setUTCMonth(d.getUTCMonth() + 3)
-  return { deadline_from: from, deadline_to: todayISO(d) }
+  if      (name === 'day')      d.setUTCDate(d.getUTCDate() + 1)
+  else if (name === 'week')     d.setUTCDate(d.getUTCDate() + 7)
+  else if (name === 'twoweeks') d.setUTCDate(d.getUTCDate() + 14)
+  else if (name === 'month')    d.setUTCMonth(d.getUTCMonth() + 1)
+  return { deadline_from: todayISO(d), deadline_to: '' }
 }
 
 const LIST_FIELDS = ['cpv', 'nuts', 'status', 'result', 'contract_type', 'procedure']

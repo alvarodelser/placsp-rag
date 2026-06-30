@@ -234,6 +234,40 @@ def weaviate_company_search(
     return {"query": q, "count": len(results), "results": results}
 
 
+@app.get("/api/pliegos/{syndication_id:path}")
+def get_pliegos_analysis(syndication_id: str):
+    """Fetch AI extracted pliegos criteria and analysis for a given licitación."""
+    # Weaviate query for Placsp_pliego_criteria
+    where = f'{{ path: ["syndication_id"], operator: Equal, valueText: {json.dumps(syndication_id)} }}'
+    fields = "syndication_id expediente criteria_json extracted_at"
+    gql = f"{{ Get {{ Placsp_pliego_criteria(where: {where}) {{ {fields} }} }} }}"
+    
+    try:
+        r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
+                       headers=_wv_headers(), timeout=30)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"weaviate error: {exc}")
+
+    data = r.json()
+    if data.get("errors"):
+        raise HTTPException(500, f"weaviate query errors: {data['errors']}")
+        
+    hits = ((data.get("data") or {}).get("Get") or {}).get("Placsp_pliego_criteria") or []
+    if not hits:
+        raise HTTPException(404, "Pliegos analysis not found for this syndication_id")
+        
+    hit = hits[0]
+    
+    # Parse the criteria_json string back into a dict so the API returns actual JSON
+    try:
+        hit["criteria"] = json.loads(hit.pop("criteria_json", "{}"))
+    except json.JSONDecodeError:
+        hit["criteria"] = {}
+        
+    return hit
+
+
 _FILTER_PARAMS = dict(
     cpv=None, nuts=None, status=None, result=None,
     contract_type=None, procedure=None,
