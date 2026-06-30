@@ -142,17 +142,23 @@ def run_nlp_pipeline(syndication_id: str, user_id: str, item_id: str):
     """Background task to run the NLP pipeline."""
     try:
         from placsp.ai.nlp_pipeline import NLPPipeline
-        from placsp.storage.upserter import Upserter
+        from placsp.ai.parser import PliegoHTMLParser
         
-        # 1. Fetch criteria from DB
-        upserter = Upserter(cfg)
-        licitacion = upserter.get_licitacion_by_syndication_id(syndication_id)
-        if not licitacion or not licitacion.get("criteria"):
-            log.error("licitacion_not_found_for_nlp", syndication_id=syndication_id)
+        # 1. Fetch licitacion metadata to get the source URL
+        lic = _get_licitacion(syndication_id)
+        source_url = lic.get('source_url')
+        if not source_url or "contrataciondelestado.es" not in source_url:
+            log.warning("nlp_skipped_no_url", syndication_id=syndication_id)
             return
             
-        # 2. Run Pipeline
+        # 2. Fetch and parse criteria from the source HTML
+        r = httpx.get(source_url)
+        r.raise_for_status()
+        parser = PliegoHTMLParser(r.text)
+        criteria = parser.parse()
+        
+        # 3. Run Pipeline
         pipeline = NLPPipeline(cfg)
-        pipeline.run_pipeline(syndication_id, user_id, item_id, licitacion["criteria"])
+        pipeline.run_pipeline(syndication_id, user_id, item_id, criteria.__dict__)
     except Exception as e:
         log.error("nlp_pipeline_failed", syndication_id=syndication_id, error=str(e))

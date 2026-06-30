@@ -27,7 +27,19 @@ class PliegoExtractor:
         except Exception as e:
             print(f"Error calling Ollama: {e}")
             return None
-
+    def _call_llm_json(self, prompt: str) -> dict:
+        resp = self._call_ollama(prompt)
+        if not resp: return {}
+        # Clean markdown code blocks if the LLM adds them
+        resp = resp.strip()
+        if resp.startswith("```json"): resp = resp[7:]
+        elif resp.startswith("```"): resp = resp[3:]
+        if resp.endswith("```"): resp = resp[:-3]
+        try:
+            return json.loads(resp.strip())
+        except Exception as e:
+            print(f"JSON parsing error: {e}")
+            return {}
     # --- Base Extraction Methods ---
 
     def summarize_html_criteria(self, criteria_dict: dict) -> Optional[str]:
@@ -35,10 +47,10 @@ class PliegoExtractor:
         prompt = PLIEGO_HTML_SUMMARY_PROMPT.format(criteria_json=criteria_str)
         return self._call_ollama(prompt)
 
-    def extract_from_pcap(self, ocr_text: str) -> Optional[str]:
+    def extract_from_pcap(self, ocr_text: str) -> dict:
         # Limit text length to avoid context window issues
         prompt = PLIEGO_PCAP_EXTRACTION_PROMPT.format(ocr_text=ocr_text[:40000])
-        return self._call_ollama(prompt)
+        return self._call_llm_json(prompt)
 
     # --- Analytical Curation Methods ---
 
