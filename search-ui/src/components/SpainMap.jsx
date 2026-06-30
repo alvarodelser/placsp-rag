@@ -38,8 +38,9 @@ export default function SpainMap({ value, counts, onChange }) {
   const toggle = (id) =>
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id])
 
-  // Only label level-2 features (communities) for legibility; level-3 too dense
-  const showLabels = level === 2
+  // At province level only label regions with enough count to be legible
+  const labelThreshold = level === 3 ? max * 0.08 : 0
+  const labelSize = level === 3 ? 7 : 9
 
   return (
     <div className="spain-map">
@@ -64,12 +65,12 @@ export default function SpainMap({ value, counts, onChange }) {
               >
                 <title>{f.properties.name} · {n || 0} contratos</title>
               </path>
-              {showLabels && label && c && (
+              {label && c && n > labelThreshold && (
                 <text
                   x={c[0]} y={c[1]}
                   textAnchor="middle" dominantBaseline="middle"
                   className="sm-region-label"
-                  style={{ pointerEvents: 'none', fontSize: 9, fill: n > max * 0.5 ? '#fff' : '#334155', fontWeight: 700 }}
+                  style={{ pointerEvents: 'none', fontSize: labelSize, fill: n > max * 0.5 ? '#fff' : '#334155', fontWeight: 700 }}
                 >
                   {label}
                 </text>

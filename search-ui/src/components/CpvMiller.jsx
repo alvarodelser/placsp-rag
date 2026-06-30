@@ -11,10 +11,9 @@ function shortBase(code) {
 }
 
 function ShortCode({ code }) {
-  const base = shortBase(code)
   return (
     <span className="cm-short">
-      {base}<span className="cm-cursor">_</span>
+      {shortBase(code)}<span className="cm-cursor" />
     </span>
   )
 }
@@ -26,7 +25,7 @@ function topLevel() {
 function useCpvCounts(codes, filterParams) {
   const [counts, setCounts] = useState({})
   const cacheRef = useRef({})
-  const key = codes.join(',') + '|' + JSON.stringify(filterParams)
+  const key = [...codes].sort().join(',') + '|' + JSON.stringify(filterParams)
   useEffect(() => {
     if (!codes.length) return
     if (cacheRef.current[key]) { setCounts(cacheRef.current[key]); return }
@@ -65,6 +64,12 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
     return out
   }, [term])
 
+  const visibleCodes = useMemo(
+    () => [...midItems, ...rightItems],
+    [midItems, rightItems]
+  )
+  const counts = useCpvCounts(visibleCodes, filterParams)
+
   const add = (code) => { if (!value.includes(code)) onChange([...value, code]) }
   const remove = (code) => onChange(value.filter(c => c !== code))
   const isSearching = term.length >= 2
@@ -100,7 +105,6 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
   }
 
   const browseItems = isSearching ? matches : midItems
-  const counts = useCpvCounts(browseItems, filterParams)
 
   return (
     <div className="cpv-miller">
@@ -146,14 +150,15 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
           )}
           {browseItems.map(code => {
             const hasKids = cpvChildren(code, cpvMap).length > 0
-            const n = counts[code]
             return (
               <div key={code}
                 className={`cm-item${midSelected === code && !isSearching ? ' cm-active' : ''}`}
                 onClick={() => clickMid(code)}>
                 <ShortCode code={code} />
                 <span className="cm-label">{cpvMap[code] || '—'}</span>
-                {n != null && <span className="cm-count">{n.toLocaleString('es-ES')}</span>}
+                {counts[code] != null && (
+                  <span className="cm-count-pill">{counts[code].toLocaleString('es-ES')}</span>
+                )}
                 <button type="button" className="cm-add-btn" aria-label="Añadir"
                   onClick={e => { e.stopPropagation(); add(code) }}>+</button>
                 {hasKids && <CaretRight size={12} className="cm-caret" />}
@@ -167,7 +172,7 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
           {midSelected && !isSearching ? (
             <>
               <div className="cm-pane-title">
-                <ShortCode code={midSelected} /> {cpvMap[midSelected]}
+                <ShortCode code={midSelected} />&nbsp;{cpvMap[midSelected]}
               </div>
               {rightItems.length === 0
                 ? <div className="cm-empty">Sin subcódigos</div>
@@ -177,6 +182,9 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
                     <div key={code} className="cm-item" onClick={() => clickRight(code)}>
                       <ShortCode code={code} />
                       <span className="cm-label">{cpvMap[code] || '—'}</span>
+                      {counts[code] != null && (
+                        <span className="cm-count-pill">{counts[code].toLocaleString('es-ES')}</span>
+                      )}
                       <button type="button" className="cm-add-btn" aria-label="Añadir"
                         onClick={e => { e.stopPropagation(); add(code) }}>+</button>
                       {hasKids && <CaretRight size={12} className="cm-caret" />}

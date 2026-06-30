@@ -71,3 +71,100 @@ export function sendFeedback(payload) {
 export function removeFeedback({ search_id, result_id }) {
   return feedbackRequest('DELETE', { search_id, result_id })
 }
+
+
+// ── Auth ────────────────────────────────────────────────────────────────────
+
+export async function authRegister({ email, password, display_name }) {
+  const r = await fetch(`${BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, password, display_name }),
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'registration failed')
+  return data
+}
+
+export async function authLogin(email, password) {
+  const body = new URLSearchParams({ username: email, password })
+  const r = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    credentials: 'include',
+    body,
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'login failed')
+  return data
+}
+
+export async function authLogout() {
+  const r = await fetch(`${BASE}/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'logout failed')
+  return data
+}
+
+export async function authMe() {
+  const r = await fetch(`${BASE}/auth/me`, { credentials: 'include' })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'not authenticated')
+  return data
+}
+
+export async function authRefresh() {
+  const r = await fetch(`${BASE}/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  return r.ok
+}
+
+
+// ── User saved items ────────────────────────────────────────────────────────
+
+export async function saveItem({ item_id, syndication_id, title }) {
+  const r = await fetch(`${BASE}/api/users/me/saved`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ item_id, syndication_id, title }),
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'save failed')
+  return data
+}
+
+export async function unsaveItem(itemId) {
+  const r = await fetch(`${BASE}/api/users/me/saved/${encodeURIComponent(itemId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'unsave failed')
+  return data
+}
+
+export async function listSaved({ offset = 0, limit = 50 } = {}) {
+  const r = await fetch(
+    `${BASE}/api/users/me/saved?${buildQuery({ offset, limit })}`,
+    { credentials: 'include' },
+  )
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'list failed')
+  return data
+}
+
+export async function getSavedIds() {
+  const r = await fetch(`${BASE}/api/users/me/saved/ids`, {
+    credentials: 'include',
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'fetch ids failed')
+  return data
+}
+

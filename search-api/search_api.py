@@ -14,16 +14,21 @@ Run:  uvicorn search_api:app --host 0.0.0.0 --port 8092
 """
 import json
 import os
+import sqlite3
 import subprocess
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
+import auth
 import facets as fac
 import feedback as fb
 import filters as filt
+import users
 from graph_api import router as graph_router
 
 VECTORIZER_URL = os.getenv("VECTORIZER_URL", "http://localhost:8089").rstrip("/")
@@ -62,6 +67,7 @@ FIELDS = [
 app = FastAPI(title="PLACSP Search API")
 app.add_middleware(
     CORSMiddleware, allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["*"],
 )
 app.include_router(graph_router)
@@ -69,6 +75,10 @@ app.include_router(graph_router)
 
 def _fb_conn():
     return fb.connect(os.getenv("FEEDBACK_DB", "feedback.db"))
+
+
+def _users_conn():
+    return users.connect(os.getenv("USERS_DB", "users.db"))
 
 
 def _wv_headers():
@@ -559,6 +569,242 @@ def delete_feedback(body: FeedbackDel):
     conn = _fb_conn()
     try:
         fb.remove_like(conn, search_id=body.search_id, result_id=body.result_id)
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
+# ── Auth endpoints ──────────────────────────────────────────────────────────
+
+class RegisterIn(BaseModel):
+    email: str
+    password: str
+    display_name: str
+
+
+@app.post("/auth/register")
+def register(body: RegisterIn):
+    """Create a new user account, set auth cookies, return the user."""
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(400, "Invalid email")
+    if len(body.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    if not body.display_name.strip():
+        raise HTTPException(400, "Display name is required")
+
+    conn = _users_conn()
+    try:
+        hashed = auth.hash_password(body.password)
+        try:
+            user = users.create_user(
+                conn, email=email, display_name=body.display_name,
+                hashed_password=hashed,
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Email already registered")
+
+        access = auth.create_access_token(user["user_id"], user["email"])
+        raw_refresh, refresh_hash = auth.create_refresh_token()
+        users.store_refresh_token(
+            conn, user_id=user["user_id"],
+            token_hash=refresh_hash, expires_at=auth.refresh_token_expiry(),
+        )
+        users.log_event(conn, user_id=user["user_id"], event_type="register")
+    finally:
+        conn.close()
+
+    resp = JSONResponse({
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "display_name": user["display_name"],
+    })
+    auth.set_auth_cookies(resp, access, raw_refresh)
+    return resp
+
+
+@app.post("/auth/login")
+def login(form: OAuth2PasswordRequestForm = Depends()):
+    """Authenticate with email (username field) + password.  Sets auth cookies."""
+    conn = _users_conn()
+    try:
+        user = users.get_user_by_email(conn, form.username)
+        if not user or not auth.verify_password(form.password, user["hashed_password"]):
+            raise HTTPException(401, "Invalid email or password")
+        if not user.get("is_active", True):
+            raise HTTPException(403, "Account disabled")
+
+        users.update_last_seen(conn, user["user_id"])
+        access = auth.create_access_token(user["user_id"], user["email"])
+        raw_refresh, refresh_hash = auth.create_refresh_token()
+        users.store_refresh_token(
+            conn, user_id=user["user_id"],
+            token_hash=refresh_hash, expires_at=auth.refresh_token_expiry(),
+        )
+        users.log_event(conn, user_id=user["user_id"], event_type="login")
+    finally:
+        conn.close()
+
+    resp = JSONResponse({
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "display_name": user["display_name"],
+    })
+    auth.set_auth_cookies(resp, access, raw_refresh)
+    return resp
+
+
+@app.post("/auth/refresh")
+def refresh(request: Request):
+    """Issue a fresh access token using the refresh-token cookie."""
+    raw_refresh = request.cookies.get("refresh_token")
+    if not raw_refresh:
+        raise HTTPException(401, "No refresh token")
+
+    # We need the user_id from the (possibly expired) access token.
+    access_tok = request.cookies.get("access_token", "")
+    try:
+        import jwt as _jwt
+        payload = _jwt.decode(access_tok, auth.SECRET_KEY,
+                              algorithms=[auth.ALGORITHM],
+                              options={"verify_exp": False})
+        user_id = payload["sub"]
+    except Exception:
+        raise HTTPException(401, "Cannot identify user from access token")
+
+    conn = _users_conn()
+    try:
+        token_hash = auth.hash_refresh_token(raw_refresh)
+        if not users.validate_refresh_token(conn, user_id=user_id,
+                                            token_hash=token_hash):
+            raise HTTPException(401, "Refresh token invalid or expired")
+
+        user = users.get_user_by_id(conn, user_id)
+        if not user:
+            raise HTTPException(401, "User not found")
+
+        users.update_last_seen(conn, user_id)
+    finally:
+        conn.close()
+
+    new_access = auth.create_access_token(user["user_id"], user["email"])
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(
+        key="access_token", value=new_access, httponly=True,
+        secure=auth._SECURE, samesite="lax",
+        max_age=auth.ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/",
+    )
+    return resp
+
+
+@app.post("/auth/logout")
+def logout(request: Request):
+    """Clear auth cookies and invalidate all refresh tokens."""
+    user_id = None
+    access_tok = request.cookies.get("access_token", "")
+    try:
+        payload = auth.decode_access_token(access_tok)
+        user_id = payload["sub"]
+    except Exception:
+        pass  # best-effort: clear cookies even if token is invalid/expired
+
+    if user_id:
+        conn = _users_conn()
+        try:
+            users.delete_user_refresh_tokens(conn, user_id)
+            users.log_event(conn, user_id=user_id, event_type="logout")
+        finally:
+            conn.close()
+
+    resp = JSONResponse({"ok": True})
+    auth.clear_auth_cookies(resp)
+    return resp
+
+
+@app.get("/auth/me")
+def me(current: dict = Depends(auth.get_current_user)):
+    """Return the authenticated user's profile."""
+    conn = _users_conn()
+    try:
+        user = users.get_user_by_id(conn, current["user_id"])
+        if not user:
+            raise HTTPException(404, "User not found")
+        users.update_last_seen(conn, current["user_id"])
+    finally:
+        conn.close()
+    return {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "display_name": user["display_name"],
+    }
+
+
+# ── User-space endpoints (protected) ───────────────────────────────────────
+
+class SaveItemIn(BaseModel):
+    item_id: str
+    syndication_id: str | None = None
+    title: str | None = None
+
+
+@app.get("/api/users/me/saved")
+def list_user_saved(
+    current: dict = Depends(auth.get_current_user),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+):
+    """List the current user's saved licitaciones."""
+    conn = _users_conn()
+    try:
+        items = users.list_saved(conn, current["user_id"],
+                                 offset=offset, limit=limit)
+        total = users.count_saved(conn, current["user_id"])
+    finally:
+        conn.close()
+    return {"total": total, "offset": offset, "items": items}
+
+
+@app.get("/api/users/me/saved/ids")
+def get_user_saved_ids(current: dict = Depends(auth.get_current_user)):
+    """Return just the item IDs for fast UI hydration."""
+    conn = _users_conn()
+    try:
+        ids = users.get_saved_ids(conn, current["user_id"])
+    finally:
+        conn.close()
+    return {"ids": ids}
+
+
+@app.post("/api/users/me/saved")
+def save_user_item(body: SaveItemIn,
+                   current: dict = Depends(auth.get_current_user)):
+    """Save a licitación to the current user's space."""
+    conn = _users_conn()
+    try:
+        item = users.save_item(
+            conn, user_id=current["user_id"], item_id=body.item_id,
+            syndication_id=body.syndication_id, title=body.title,
+        )
+        users.log_event(
+            conn, user_id=current["user_id"],
+            event_type="save", item_id=body.item_id,
+        )
+    finally:
+        conn.close()
+    return {"ok": True, "item": item}
+
+
+@app.delete("/api/users/me/saved/{item_id}")
+def unsave_user_item(item_id: str,
+                     current: dict = Depends(auth.get_current_user)):
+    """Soft-delete a saved item."""
+    conn = _users_conn()
+    try:
+        users.unsave_item(conn, user_id=current["user_id"], item_id=item_id)
+        users.log_event(
+            conn, user_id=current["user_id"],
+            event_type="unsave", item_id=item_id,
+        )
     finally:
         conn.close()
     return {"ok": True}

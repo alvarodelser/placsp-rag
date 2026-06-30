@@ -14,7 +14,7 @@ const MAPS = {
 const CAT_LABELS = {
   status: 'Estado', cpv: 'CPV', nuts: 'Ubicación',
   contract_type: 'Tipo', procedure: 'Procedimiento', result: 'Resultado',
-  dates: 'Fechas', deadline: 'Plazo', budget: 'Presupuesto',
+  dates: 'Publicación', deadline: 'Presentación', budget: 'Presupuesto',
 }
 
 const CAT_ORDER = ['status', 'cpv', 'nuts', 'contract_type', 'procedure', 'result', 'dates', 'deadline', 'budget']

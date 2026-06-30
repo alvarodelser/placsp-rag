@@ -10,28 +10,30 @@ import DensitySlider from './DensitySlider.jsx'
 import StatusDiagram from './StatusLifecycle.jsx'
 import GroupedFacet from './GroupedFacet.jsx'
 import ProcedureAxis from './ProcedureAxis.jsx'
-import { budgetToPos, posToBudget, presetRange, todayISO } from '../filters.js'
+import { budgetToPos, posToBudget, presetRange, presetDeadlineRange, todayISO } from '../filters.js'
 import { money } from '../format.js'
 import {
-  Stack, MapPin, Calendar, CurrencyEur, ListChecks, Scales, Gavel, X, Trophy,
+  Stack, MapPin, Calendar, HourglassHigh, CurrencyEur, ListChecks, Scales, Gavel, X, Trophy,
 } from '../icons.js'
 import { RESULT_GROUPS, TYPE_GROUPS, PROC_GROUPS } from '../facetGroups.js'
 
 const CATS = [
-  { id: 'cpv',           label: 'CPV',          Icon: Stack,        fields: ['cpv'] },
-  { id: 'nuts',          label: 'Ubicación',     Icon: MapPin,       fields: ['nuts'] },
-  { id: 'dates',         label: 'Fechas',        Icon: Calendar,     fields: ['pub_from', 'pub_to', 'deadline_from'] },
-  { id: 'budget',        label: 'Presupuesto',   Icon: CurrencyEur,  fields: ['budget_min', 'budget_max'] },
-  { id: 'status',        label: 'Estado',        Icon: ListChecks,   fields: ['status'] },
-  { id: 'result',        label: 'Resultado',     Icon: Trophy,       fields: ['result'] },
-  { id: 'contract_type', label: 'Tipo',          Icon: Scales,       fields: ['contract_type'] },
-  { id: 'procedure',     label: 'Procedimiento', Icon: Gavel,        fields: ['procedure'] },
+  { id: 'cpv',           label: 'CPV',           Icon: Stack,         fields: ['cpv'] },
+  { id: 'nuts',          label: 'Ubicación',      Icon: MapPin,        fields: ['nuts'] },
+  { id: 'publicacion',   label: 'Publicación',    Icon: Calendar,      fields: ['pub_from', 'pub_to'] },
+  { id: 'presentacion',  label: 'Presentación',   Icon: HourglassHigh, fields: ['deadline_from', 'deadline_to'] },
+  { id: 'budget',        label: 'Presupuesto',    Icon: CurrencyEur,   fields: ['budget_min', 'budget_max'] },
+  { id: 'status',        label: 'Estado',         Icon: ListChecks,    fields: ['status'] },
+  { id: 'result',        label: 'Resultado',      Icon: Trophy,        fields: ['result'] },
+  { id: 'contract_type', label: 'Tipo',           Icon: Scales,        fields: ['contract_type'] },
+  { id: 'procedure',     label: 'Procedimiento',  Icon: Gavel,         fields: ['procedure'] },
 ]
 
 function catCount(cat, f) {
   if (['cpv', 'nuts', 'status', 'result', 'contract_type', 'procedure'].includes(cat.id))
     return (f[cat.id] || []).length
-  if (cat.id === 'dates') return (f.pub_from || f.pub_to || f.deadline_from || f.deadline_to) ? 1 : 0
+  if (cat.id === 'publicacion')  return (f.pub_from || f.pub_to) ? 1 : 0
+  if (cat.id === 'presentacion') return (f.deadline_from || f.deadline_to) ? 1 : 0
   if (cat.id === 'budget') return (f.budget_min || f.budget_max) ? 1 : 0
   return 0
 }
@@ -54,12 +56,24 @@ function last36Months() {
 }
 const STATIC_MONTHS = last36Months()
 
+function next18Months() {
+  const out = []
+  const now = new Date()
+  for (let i = 0; i <= 17; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return out
+}
+const STATIC_FUTURE_MONTHS = next18Months()
+
 function useLazyTab(active, tabId, filters, fetcher) {
+  const tabIds = Array.isArray(tabId) ? tabId : [tabId]
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(false)
   const keyRef = useRef(null)
   useEffect(() => {
-    if (active !== tabId) return
+    if (!tabIds.includes(active)) return
     const key = JSON.stringify(filtersToParams(filters))
     if (key === keyRef.current) return
     let cancelled = false
@@ -75,7 +89,6 @@ function useLazyTab(active, tabId, filters, fetcher) {
 
 export default function FilterWorkspace({ filters, patch, setList, facetsData, total, previewResults, loading, onClose, onClear }) {
   const [active, setActive] = useState('cpv')
-  const [dateAxis, setDateAxis] = useState('publication')
 
   const { data: locationData,  loading: locationLoading }  = useLazyTab(active, 'nuts',          filters, locationDist)
   const { data: statusData,    loading: statusLoading }    = useLazyTab(active, 'status',        filters, statusDist)
@@ -83,7 +96,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
   const { data: typeData,      loading: typeLoading }      = useLazyTab(active, 'contract_type', filters, typeDist)
   const { data: procedureData, loading: procedureLoading } = useLazyTab(active, 'procedure',     filters, procedureDist)
   const { data: budgetData,    loading: budgetLoading }    = useLazyTab(active, 'budget',        filters, budgetDist)
-  const { data: datesData,     loading: datesLoading }     = useLazyTab(active, 'dates',         filters, datesDist)
+  const { data: datesData,     loading: datesLoading }     = useLazyTab(active, ['publicacion', 'presentacion'], filters, datesDist)
 
   const center = () => {
     switch (active) {
@@ -170,28 +183,17 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
         )
       }
 
-      case 'dates': {
-        // Months come from loaded data when available; fall back to last 36 months
-        // computed client-side so the slider is usable immediately without a DB call.
-        const loadedSeries = datesData?.dates?.[dateAxis] || []
+      case 'publicacion': {
+        const loadedSeries = datesData?.dates?.publication || []
         const months  = loadedSeries.length > 0 ? loadedSeries.map(s => s.month) : STATIC_MONTHS
         const density = loadedSeries.length > 0 ? loadedSeries.map(s => s.count) : []
         const n = Math.max(0, months.length - 1)
-
-        const fromKey = dateAxis === 'publication' ? 'pub_from' : 'deadline_from'
-        const toKey   = dateAxis === 'publication' ? 'pub_to'   : 'deadline_to'
-        const currentFrom = filters[fromKey] ? filters[fromKey].slice(0, 7) : null
-        const currentTo   = filters[toKey]   ? filters[toKey].slice(0, 7)   : null
-
+        const currentFrom = filters.pub_from ? filters.pub_from.slice(0, 7) : null
+        const currentTo   = filters.pub_to   ? filters.pub_to.slice(0, 7)   : null
         const loIdx = currentFrom ? Math.max(0, months.indexOf(currentFrom)) : 0
         const hiIdx = currentTo   ? Math.max(0, months.indexOf(currentTo))   : n
-
         return (
           <div className="dates-filter">
-            <div className="ws-axis">
-              <button className={dateAxis === 'publication' ? 'on' : ''} onClick={() => setDateAxis('publication')}>Publicación</button>
-              <button className={dateAxis === 'plazo' ? 'on' : ''} onClick={() => setDateAxis('plazo')}>Plazo de presentación</button>
-            </div>
             <div className={datesLoading ? 'dist-loading' : ''}>
               <DensitySlider
                 min={0} max={n}
@@ -203,8 +205,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
                 onChange={({ low, high }) => {
                   const from = months[Math.round(low)]
                   const to   = months[Math.round(high)]
-                  if (dateAxis === 'publication') patch({ pub_from: from ? `${from}-01` : '', pub_to: to ? `${to}-28` : '' })
-                  else patch({ deadline_from: from ? `${from}-01` : '', deadline_to: to ? `${to}-28` : '' })
+                  patch({ pub_from: from ? `${from}-01` : '', pub_to: to ? `${to}-28` : '' })
                 }}
               />
             </div>
@@ -214,7 +215,44 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
                   {{ month: 'Último mes', quarter: '3 meses', year: 'Año', all: 'Todo' }[p]}
                 </button>
               ))}
-              <button className="preset" onClick={() => patch({ deadline_from: todayISO() })}>Plazo abierto</button>
+            </div>
+          </div>
+        )
+      }
+
+      case 'presentacion': {
+        const thisMonth = todayISO().slice(0, 7)
+        const loadedSeries = (datesData?.dates?.plazo || []).filter(s => s.month >= thisMonth)
+        const months  = loadedSeries.length > 0 ? loadedSeries.map(s => s.month) : STATIC_FUTURE_MONTHS
+        const density = loadedSeries.length > 0 ? loadedSeries.map(s => s.count) : []
+        const n = Math.max(0, months.length - 1)
+        const currentFrom = filters.deadline_from ? filters.deadline_from.slice(0, 7) : null
+        const currentTo   = filters.deadline_to   ? filters.deadline_to.slice(0, 7)   : null
+        const loIdx = currentFrom ? Math.max(0, months.indexOf(currentFrom)) : 0
+        const hiIdx = currentTo   ? Math.max(0, months.indexOf(currentTo))   : n
+        return (
+          <div className="dates-filter">
+            <div className={datesLoading ? 'dist-loading' : ''}>
+              <DensitySlider
+                min={0} max={n}
+                low={loIdx} high={hiIdx < 0 ? n : hiIdx}
+                density={density}
+                format={(i) => months[Math.round(Math.max(0, Math.min(n, i)))] || ''}
+                toPos={(v, lo, hi) => hi <= lo ? 0 : Math.max(0, Math.min(1, (v - lo) / (hi - lo)))}
+                toValue={(p, lo, hi) => Math.round(lo + p * (hi - lo))}
+                onChange={({ low, high }) => {
+                  const from = months[Math.round(low)]
+                  const to   = months[Math.round(high)]
+                  patch({ deadline_from: from ? `${from}-01` : '', deadline_to: to ? `${to}-28` : '' })
+                }}
+              />
+            </div>
+            <div className="presets">
+              {['week', 'month', 'quarter', 'all'].map((p) => (
+                <button key={p} className="preset" onClick={() => patch(presetDeadlineRange(p))}>
+                  {{ week: '1 semana', month: '1 mes', quarter: '3 meses', all: 'Todo' }[p]}
+                </button>
+              ))}
             </div>
           </div>
         )
