@@ -76,7 +76,7 @@ export function removeFeedback({ search_id, result_id }) {
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 export async function authRegister({ email, password, display_name }) {
-  const r = await fetch(`${BASE}/auth/register`, {
+  const r = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -89,7 +89,7 @@ export async function authRegister({ email, password, display_name }) {
 
 export async function authLogin(email, password) {
   const body = new URLSearchParams({ username: email, password })
-  const r = await fetch(`${BASE}/auth/login`, {
+  const r = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     credentials: 'include',
     body,
@@ -100,7 +100,7 @@ export async function authLogin(email, password) {
 }
 
 export async function authLogout() {
-  const r = await fetch(`${BASE}/auth/logout`, {
+  const r = await fetch(`${BASE}/api/auth/logout`, {
     method: 'POST',
     credentials: 'include',
   })
@@ -110,14 +110,14 @@ export async function authLogout() {
 }
 
 export async function authMe() {
-  const r = await fetch(`${BASE}/auth/me`, { credentials: 'include' })
+  const r = await fetch(`${BASE}/api/auth/me`, { credentials: 'include' })
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(data.detail || r.statusText || 'not authenticated')
   return data
 }
 
 export async function authRefresh() {
-  const r = await fetch(`${BASE}/auth/refresh`, {
+  const r = await fetch(`${BASE}/api/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
   })

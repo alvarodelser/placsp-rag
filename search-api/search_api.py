@@ -582,7 +582,7 @@ class RegisterIn(BaseModel):
     display_name: str
 
 
-@app.post("/auth/register")
+@app.post("/api/auth/register")
 def register(body: RegisterIn):
     """Create a new user account, set auth cookies, return the user."""
     email = body.email.strip().lower()
@@ -623,7 +623,7 @@ def register(body: RegisterIn):
     return resp
 
 
-@app.post("/auth/login")
+@app.post("/api/auth/login")
 def login(form: OAuth2PasswordRequestForm = Depends()):
     """Authenticate with email (username field) + password.  Sets auth cookies."""
     conn = _users_conn()
@@ -654,7 +654,7 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
     return resp
 
 
-@app.post("/auth/refresh")
+@app.post("/api/auth/refresh")
 def refresh(request: Request):
     """Issue a fresh access token using the refresh-token cookie."""
     raw_refresh = request.cookies.get("refresh_token")
@@ -697,7 +697,7 @@ def refresh(request: Request):
     return resp
 
 
-@app.post("/auth/logout")
+@app.post("/api/auth/logout")
 def logout(request: Request):
     """Clear auth cookies and invalidate all refresh tokens."""
     user_id = None
@@ -721,7 +721,7 @@ def logout(request: Request):
     return resp
 
 
-@app.get("/auth/me")
+@app.get("/api/auth/me")
 def me(current: dict = Depends(auth.get_current_user)):
     """Return the authenticated user's profile."""
     conn = _users_conn()

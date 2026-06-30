@@ -29,21 +29,6 @@ const [filtersOpen, setFiltersOpen] = useState(false)
   const [savedOpen, setSavedOpen] = useState(false)
   const didMount = useRef(false)
 
-  if (user === undefined) {
-    return (
-      <div className="auth-page">
-        <div style={{ margin: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <CircleNotch size={24} className="spinner" /> Cargando…
-        </div>
-      </div>
-    )
-  }
-  if (user === null) {
-    return <AuthPage />
-  }
-
-
-
   async function run(offset = 0, f = filters, query = q) {
     if (query.trim() === '' && activeFilterList(f).length === 0) {
       setState({ status: 'idle' })
@@ -94,6 +79,19 @@ const [filtersOpen, setFiltersOpen] = useState(false)
     else if (field === 'deadline') patch({ deadline_from: '', deadline_to: '' })
     else if (field === 'open_only') patch({ open_only: false })
     else if (field === 'budget') patch({ budget_min: '', budget_max: '' })
+  }
+
+  if (user === undefined) {
+    return (
+      <div className="auth-page">
+        <div style={{ margin: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <CircleNotch size={24} className="spinner" /> Cargando…
+        </div>
+      </div>
+    )
+  }
+  if (user === null) {
+    return <AuthPage />
   }
 
   return (
