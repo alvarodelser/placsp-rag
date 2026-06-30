@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
 import { listSaved } from '../api.js'
 import { X, BookmarkSimple, CircleNotch } from '../icons.js'
+import PliegosModal from './PliegosModal.jsx'
 
 export default function SavedSpace({ onClose, onRemove }) {
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [activeAnalysisId, setActiveAnalysisId] = useState(null)
+  const [activeAnalysisTitle, setActiveAnalysisTitle] = useState('')
 
   useEffect(() => {
     setLoading(true)
@@ -76,18 +79,40 @@ export default function SavedSpace({ onClose, onRemove }) {
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                className="saved-remove"
-                onClick={() => handleRemove(item.item_id)}
-                title="Quitar de Mi Espacio"
-              >
-                Quitar
-              </button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="ai-btn"
+                  onClick={() => {
+                    setActiveAnalysisId(item.syndication_id)
+                    setActiveAnalysisTitle(item.title || item.syndication_id)
+                  }}
+                  style={{ background: '#ebf8ff', color: '#2b6cb0', border: '1px solid #bee3f8', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                  title="Análisis Inteligente (AI)"
+                >
+                  ✨ AI
+                </button>
+                <button
+                  type="button"
+                  className="saved-remove"
+                  onClick={() => handleRemove(item.item_id)}
+                  title="Quitar de Mi Espacio"
+                >
+                  Quitar
+                </button>
+              </div>
             </div>
           ))}
         </div>
       </div>
+      
+      {activeAnalysisId && (
+        <PliegosModal 
+          syndicationId={activeAnalysisId} 
+          title={activeAnalysisTitle} 
+          onClose={() => setActiveAnalysisId(null)} 
+        />
+      )}
     </div>
   )
 }

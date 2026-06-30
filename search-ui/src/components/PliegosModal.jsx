@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getPliegos } from '../api.js'
+import { getPliegos, triggerPliegosAnalysis } from '../api.js'
 
 export default function PliegosModal({ syndicationId, title, onClose }) {
   const [data, setData] = useState(null)
@@ -23,6 +23,15 @@ export default function PliegosModal({ syndicationId, title, onClose }) {
       })
     return () => { active = false }
   }, [syndicationId])
+
+  const handleTriggerAnalysis = async () => {
+    try {
+      await triggerPliegosAnalysis(syndicationId)
+      alert("El análisis profundo se está generando en segundo plano. Esto puede tardar varios minutos (OCR + IA). Vuelve más tarde.")
+    } catch (err) {
+      alert("Error al iniciar el análisis: " + err.message)
+    }
+  }
 
   // Click outside to close
   const handleBackdrop = (e) => {
@@ -73,22 +82,39 @@ export default function PliegosModal({ syndicationId, title, onClose }) {
               {activeTab === 'executive' && (
                 <div className="tab-pane">
                   <h3>Resumen Ejecutivo (AI)</h3>
-                  {data.criteria && data.criteria.criterios_adjudicacion ? (
-                    <div>
-                      <p>Datos extraídos. (El módulo de IA ejecutiva se mostrará aquí cuando el backend haya completado la fase 2).</p>
-                      <pre style={{ background: '#f4f4f4', padding: '10px', overflowX: 'auto' }}>
-                        {JSON.stringify(data.criteria, null, 2)}
+                  {data.executive_summary_json ? (
+                    <div className="ai-content">
+                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                        {data.executive_summary_json}
                       </pre>
                     </div>
                   ) : (
-                    <p>Esperando análisis avanzado...</p>
+                    <div>
+                      <p>El análisis ejecutivo (Tier 2) aún no se ha generado para esta licitación.</p>
+                      <button className="trigger-btn" onClick={handleTriggerAnalysis}>
+                        Generar Análisis Completo (OCR + IA)
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
 
               {activeTab === 'criteria' && (
                 <div className="tab-pane">
-                  <h3>Criterios de Adjudicación</h3>
+                  <h3>Estrategia de Puntuación</h3>
+                  {data.scoring_strategy_json ? (
+                    <div className="ai-content" style={{ marginBottom: '20px' }}>
+                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                        {data.scoring_strategy_json}
+                      </pre>
+                    </div>
+                  ) : (
+                    <p style={{ color: '#718096', fontStyle: 'italic', marginBottom: '20px' }}>
+                      Estrategia AI no generada aún.
+                    </p>
+                  )}
+                  
+                  <h3>Criterios de Adjudicación (Extraídos de la Plataforma)</h3>
                   {data.criteria && data.criteria.criterios_adjudicacion ? (
                     <ul className="criteria-list">
                       {data.criteria.criterios_adjudicacion.map((c, i) => (
@@ -112,9 +138,26 @@ export default function PliegosModal({ syndicationId, title, onClose }) {
 
               {activeTab === 'risks' && (
                 <div className="tab-pane">
-                  <h3>Análisis de Riesgos (PCAP)</h3>
-                  <p>Este análisis requiere procesar el PDF del Pliego de Cláusulas Administrativas.</p>
-                  {/* Here we would render the parsed PCAP JSON risks if they exist in the response */}
+                  <h3>Análisis de Riesgos Legales (PCAP)</h3>
+                  {data.risk_analysis_json ? (
+                    <div className="ai-content">
+                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                        {data.risk_analysis_json}
+                      </pre>
+                      
+                      <h4 style={{ marginTop: '24px' }}>Datos Extraídos</h4>
+                      <pre style={{ background: '#f4f4f4', padding: '10px', overflowX: 'auto', fontSize: '0.85rem' }}>
+                        {data.pcap_analysis_json}
+                      </pre>
+                    </div>
+                  ) : (
+                    <div>
+                      <p>Este análisis requiere descargar y procesar el PDF del Pliego de Cláusulas Administrativas usando IA profunda.</p>
+                      <button className="trigger-btn" onClick={handleTriggerAnalysis}>
+                        Generar Análisis Completo (OCR + IA)
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -159,6 +202,9 @@ export default function PliegosModal({ syndicationId, title, onClose }) {
         .subtext { font-size: 0.85rem; color: #718096; }
         .box { padding: 12px; background: #f7fafc; border-radius: 6px; margin-top: 16px; }
         .box h4 { margin: 0 0 4px 0; font-size: 0.95rem; }
+        .trigger-btn { background: #3182ce; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 12px; }
+        .trigger-btn:hover { background: #2b6cb0; }
+        .ai-content { background: #f0fff4; border: 1px solid #c6f6d5; border-radius: 6px; padding: 16px; }
       `}</style>
     </div>
   )

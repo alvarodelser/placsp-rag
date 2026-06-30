@@ -1,6 +1,8 @@
 from typing import Iterable, Optional
 import structlog
 from placsp.core.models import RawEntry, Tombstone, ProcurementRecord, StatusEvent
+from placsp.core.codelists import collapse
+from placsp.ingestion.pliego_pipeline import PliegoPipeline
 from placsp.parsers.atom_parser import parse_feed
 from placsp.parsers.codice_extractor import extract
 from placsp.parsers.renderer import render
@@ -39,6 +41,7 @@ class Pipeline:
         self.upserter = upserter
         self.codelists = codelists
         self.graph_sink = graph_sink
+        self.pliego_pipeline = PliegoPipeline(cfg, embedder)
 
     def is_offpeak(self, now) -> bool:
         s, e = self.cfg.offpeak_start, self.cfg.offpeak_end
@@ -74,6 +77,21 @@ class Pipeline:
         vectors = self.embedder.embed(texts) if recs else []
         upserted = self.upserter.upsert(recs, vectors) if recs else 0
         deleted = self.upserter.apply_tombstones(tombs) if tombs else 0
+        
+        # --- Tier 1 Pliego Processing ---
+        pliego_objs = []
+        for rec in recs:
+            # We only process if it's a new entry and has an HTML link (the detail page)
+            # The detail page URL is typically in the source_url
+            if rec.source_url and "contrataciondelestado.es/wps/portal" in rec.source_url:
+                obj = self.pliego_pipeline.process_tier1(rec, rec.source_url)
+                if obj:
+                    pliego_objs.append(obj)
+        
+        if pliego_objs:
+            self.upserter.post_batch_raw(pliego_objs)
+            log.info("pliegos_processed", count=len(pliego_objs))
+
         if self.graph_sink is not None:
             try:
                 self.graph_sink.upsert(recs)

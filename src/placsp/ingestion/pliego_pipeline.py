@@ -6,6 +6,10 @@ from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
 from placsp.config import Config
 from placsp.ai.embedder import Embedder
+from placsp.parsers.pliego_html_parser import PliegoHTMLParser
+import uuid
+import json
+import datetime
 
 class PliegoPipeline:
     def __init__(self, cfg: Config, embedder: Embedder):
@@ -63,6 +67,61 @@ class PliegoPipeline:
             return r.json()
         except Exception as e:
             print(f"Error running chunker: {e}")
+            return None
+
+    def chunk_text(self, text: str) -> list:
+        """Sends text to chunker service and returns chunks with vectors."""
+        try:
+            r = self.client.post(
+                f"{self.chunker_url}/chunk",
+                json={"text": text}
+            )
+            r.raise_for_status()
+            chunks = r.json().get('chunks', [])
+            
+            # Embed chunks
+            if chunks:
+                texts_to_embed = [c['text'] for c in chunks]
+                vectors = self.embedder.embed(texts_to_embed)
+                
+                # Zip chunks with vectors
+                return [
+                    {
+                        "chunk_index": i,
+                        "chunk_title": c.get('title', ''),
+                        "chunk_text": c['text'],
+                        "vector": vectors[i] if i < len(vectors) else None
+                    }
+                    for i, c in enumerate(chunks)
+                ]
+            return []
+        except Exception as e:
+            print(f"Error chunking text: {e}")
+            return []
+
+    def process_tier1(self, record, link_url: str):
+        """Processes Tier 1 (HTML criteria) for a single record and returns the Weaviate object."""
+        try:
+            r = self.client.get(link_url)
+            r.raise_for_status()
+            parser = PliegoHTMLParser(r.text)
+            criteria = parser.parse()
+            
+            # Create Weaviate object for Placsp_pliego_criteria
+            obj = {
+                "class": "Placsp_pliego_criteria",
+                "id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"criteria_{record.syndication_id}")),
+                "properties": {
+                    "syndication_id": record.syndication_id,
+                    "expediente": record.expediente or '',
+                    "criteria_json": json.dumps(criteria.__dict__, ensure_ascii=False),
+                    "source_url": link_url,
+                    "extracted_at": datetime.datetime.utcnow().isoformat() + "Z"
+                }
+            }
+            return obj
+        except Exception as e:
+            print(f"Error in process_tier1 for {record.syndication_id}: {e}")
             return None
 
     def process_pliego(self, pdf_url: str) -> Optional[List[Dict[str, Any]]]:

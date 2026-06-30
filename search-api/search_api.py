@@ -16,6 +16,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import urllib.parse
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -266,6 +267,17 @@ def get_pliegos_analysis(syndication_id: str):
         hit["criteria"] = {}
         
     return hit
+
+
+@app.post("/api/pliegos/{syndication_id:path}/analyze")
+def trigger_pliegos_analysis(syndication_id: str):
+    """Triggers the background Tier 2 analysis in the ingester container."""
+    try:
+        r = httpx.post(f"http://placsp-ingester-api:8093/internal/analyze/{urllib.parse.quote(syndication_id)}", timeout=5)
+        r.raise_for_status()
+        return {"status": "accepted"}
+    except Exception as e:
+        raise HTTPException(502, f"Failed to trigger internal analysis: {e}")
 
 
 _FILTER_PARAMS = dict(

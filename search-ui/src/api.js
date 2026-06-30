@@ -180,3 +180,13 @@ export async function getPliegos(syndicationId) {
   }
   return data
 }
+
+export async function triggerPliegosAnalysis(syndicationId) {
+  const r = await fetch(`${BASE}/api/pliegos/${encodeURIComponent(syndicationId)}/analyze`, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.detail || r.statusText || 'failed to trigger analysis')
+  return data
+}

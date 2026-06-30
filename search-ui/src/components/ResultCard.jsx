@@ -2,11 +2,8 @@ import { money } from '../format.js'
 import cpvMap from '../codelists/cpv.json'
 import nutsMap from '../codelists/nuts.json'
 import { BookmarkSimple } from '../icons.js'
-import PliegosModal from './PliegosModal.jsx'
-import { useState } from 'react'
 
 export default function ResultCard({ r, saved = false, onToggleSave = () => {} }) {
-  const [showModal, setShowModal] = useState(false)
   const title = r.title || r.expediente || r.syndication_id || 'Sin título'
   const moneys = [
     ['Presupuesto', r.budget_amount],
@@ -45,13 +42,6 @@ export default function ResultCard({ r, saved = false, onToggleSave = () => {} }
         {r.adjudicatario && <div className="row"><b>Adjudicatario:</b> {r.adjudicatario}</div>}
         {loc && <div className="row">{loc}</div>}
         {r.content && <div className="snippet">{r.content}</div>}
-        <button 
-          className="ai-btn" 
-          onClick={() => setShowModal(true)}
-          style={{ marginTop: '12px', background: '#ebf8ff', color: '#2b6cb0', border: '1px solid #bee3f8', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', width: 'fit-content' }}
-        >
-          ✨ Análisis Inteligente
-        </button>
       </div>
       <button
         type="button"
@@ -63,14 +53,6 @@ export default function ResultCard({ r, saved = false, onToggleSave = () => {} }
         <BookmarkSimple size={20} weight={saved ? 'fill' : 'regular'} />
         <span>{saved ? 'Guardado' : 'Guardar'}</span>
       </button>
-
-      {showModal && (
-        <PliegosModal 
-          syndicationId={r.syndication_id} 
-          title={title} 
-          onClose={() => setShowModal(false)} 
-        />
-      )}
     </div>
   )
 }

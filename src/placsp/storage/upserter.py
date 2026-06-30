@@ -37,6 +37,13 @@ class Upserter:
             succeeded += self._post_batch(objects[i:i + self.batch_size])
         return succeeded
 
+    def post_batch_raw(self, objects: list[dict]) -> int:
+        """Batch insert pre-formatted Weaviate object dictionaries."""
+        succeeded = 0
+        for i in range(0, len(objects), self.batch_size):
+            succeeded += self._post_batch(objects[i:i + self.batch_size])
+        return succeeded
+
     def _post_batch(self, objects: list[dict]) -> int:
         if not objects:
             return 0
