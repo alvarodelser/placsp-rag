@@ -317,3 +317,408 @@ button.ws-clear:hover { border-color: #ef4444; color: #ef4444; background: #fff1
 
 /* ── SpainMap volume pill on hover via title (tooltip built-in) ── */
 .sm-region-label { pointer-events: none; font-size: 10px; fill: var(--ink); }
+
+/* ── Auth Page ────────────────────────────────────────────────────────────── */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bg) 0%, #f0f4f8 100%);
+  padding: 1rem;
+}
+
+.auth-card {
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05), 0 4px 10px rgba(0, 0, 0, 0.02);
+  width: 100%;
+  max-width: 420px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.auth-brand {
+  text-align: center;
+  padding: 2.5rem 2rem 1.5rem;
+}
+
+.auth-brand h1 {
+  font-size: 2rem;
+  margin: 0;
+  color: var(--accent);
+  letter-spacing: -0.03em;
+}
+
+.auth-brand p {
+  margin: 0.5rem 0 0;
+  color: var(--ink-light);
+  font-size: 0.95rem;
+}
+
+.auth-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 1rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ink-light);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.auth-tab:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.auth-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: white;
+}
+
+.auth-form {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.auth-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-icon {
+  position: absolute;
+  left: 1rem;
+  color: var(--ink-light);
+  pointer-events: none;
+}
+
+.auth-field input {
+  width: 100%;
+  padding: 0.75rem 1rem 0.75rem 2.75rem;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) / 2);
+  font-family: inherit;
+  font-size: 0.95rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.auth-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.auth-toggle-pw {
+  position: absolute;
+  right: 0.5rem;
+  background: transparent;
+  border: none;
+  padding: 0.5rem;
+  color: var(--ink-light);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.auth-toggle-pw:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.auth-submit {
+  width: 100%;
+  padding: 0.875rem;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: calc(var(--radius) / 2);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.auth-submit:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.auth-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.auth-error {
+  background: #fee2e2;
+  color: #b91c1c;
+  padding: 0.75rem 1rem;
+  border-radius: calc(var(--radius) / 2);
+  font-size: 0.9rem;
+  border: 1px solid #fca5a5;
+}
+
+/* ── User Menu ───────────────────────────────────────────────────────────── */
+
+.user-menu {
+  position: relative;
+  margin-left: 1rem;
+}
+
+.user-trigger {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  border-radius: 20px;
+  transition: background 0.2s;
+}
+
+.user-trigger:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.user-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ink);
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) / 2);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  width: 200px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.user-dropdown button {
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  font-size: 0.95rem;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-dropdown button:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.user-dropdown hr {
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+/* ── Saved Space ─────────────────────────────────────────────────────────── */
+
+.saved-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(2px);
+  z-index: 999;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.saved-panel {
+  width: 100%;
+  max-width: 500px;
+  background: white;
+  height: 100%;
+  box-shadow: -5px 0 25px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.saved-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+}
+
+.saved-head-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.saved-count {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  color: var(--ink-light);
+}
+
+.saved-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.saved-loading, .saved-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 4rem 2rem;
+  text-align: center;
+  color: var(--ink-light);
+  height: 100%;
+}
+
+.saved-empty p {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0;
+}
+
+.saved-empty span {
+  font-size: 0.95rem;
+}
+
+.saved-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) / 2);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.saved-item:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.saved-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.saved-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+  margin-bottom: 0.5rem;
+}
+
+.saved-title a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.saved-title a:hover {
+  text-decoration: underline;
+}
+
+.saved-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--ink-light);
+  flex-wrap: wrap;
+}
+
+.saved-sid {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: #f1f5f9;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.saved-remove {
+  background: transparent;
+  border: none;
+  color: var(--ink-light);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.saved-remove:hover {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+/* Override existing relgutter for Guardado state */
+.relgutter.on {
+  color: var(--accent) !important;
+  background: #eff6ff !important;
+  border-color: #bfdbfe !important;
+}

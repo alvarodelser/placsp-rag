@@ -1,9 +1,9 @@
 import { money } from '../format.js'
 import cpvMap from '../codelists/cpv.json'
 import nutsMap from '../codelists/nuts.json'
-import { ThumbsUp } from '../icons.js'
+import { BookmarkSimple } from '../icons.js'
 
-export default function ResultCard({ r, liked = false, onToggleLike = () => {} }) {
+export default function ResultCard({ r, saved = false, onToggleSave = () => {} }) {
   const title = r.title || r.expediente || r.syndication_id || 'Sin título'
   const moneys = [
     ['Presupuesto', r.budget_amount],
@@ -45,13 +45,13 @@ export default function ResultCard({ r, liked = false, onToggleLike = () => {} }
       </div>
       <button
         type="button"
-        className={`relgutter${liked ? ' on' : ''}`}
-        onClick={onToggleLike}
-        aria-pressed={liked}
-        title={liked ? 'Marcado como relevante' : 'Marcar como relevante'}
+        className={`relgutter${saved ? ' on' : ''}`}
+        onClick={onToggleSave}
+        aria-pressed={saved}
+        title={saved ? 'Guardado en Mi Espacio' : 'Guardar en Mi Espacio'}
       >
-        <ThumbsUp size={20} weight={liked ? 'fill' : 'regular'} />
-        <span>Relevante</span>
+        <BookmarkSimple size={20} weight={saved ? 'fill' : 'regular'} />
+        <span>{saved ? 'Guardado' : 'Guardar'}</span>
       </button>
     </div>
   )

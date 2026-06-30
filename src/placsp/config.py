@@ -20,6 +20,10 @@ class Config:
     neo4j_url: str
     neo4j_user: str
     neo4j_password: str
+    ocr_url: str
+    chunker_url: str
+    ollama_url: str
+    ollama_model: str
 
 def load_config() -> Config:
     return Config(
@@ -38,4 +42,8 @@ def load_config() -> Config:
         neo4j_url=_env("NEO4J_URL", ""),
         neo4j_user=_env("NEO4J_USER", "neo4j"),
         neo4j_password=_env("NEO4J_PASSWORD", ""),
+        ocr_url=_env("OCR_URL", "http://ocr_api:8084"),
+        chunker_url=_env("CHUNKER_URL", "http://chunker:8085"),
+        ollama_url=_env("OLLAMA_URL", "http://ollama_high:11434"),
+        ollama_model=_env("OLLAMA_MODEL", "gemma4:31b"),
     )

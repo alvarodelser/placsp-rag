@@ -48,6 +48,35 @@ COMPANY_CLASS_DEF = {
     ],
 }
 
+PLIEGO_CRITERIA_CLASS_DEF = {
+    "class": "Placsp_pliego_criteria",
+    "vectorizer": "none",
+    "vectorIndexConfig": {"distance": "cosine"},
+    "properties": [
+        {"name": "syndication_id", "dataType": ["text"]},
+        {"name": "expediente", "dataType": ["text"]},
+        {"name": "criteria_json", "dataType": ["text"]},      
+        {"name": "criteria_summary", "dataType": ["text"]},    
+        {"name": "source_url", "dataType": ["text"]},
+        {"name": "extracted_at", "dataType": ["date"]},
+    ],
+}
+
+PLIEGO_CHUNKS_CLASS_DEF = {
+    "class": "Placsp_pliego_chunks",
+    "vectorizer": "none",
+    "vectorIndexConfig": {"distance": "cosine"},
+    "properties": [
+        {"name": "syndication_id", "dataType": ["text"]},
+        {"name": "expediente", "dataType": ["text"]},
+        {"name": "pliego_type", "dataType": ["text"]},
+        {"name": "chunk_index", "dataType": ["int"]},
+        {"name": "chunk_title", "dataType": ["text"]},
+        {"name": "chunk_text", "dataType": ["text"]},
+        {"name": "source_pdf_url", "dataType": ["text"]},
+    ],
+}
+
 def ensure_class(base_url, api_key, class_name, class_def=CLASS_DEF, timeout=300, transport=None) -> bool:
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     base = base_url.rstrip("/")

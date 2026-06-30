@@ -1,24 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { search, facets, sendFeedback, removeFeedback } from './api.js'
+import { search, facets } from './api.js'
 import { EMPTY, EXPLORE, filtersToParams, activeFilterList, removeValues } from './filters.js'
 import FilterWorkspace from './components/FilterWorkspace.jsx'
 import ActiveFilters from './components/ActiveFilters.jsx'
 import ResultCard from './components/ResultCard.jsx'
+import AuthPage from './components/AuthPage.jsx'
+import UserMenu from './components/UserMenu.jsx'
+import SavedSpace from './components/SavedSpace.jsx'
+import { useAuth } from './AuthContext.jsx'
 import { SlidersHorizontal, CircleNotch } from './icons.js'
 import statusMap from './codelists/status.json'
 
 const K = 15
 
-// One stable anonymous id per browser, so a person's relevance judgments can be
-// grouped without any login.
-function getSessionId() {
-  let id = localStorage.getItem('placsp_session_id')
-  if (!id) {
-    id = crypto.randomUUID()
-    localStorage.setItem('placsp_session_id', id)
-  }
-  return id
-}
+
 
 const resultId = (r) => r._id || r.syndication_id
 
@@ -30,11 +25,22 @@ const [filtersOpen, setFiltersOpen] = useState(false)
   const [facetsData, setFacetsData] = useState({ nuts: {}, dates: { publication: [], plazo: [] } })
   const [total, setTotal] = useState(null)
   const [state, setState] = useState({ status: 'idle' })
-  const [sessionId] = useState(getSessionId)
-  const [searchId, setSearchId] = useState(null)
-  const [searchedFilters, setSearchedFilters] = useState(EXPLORE)
-  const [liked, setLiked] = useState(() => new Set())
+  const { user, savedIds, toggleSave } = useAuth()
+  const [savedOpen, setSavedOpen] = useState(false)
   const didMount = useRef(false)
+
+  if (user === undefined) {
+    return (
+      <div className="auth-page">
+        <div style={{ margin: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <CircleNotch size={24} className="spinner" /> Cargando…
+        </div>
+      </div>
+    )
+  }
+  if (user === null) {
+    return <AuthPage />
+  }
 
 
 
@@ -42,12 +48,6 @@ const [filtersOpen, setFiltersOpen] = useState(false)
     if (query.trim() === '' && activeFilterList(f).length === 0) {
       setState({ status: 'idle' })
       return
-    }
-    // A new query (offset 0) starts a fresh feedback context; "Cargar más" keeps it.
-    if (offset === 0) {
-      setSearchId(crypto.randomUUID())
-      setSearchedFilters(f)
-      setLiked(new Set())
     }
     setState({ status: 'loading' })
     try {
@@ -58,39 +58,7 @@ const [filtersOpen, setFiltersOpen] = useState(false)
     }
   }
 
-  // Toggle a "relevant" judgment, optimistically; revert the UI if the call fails.
-  async function toggleLike(r) {
-    if (!searchId || state.status !== 'done') return
-    const id = resultId(r)
-    const wasLiked = liked.has(id)
-    setLiked((prev) => {
-      const next = new Set(prev)
-      wasLiked ? next.delete(id) : next.add(id)
-      return next
-    })
-    try {
-      if (wasLiked) {
-        await removeFeedback({ search_id: searchId, result_id: id })
-      } else {
-        const results = (state.data?.results || []).map((res, i) => ({
-          id: resultId(res),
-          rank: (state.data?.offset || 0) + i,
-          score: res._score ?? null,
-        }))
-        await sendFeedback({
-          search_id: searchId, session_id: sessionId,
-          query: state.data?.query || '', mode: state.data?.mode,
-          filters: searchedFilters, results, result_id: id,
-        })
-      }
-    } catch {
-      setLiked((prev) => {
-        const next = new Set(prev)
-        wasLiked ? next.add(id) : next.delete(id)
-        return next
-      })
-    }
-  }
+
 
   // Auto-run the EXPLORE default once on mount.
   useEffect(() => {
@@ -145,6 +113,7 @@ const [filtersOpen, setFiltersOpen] = useState(false)
               {activeFilterList(filters).length > 0 && <span className="filtros-badge">{activeFilterList(filters).length}</span>}
             </button>
           </form>
+          <UserMenu onOpenSaved={() => setSavedOpen(true)} />
         </div>
       </header>
 
@@ -175,8 +144,8 @@ const [filtersOpen, setFiltersOpen] = useState(false)
                       <ResultCard
                         key={resultId(r)}
                         r={r}
-                        liked={liked.has(resultId(r))}
-                        onToggleLike={() => toggleLike(r)}
+                        saved={savedIds.has(resultId(r))}
+                        onToggleSave={() => toggleSave(r)}
                       />
                     ))}
                     {((state.data?.total != null
@@ -203,6 +172,10 @@ const [filtersOpen, setFiltersOpen] = useState(false)
               onClose={() => { setFiltersOpen(false); run(0) }}
               onClear={() => { setFilters(EMPTY); setState({ status: 'idle' }) }}
             />
+          )}
+
+          {savedOpen && (
+            <SavedSpace onClose={() => setSavedOpen(false)} />
           )}
         </div>
       </main>
