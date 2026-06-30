@@ -44,18 +44,32 @@ Texto del PPT:
 """
 
 PLIEGO_MATCH_PROMPT = """
-Actúa como un analista de licitaciones. Tienes el perfil de una empresa (User Profile) 
+Actúa como un analista experto en contratación pública. Tienes el perfil de una empresa (User Profile) 
 y los requisitos extraídos de una licitación (PCAP y PPT).
-Tu tarea es evaluar si la empresa cumple con los requisitos y calcular un "match_score" (0 a 100).
-Si hay requisitos obligatorios que la empresa no cumple (ej. certificaciones que no tiene, 
-facturación insuficiente para la solvencia, o no tiene los perfiles), añádelos a la lista de "blockers".
+Tu tarea es evaluar si la empresa cumple con los requisitos obligatorios para presentarse a esta licitación.
 
-Responde ÚNICAMENTE en JSON con la siguiente estructura:
+Responde ÚNICAMENTE en JSON con la siguiente estructura exacta:
 {{
-  "match_score": 85,
-  "blockers": ["Falta certificación ISO 27001", "La facturación de 500k no alcanza el mínimo de 1M requerido"],
-  "razonamiento": "La empresa tiene los perfiles Java requeridos, pero..."
+  "veredicto": "YES" | "NO" | "MAYBE",
+  "razonamiento_general": "Resumen de por qué la empresa es o no apta...",
+  "requisitos_evaluados": [
+    {{
+      "requisito": "Certificación ISO 9001",
+      "cumple": true | false,
+      "razon": "La empresa indica tener ISO 9001 en su perfil."
+    }},
+    {{
+      "requisito": "Perfil Senior Java (5 años)",
+      "cumple": false,
+      "razon": "No hay ningún empleado en el perfil que cumpla esta experiencia."
+    }}
+  ]
 }}
+
+Reglas del veredicto:
+- YES: Cumple todos los requisitos críticos.
+- NO: Falla en al menos un requisito técnico, financiero o certificación indispensable.
+- MAYBE: Falta información en el perfil de la empresa para estar seguros, o hay requisitos ambiguos.
 
 Perfil de la empresa (JSON):
 {profile_json}
