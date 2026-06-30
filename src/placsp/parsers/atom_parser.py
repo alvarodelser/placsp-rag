@@ -1,6 +1,6 @@
 from typing import Iterator, Union
 from lxml import etree
-from .models import RawEntry, Tombstone
+from placsp.core.models import RawEntry, Tombstone
 
 ATOM = "{http://www.w3.org/2005/Atom}"
 TOMB = "{http://purl.org/atompub/tombstones/1.0}"

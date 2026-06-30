@@ -1,7 +1,7 @@
 import math
 import re
 from dataclasses import asdict
-from .models import ProcurementRecord
+from placsp.core.models import ProcurementRecord
 
 _DATE_ONLY  = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})")
 _MONTH_ONLY = re.compile(r"(\d{4}-\d{2})")

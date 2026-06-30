@@ -1,11 +1,11 @@
 import argparse
-from .config import load_config
-from .codelists import Codelists
-from .embedder import Embedder
-from .upserter import Upserter
-from .pipeline import Pipeline
-from .weaviate_schema import ensure_class
-from .graph_sink import GraphSink
+from placsp.config import load_config
+from placsp.core.codelists import Codelists
+from placsp.ai.embedder import Embedder
+from placsp.storage.upserter import Upserter
+from placsp.ingestion.pipeline import Pipeline
+from placsp.storage.weaviate_schema import ensure_class
+from placsp.storage.graph_sink import GraphSink
 
 def _graph_sink(cfg):
     if not cfg.neo4j_url:
@@ -28,7 +28,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     cfg = load_config()
     if args.cmd == "init-schema":
-        from .weaviate_schema import CLASS_DEF, COMPANY_CLASS_DEF, PLIEGO_CRITERIA_CLASS_DEF, PLIEGO_CHUNKS_CLASS_DEF
+        from placsp.storage.weaviate_schema import CLASS_DEF, COMPANY_CLASS_DEF, PLIEGO_CRITERIA_CLASS_DEF, PLIEGO_CHUNKS_CLASS_DEF
         created_lic = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, cfg.weaviate_class, class_def=CLASS_DEF, timeout=cfg.request_timeout)
         created_comp = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, "Placsp_companies", class_def=COMPANY_CLASS_DEF, timeout=cfg.request_timeout)
         created_pliego_crit = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, "Placsp_pliego_criteria", class_def=PLIEGO_CRITERIA_CLASS_DEF, timeout=cfg.request_timeout)

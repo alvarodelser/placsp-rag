@@ -2,7 +2,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Optional
-from .models import ProcurementRecord
+from placsp.core.models import ProcurementRecord
 
 _LEGAL_SUFFIXES = {
     "SL", "SLU", "SLL", "SA", "SAU", "SCA", "SC", "SLP", "SLNE",

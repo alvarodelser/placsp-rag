@@ -9,10 +9,10 @@ from typing import Dict, Any
 
 sys.path.append('src')
 from placsp.config import load_config
-from placsp.embedder import Embedder
-from placsp.pliego_html_parser import PliegoHTMLParser
-from placsp.pliego_pipeline import PliegoPipeline
-from placsp.pliego_extractor import PliegoExtractor
+from placsp.ai.embedder import Embedder
+from placsp.parsers.pliego_html_parser import PliegoHTMLParser
+from placsp.ingestion.pliego_pipeline import PliegoPipeline
+from placsp.ai.extractor import PliegoExtractor
 
 def query_licitacion(cfg, syndication_id: str) -> Dict[str, Any]:
     query = """
@@ -164,9 +164,25 @@ def main():
             # Combine full text for LLM
             full_text = "\n\n".join([c['chunk_text'] for c in chunks])
             print("Sending text to Ollama for structured extraction...")
-            extracted_json = extractor.extract_from_pcap(full_text)
+            pcap_json = extractor.extract_from_pcap(full_text)
             print("\n--- Extracted PCAP Terms (Ollama) ---")
-            print(extracted_json)
+            print(pcap_json)
+            
+            print("\n--- Running AI Analytics ---")
+            
+            print("1. Scoring Strategy...")
+            strategy_json = extractor.analyze_scoring_strategy(criteria.__dict__)
+            print(strategy_json)
+            
+            if pcap_json:
+                print("\n2. Risk Analysis...")
+                risk_json = extractor.analyze_risks(pcap_json, criteria.__dict__)
+                print(risk_json)
+                
+                print("\n3. Executive Summary (Bid/No-Bid)...")
+                exec_summary = extractor.generate_executive_summary(criteria.__dict__, pcap_json)
+                print(exec_summary)
+
         else:
             print("Failed to process PCAP PDF.")
 

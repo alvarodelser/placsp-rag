@@ -1,9 +1,9 @@
 from typing import Iterable, Optional
 import structlog
-from .models import RawEntry, Tombstone, ProcurementRecord, StatusEvent
-from .atom_parser import parse_feed
-from .codice_extractor import extract
-from .renderer import render
+from placsp.core.models import RawEntry, Tombstone, ProcurementRecord, StatusEvent
+from placsp.parsers.atom_parser import parse_feed
+from placsp.parsers.codice_extractor import extract
+from placsp.parsers.renderer import render
 
 log = structlog.get_logger(service="placsp")
 
@@ -105,8 +105,8 @@ class Pipeline:
     def run_backfill(self):
         import os, time
         from datetime import datetime
-        from .catalog import CATALOG
-        from .fetcher import download, unzip
+        from placsp.core.catalog import CATALOG
+        from placsp.ingestion.fetcher import download, unzip
         for feed in sorted(CATALOG, key=lambda f: (f.year, f.category)):
             while not self.is_offpeak(datetime.now()):
                 log.info("sleeping_until_offpeak"); time.sleep(600)
@@ -124,9 +124,9 @@ class Pipeline:
 
     def run_daily(self):
         import os, tempfile
-        from .catalog import CATALOG, live_head_url
-        from .fetcher import download, feed_next_link
-        from .atom_parser import parse_feed
+        from placsp.core.catalog import CATALOG, live_head_url
+        from placsp.ingestion.fetcher import download, feed_next_link
+        from placsp.parsers.atom_parser import parse_feed
         for category in sorted({f.category for f in CATALOG}):
             wm = self.watermark(category)
             url = live_head_url(category)
@@ -147,8 +147,8 @@ class Pipeline:
     def run_reconcile(self):
         import os
         from datetime import datetime
-        from .catalog import CATALOG
-        from .fetcher import download, unzip
+        from placsp.core.catalog import CATALOG
+        from placsp.ingestion.fetcher import download, unzip
         for feed in [f for f in CATALOG if f.incremental]:
             workdir = os.path.join(self.cfg.work_dir, feed.name + "_recon")
             zip_path = os.path.join(workdir, feed.name + ".zip")

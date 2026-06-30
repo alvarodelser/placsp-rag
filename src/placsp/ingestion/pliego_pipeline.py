@@ -4,8 +4,8 @@ import tempfile
 import urllib.parse
 from typing import List, Dict, Any, Optional
 from bs4 import BeautifulSoup
-from .config import Config
-from .embedder import Embedder
+from placsp.config import Config
+from placsp.ai.embedder import Embedder
 
 class PliegoPipeline:
     def __init__(self, cfg: Config, embedder: Embedder):

@@ -1,7 +1,7 @@
 import structlog
 from neo4j import GraphDatabase
-from .models import ProcurementRecord, Tombstone
-from .graph_ops import record_to_graph_ops, merge_batches, GraphBatch
+from placsp.core.models import ProcurementRecord, Tombstone
+from placsp.storage.graph_ops import record_to_graph_ops, merge_batches, GraphBatch
 
 log = structlog.get_logger(service="placsp")
 

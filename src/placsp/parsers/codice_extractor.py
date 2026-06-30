@@ -1,6 +1,6 @@
 from typing import Optional
-from .models import RawEntry, ProcurementRecord, StatusEvent
-from .codelists import Codelists
+from placsp.core.models import RawEntry, ProcurementRecord, StatusEvent
+from placsp.core.codelists import Codelists
 
 NS = {
     "cbc": "urn:dgpe:names:draft:codice:schema:xsd:CommonBasicComponents-2",
@@ -129,7 +129,7 @@ def extract(raw: RawEntry, codelists: Optional[Codelists] = None) -> Procurement
     rec.sme_awarded = {"true": True, "false": False}.get((sme or "").lower()) if sme else None
 
     # lots
-    from .models import Lot, LotResult
+    from placsp.core.models import Lot, LotResult
     for lot_el in (cfs.xpath("cac:ProcurementProjectLot", namespaces=NS) if cfs is not None else []):
         lid = lot_el.xpath("cbc:ID/text()", namespaces=NS)
         name = lot_el.xpath("cac:ProcurementProject/cbc:Name/text()", namespaces=NS)

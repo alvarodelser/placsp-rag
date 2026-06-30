@@ -1,8 +1,8 @@
 import uuid
 import httpx
 import structlog
-from .models import ProcurementRecord, Tombstone
-from .renderer import render
+from placsp.core.models import ProcurementRecord, Tombstone
+from placsp.parsers.renderer import render
 
 log = structlog.get_logger(service="placsp")
 
