@@ -59,6 +59,12 @@ export function activeFilterList(filters) {
   return out
 }
 
+/** Remove one value or a whole set of values from a list field. */
+export function removeValues(list, value) {
+  const drop = Array.isArray(value) ? value : [value]
+  return (list || []).filter((v) => !drop.includes(v))
+}
+
 const B_MIN = 1000
 const B_MAX = 100000000
 const B_LMIN = Math.log(B_MIN)

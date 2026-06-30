@@ -42,6 +42,11 @@ const FLOW = [
 ]
 const ANUL = { code: 'ANUL', label: 'Anulada', sub: 'Proceso cancelado', color: '#ef4444', bg: '#fff1f1', border: '#fca5a5' }
 
+const GREY_BG     = '#f1f5f9'
+const GREY_BORDER = '#cbd5e1'
+const GREY_TEXT   = '#94a3b8'
+const BLUE        = '#3b82f6'
+
 // ── Helpers ──────────────────────────────────────────────────────────
 function fmt(n) {
   if (!n) return null
@@ -54,9 +59,9 @@ function fmt(n) {
 function Node({ node, x, y, w = NW, h = NH, active, count, onToggle }) {
   const label = fmt(count)
   const cx = x + w / 2
-  const txtColor = active ? '#fff' : node.color
-  const subColor = active ? 'rgba(255,255,255,.72)' : '#64748b'
-  const cntColor = active ? 'rgba(255,255,255,.9)' : node.color
+  const txtColor = active ? BLUE : GREY_TEXT
+  const subColor = GREY_TEXT
+  const cntColor = active ? BLUE : GREY_TEXT
 
   // Vertical text layout
   const hasCount = label != null
@@ -66,23 +71,13 @@ function Node({ node, x, y, w = NW, h = NH, active, count, onToggle }) {
 
   return (
     <g onClick={onToggle} style={{ cursor: 'pointer' }} role="button" aria-pressed={active}>
-      {/* Drop shadow only when active */}
-      {active && (
-        <rect x={x + 2} y={y + 3} width={w} height={h} rx={NR}
-          fill={node.color} opacity={0.18} />
-      )}
       <rect
         x={x} y={y} width={w} height={h} rx={NR}
-        fill={active ? node.color : node.bg}
-        stroke={active ? node.color : node.border}
+        fill={GREY_BG}
+        stroke={active ? BLUE : GREY_BORDER}
         strokeWidth={active ? 2.5 : 1.5}
-        style={{ transition: 'fill .18s, stroke-width .18s' }}
+        style={{ transition: 'stroke .18s, stroke-width .18s' }}
       />
-      {/* Inner highlight ring when active */}
-      {active && (
-        <rect x={x + 4} y={y + 4} width={w - 8} height={h - 8} rx={NR - 2}
-          fill="none" stroke="rgba(255,255,255,.22)" strokeWidth={1} />
-      )}
       <text x={cx} y={ly} textAnchor="middle"
         fontSize={11} fontWeight={700} fill={txtColor} fontFamily="inherit">
         {node.label}

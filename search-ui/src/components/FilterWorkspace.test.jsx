@@ -24,4 +24,19 @@ describe('FilterWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /ubicación/i }))
     expect(screen.getByRole('button', { name: /comunidades/i })).toBeInTheDocument()
   })
+
+  it('renders grouped facet cards for Resultado and Tipo', () => {
+    render(<FilterWorkspace {...base} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Resultado/i }))
+    expect(screen.getByRole('button', { name: 'Adjudicado' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Tipo/i }))
+    expect(screen.getByRole('button', { name: 'Obras' })).toBeInTheDocument()
+  })
+
+  it('renders the procedure concurrence axis', () => {
+    render(<FilterWorkspace {...base} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /procedimiento/i }))
+    expect(screen.getByText(/concurrencia/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Contrato menor' })).toBeInTheDocument()
+  })
 })

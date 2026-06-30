@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { search, facets, sendFeedback, removeFeedback } from './api.js'
-import { EMPTY, EXPLORE, filtersToParams, activeFilterList } from './filters.js'
+import { EMPTY, EXPLORE, filtersToParams, activeFilterList, removeValues } from './filters.js'
 import FilterWorkspace from './components/FilterWorkspace.jsx'
 import ActiveFilters from './components/ActiveFilters.jsx'
 import ResultCard from './components/ResultCard.jsx'
 import { SlidersHorizontal } from './icons.js'
 import statusMap from './codelists/status.json'
-import resultMap from './codelists/result.json'
-import typeMap from './codelists/contract_type.json'
-import procMap from './codelists/procedure.json'
 
 const K = 15
 
@@ -29,9 +26,7 @@ export default function App() {
   const [q, setQ] = useState('')
   const [filters, setFilters] = useState(EXPLORE)
   const mode = 'hybrid'  // always use hybrid search
-  const browse = q.trim() === ''
-
-  const [filtersOpen, setFiltersOpen] = useState(false)
+const [filtersOpen, setFiltersOpen] = useState(false)
   const [facetsData, setFacetsData] = useState({ nuts: {}, dates: { publication: [], plazo: [] } })
   const [total, setTotal] = useState(null)
   const [state, setState] = useState({ status: 'idle' })
@@ -126,7 +121,7 @@ export default function App() {
 
   function removeFilter(field, value) {
     if (['cpv', 'nuts', 'status', 'result', 'contract_type', 'procedure'].includes(field)) {
-      patch({ [field]: filters[field].filter((v) => v !== value) })
+      patch({ [field]: removeValues(filters[field], value) })
     } else if (field === 'dates') patch({ pub_from: '', pub_to: '' })
     else if (field === 'deadline') patch({ deadline_from: '', deadline_to: '' })
     else if (field === 'open_only') patch({ open_only: false })
@@ -143,10 +138,7 @@ export default function App() {
             <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
               placeholder="p. ej. servicios de limpieza (o deja vacío y filtra)" autoFocus />
             <button type="submit" disabled={state.status === 'loading'}>
-              {state.status === 'loading' ? 'Buscando…' : browse ? 'Filtrar' : 'Buscar'}
-            </button>
-            <button type="button" className="explore-btn" onClick={() => { setFilters(EXPLORE); setQ(''); run(0, EXPLORE, '') }}>
-              Explorar
+              {state.status === 'loading' ? 'Buscando…' : 'Buscar'}
             </button>
             <button type="button" className="filtros-btn" onClick={() => setFiltersOpen(true)}>
               <SlidersHorizontal size={18} /> Filtros
@@ -159,7 +151,7 @@ export default function App() {
       <main>
         <div className="wrap layout">
           <section className="results">
-            <ActiveFilters filters={filters} onRemove={removeFilter} onClear={() => { setFilters(EMPTY); setState({ status: 'idle' }) }} />
+            <ActiveFilters filters={filters} onRemove={removeFilter} />
 
             {state.status === 'error' && <div className="err">Error: {state.message}</div>}
 
@@ -202,6 +194,7 @@ export default function App() {
               previewResults={state.status === 'done' ? (state.data?.results || []) : []}
               loading={state.status === 'loading'}
               onClose={() => { setFiltersOpen(false); run(0) }}
+              onClear={() => { setFilters(EMPTY); setState({ status: 'idle' }) }}
             />
           )}
         </div>

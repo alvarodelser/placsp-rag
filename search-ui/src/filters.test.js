@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { EMPTY, EXPLORE, todayISO, filtersToParams, presetRange, activeFilterList, budgetToPos, posToBudget } from './filters.js'
+import { EMPTY, EXPLORE, todayISO, filtersToParams, presetRange, activeFilterList, budgetToPos, posToBudget, removeValues } from './filters.js'
 
 describe('EXPLORE preset', () => {
   it('is PUB+PRE sorted latest, no deadline', () => {
@@ -49,6 +49,19 @@ describe('activeFilterList', () => {
   it('includes dates, budget and open_only entries', () => {
     const list = activeFilterList({ ...EMPTY, pub_from: '2024-01-01', open_only: true, budget_min: '1000' })
     expect(list.map((e) => e.field)).toEqual(['dates', 'open_only', 'budget'])
+  })
+})
+
+describe('removeValues', () => {
+  it('removes a single value', () => {
+    expect(removeValues(['1', '2', '3'], '2')).toEqual(['1', '3'])
+  })
+  it('removes a whole set of values (grouped chip)', () => {
+    expect(removeValues(['1', '2', '8', '3'], ['1', '2', '8'])).toEqual(['3'])
+  })
+  it('ignores values not present and tolerates empty input', () => {
+    expect(removeValues(['1'], ['9'])).toEqual(['1'])
+    expect(removeValues(undefined, '1')).toEqual([])
   })
 })
 

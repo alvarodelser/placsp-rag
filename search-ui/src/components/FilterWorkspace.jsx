@@ -8,66 +8,14 @@ import CpvMiller from './CpvMiller.jsx'
 import SpainMap from './SpainMap.jsx'
 import DensitySlider from './DensitySlider.jsx'
 import StatusDiagram from './StatusLifecycle.jsx'
-import MultiCheckIcons from './MultiCheckIcons.jsx'
+import GroupedFacet from './GroupedFacet.jsx'
+import ProcedureAxis from './ProcedureAxis.jsx'
 import { budgetToPos, posToBudget, presetRange, todayISO } from '../filters.js'
 import { money } from '../format.js'
 import {
-  Stack, MapPin, Calendar, CurrencyEur, ListChecks, Scales, Gavel, X,
-  Package, Wrench, HandCoins, Storefront, FileText, ArrowsLeftRight, UsersThree,
-  CheckCircle, XCircle, HourglassHigh, Trophy,
+  Stack, MapPin, Calendar, CurrencyEur, ListChecks, Scales, Gavel, X, Trophy,
 } from '../icons.js'
-import typeMap from '../codelists/contract_type.json'
-import procMap from '../codelists/procedure.json'
-import resultMap from '../codelists/result.json'
-
-// Icon maps for contract types
-const TYPE_ICONS = {
-  '1':  Package,
-  '2':  FileText,
-  '21': Storefront,
-  '22': HandCoins,
-  '3':  Wrench,
-  '31': Wrench,
-  '32': Wrench,
-  '40': UsersThree,
-  '50': FileText,
-  '7':  FileText,
-  '8':  FileText,
-}
-
-// Icon maps for procedures
-const PROC_ICONS = {
-  '1':   ArrowsLeftRight,
-  '9':   ArrowsLeftRight,
-  '2':   ListChecks,
-  '3':   Gavel,
-  '4':   Gavel,
-  '5':   UsersThree,
-  '6':   FileText,
-  '7':   ArrowsLeftRight,
-  '8':   Scales,
-  '10':  UsersThree,
-  '11':  ArrowsLeftRight,
-  '12':  ArrowsLeftRight,
-  '13':  Gavel,
-  '100': FileText,
-  '999': FileText,
-}
-
-// Icon maps for result codes
-const RESULT_ICONS = {
-  '1':  Trophy,       // Adjudicado Provisionalmente
-  '2':  Trophy,       // Adjudicado Definitivamente
-  '8':  Trophy,       // Adjudicado
-  '9':  Trophy,       // Formalizado
-  '10': Trophy,       // Licitador mejor valorado
-  '11': Trophy,       // Encargo Formalizado
-  '3':  XCircle,      // Desierto
-  '6':  XCircle,      // Desierto Provisionalmente
-  '7':  XCircle,      // Desierto Definitivamente
-  '4':  XCircle,      // Desistimiento
-  '5':  XCircle,      // Renuncia
-}
+import { RESULT_GROUPS, TYPE_GROUPS, PROC_GROUPS } from '../facetGroups.js'
 
 const CATS = [
   { id: 'cpv',           label: 'CPV',          Icon: Stack,        fields: ['cpv'] },
@@ -120,7 +68,7 @@ function useLazyTab(active, tabId, filters, fetcher) {
   return { data, loading }
 }
 
-export default function FilterWorkspace({ filters, patch, setList, facetsData, total, previewResults, loading, onClose }) {
+export default function FilterWorkspace({ filters, patch, setList, facetsData, total, previewResults, loading, onClose, onClear }) {
   const [active, setActive] = useState('cpv')
   const [dateAxis, setDateAxis] = useState('publication')
 
@@ -165,38 +113,38 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
 
       case 'result':
         return (
-          <MultiCheckIcons
-            map={resultMap}
-            value={filters.result}
-            onChange={(v) => setList('result', v)}
-            icons={RESULT_ICONS}
-            counts={resultData?.result || {}}
-            loading={resultLoading}
-          />
+          <div className={resultLoading ? 'dist-loading' : ''}>
+            <GroupedFacet
+              groups={RESULT_GROUPS}
+              value={filters.result}
+              counts={resultData?.result || {}}
+              onChange={(v) => setList('result', v)}
+            />
+          </div>
         )
 
       case 'contract_type':
         return (
-          <MultiCheckIcons
-            map={typeMap}
-            value={filters.contract_type}
-            onChange={(v) => setList('contract_type', v)}
-            icons={TYPE_ICONS}
-            counts={typeData?.contract_type || {}}
-            loading={typeLoading}
-          />
+          <div className={typeLoading ? 'dist-loading' : ''}>
+            <GroupedFacet
+              groups={TYPE_GROUPS}
+              value={filters.contract_type}
+              counts={typeData?.contract_type || {}}
+              onChange={(v) => setList('contract_type', v)}
+            />
+          </div>
         )
 
       case 'procedure':
         return (
-          <MultiCheckIcons
-            map={procMap}
-            value={filters.procedure}
-            onChange={(v) => setList('procedure', v)}
-            icons={PROC_ICONS}
-            counts={procedureData?.procedure || {}}
-            loading={procedureLoading}
-          />
+          <div className={procedureLoading ? 'dist-loading' : ''}>
+            <ProcedureAxis
+              groups={PROC_GROUPS}
+              value={filters.procedure}
+              counts={procedureData?.procedure || {}}
+              onChange={(v) => setList('procedure', v)}
+            />
+          </div>
         )
 
       case 'budget': {
@@ -300,6 +248,7 @@ export default function FilterWorkspace({ filters, patch, setList, facetsData, t
               ? <>{fmtTotal(facetsData.total)} <span>contratos</span></>
               : <span className="ws-foot-loading">Calculando…</span>}
           </div>
+          <button type="button" className="ws-clear" onClick={onClear}>Limpiar</button>
           <button type="button" className="ws-apply" onClick={onClose}>Ver resultados</button>
         </div>
       </div>
