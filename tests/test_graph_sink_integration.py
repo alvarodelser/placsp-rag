@@ -1,7 +1,7 @@
 import os
 import pytest
-from placsp.models import ProcurementRecord, LotResult, Tombstone
-from placsp.graph_sink import GraphSink
+from placsp.core.models import ProcurementRecord, LotResult, Tombstone
+from placsp.storage.graph_sink import GraphSink
 
 URI = os.getenv("NEO4J_TEST_URL")
 USER = os.getenv("NEO4J_TEST_USER", "neo4j")

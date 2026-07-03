@@ -1,5 +1,5 @@
 import json, httpx
-from placsp.embedder import Embedder
+from placsp.ai.embedder import Embedder
 
 def _handler(request):
     body = json.loads(request.content)

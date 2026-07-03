@@ -1,5 +1,5 @@
 import httpx
-from placsp.weaviate_schema import ensure_class, CLASS_DEF
+from placsp.storage.weaviate_schema import ensure_class, CLASS_DEF
 
 def test_class_def_shape():
     assert CLASS_DEF["class"] == "Placsp_licitaciones"

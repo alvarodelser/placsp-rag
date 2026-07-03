@@ -167,21 +167,6 @@ def main():
             pcap_json = extractor.extract_from_pcap(full_text)
             print("\n--- Extracted PCAP Terms (Ollama) ---")
             print(pcap_json)
-            
-            print("\n--- Running AI Analytics ---")
-            
-            print("1. Scoring Strategy...")
-            strategy_json = extractor.analyze_scoring_strategy(criteria.__dict__)
-            print(strategy_json)
-            
-            if pcap_json:
-                print("\n2. Risk Analysis...")
-                risk_json = extractor.analyze_risks(pcap_json, criteria.__dict__)
-                print(risk_json)
-                
-                print("\n3. Executive Summary (Bid/No-Bid)...")
-                exec_summary = extractor.generate_executive_summary(criteria.__dict__, pcap_json)
-                print(exec_summary)
 
         else:
             print("Failed to process PCAP PDF.")

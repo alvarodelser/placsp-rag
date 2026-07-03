@@ -1,5 +1,5 @@
-from placsp.atom_parser import parse_feed
-from placsp.models import RawEntry, Tombstone
+from placsp.parsers.atom_parser import parse_feed
+from placsp.core.models import RawEntry, Tombstone
 
 def test_parses_entries_with_syndication_id():
     items = list(parse_feed("tests/fixtures/mayores.atom", "placsp_mayores"))

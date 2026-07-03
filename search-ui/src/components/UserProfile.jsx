@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { getProfile, updateProfile } from '../api.js'
 
 export default function UserProfile({ onClose }) {
   const [profile, setProfile] = useState({
@@ -16,10 +17,7 @@ export default function UserProfile({ onClose }) {
   const [success, setSuccess] = useState(false)
 
   useEffect(() => {
-    fetch('/api/users/me/profile', {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    })
-      .then(r => r.json())
+    getProfile()
       .then(data => {
         if (data.profile && Object.keys(data.profile).length > 0) {
           setProfile({
@@ -66,15 +64,7 @@ export default function UserProfile({ onClose }) {
     setSuccess(false)
     
     try {
-      const r = await fetch('/api/users/me/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(profile)
-      })
-      if (!r.ok) throw new Error("Error al guardar perfil")
+      await updateProfile(profile)
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
     } catch (err) {

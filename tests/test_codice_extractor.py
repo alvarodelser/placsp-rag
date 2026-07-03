@@ -1,7 +1,7 @@
-from placsp.atom_parser import parse_feed
-from placsp.codice_extractor import extract, first_text, NS
-from placsp.codelists import Codelists
-from placsp.models import RawEntry
+from placsp.parsers.atom_parser import parse_feed
+from placsp.parsers.codice_extractor import extract, first_text, NS
+from placsp.core.codelists import Codelists
+from placsp.core.models import RawEntry
 
 def _first_entry(path, cat):
     for it in parse_feed(path, cat):

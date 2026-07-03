@@ -12,7 +12,7 @@ import argparse
 import json
 import os
 
-from placsp.codelists import parse_gc
+from placsp.core.codelists import parse_gc
 
 # out_name -> .gc filename in the codelists dir
 MAPPING = {

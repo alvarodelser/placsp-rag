@@ -55,9 +55,14 @@ PLIEGO_CRITERIA_CLASS_DEF = {
     "properties": [
         {"name": "syndication_id", "dataType": ["text"]},
         {"name": "expediente", "dataType": ["text"]},
-        {"name": "criteria_json", "dataType": ["text"]},      
-        {"name": "criteria_summary", "dataType": ["text"]},    
+        {"name": "criteria_json", "dataType": ["text"]},
+        {"name": "criteria_summary", "dataType": ["text"]},
         {"name": "source_url", "dataType": ["text"]},
+        # Per-licitación extraction cache (shared across users): the LLM-parsed
+        # PCAP/PPT requirements, computed once and reused for every match.
+        {"name": "pcap_json", "dataType": ["text"]},
+        {"name": "ppt_json", "dataType": ["text"]},
+        {"name": "pliegos_extracted_at", "dataType": ["date"]},
         {"name": "extracted_at", "dataType": ["date"]},
     ],
 }
@@ -83,6 +88,13 @@ def ensure_class(base_url, api_key, class_name, class_def=CLASS_DEF, timeout=300
     with httpx.Client(timeout=timeout, transport=transport, headers=headers) as c:
         r = c.get(f"{base}/v1/schema/{class_name}")
         if r.status_code == 200:
+            # Class exists: reconcile any properties added since it was created.
+            # Weaviate can add new properties in place (it cannot drop or retype).
+            existing = {p["name"] for p in r.json().get("properties", [])}
+            for prop in class_def.get("properties", []):
+                if prop["name"] not in existing:
+                    c.post(f"{base}/v1/schema/{class_name}/properties",
+                           json=prop).raise_for_status()
             return False
         body = dict(class_def, **{"class": class_name})
         c.post(f"{base}/v1/schema", json=body).raise_for_status()

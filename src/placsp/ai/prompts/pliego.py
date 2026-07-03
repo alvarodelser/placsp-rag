@@ -1,13 +1,3 @@
-PLIEGO_HTML_SUMMARY_PROMPT = """
-Convierte la siguiente información estructurada extraída de un pliego de licitación
-en un resumen claro y conciso en español, enfocado en lo que una empresa 
-necesitaría saber rápidamente para decidir si presentarse. 
-Formatea la salida en JSON con las claves: "resumen_general", "puntos_clave", "requisitos_criticos".
-
-Datos:
-{criteria_json}
-"""
-
 PLIEGO_PCAP_EXTRACTION_PROMPT = """
 Del siguiente texto del Pliego de Cláusulas Administrativas Particulares (PCAP), 
 extrae en formato JSON la siguiente información:
@@ -44,9 +34,21 @@ Texto del PPT:
 """
 
 PLIEGO_MATCH_PROMPT = """
-Actúa como un analista experto en contratación pública. Tienes el perfil de una empresa (User Profile) 
-y los requisitos extraídos de una licitación (PCAP y PPT).
-Tu tarea es evaluar si la empresa cumple con los requisitos obligatorios para presentarse a esta licitación.
+Actúa como un analista experto en contratación pública. Tienes el perfil de una empresa (User Profile)
+y los requisitos de una licitación procedentes de tres fuentes:
+1. Requisitos estructurados de la plataforma oficial PLACSP (la fuente MÁS FIABLE: clasificación
+   empresarial exigida, condiciones de admisión, motivos de exclusión, nº mínimo de empleados,
+   garantías y criterios de adjudicación).
+2. Requisitos administrativos extraídos del PCAP (PDF).
+3. Requisitos técnicos extraídos del PPT (PDF).
+
+Tu tarea es evaluar si la empresa cumple con los requisitos OBLIGATORIOS para presentarse.
+
+Reglas de uso de las fuentes:
+- Da prioridad a los requisitos estructurados de la plataforma cuando existan.
+- IMPORTANTE: un campo estructurado vacío o ausente significa "no consta en la plataforma",
+  NO significa "no se exige". En ese caso, apóyate en el PCAP/PPT para deducir el requisito.
+- No inventes requisitos que no aparezcan en ninguna de las tres fuentes.
 
 Responde ÚNICAMENTE en JSON con la siguiente estructura exacta:
 {{
@@ -54,25 +56,24 @@ Responde ÚNICAMENTE en JSON con la siguiente estructura exacta:
   "razonamiento_general": "Resumen de por qué la empresa es o no apta...",
   "requisitos_evaluados": [
     {{
-      "requisito": "Certificación ISO 9001",
+      "requisito": "Clasificación empresarial Grupo M Subgrupo 4",
+      "fuente": "plataforma" | "pcap" | "ppt",
       "cumple": true | false,
-      "razon": "La empresa indica tener ISO 9001 en su perfil."
-    }},
-    {{
-      "requisito": "Perfil Senior Java (5 años)",
-      "cumple": false,
-      "razon": "No hay ningún empleado en el perfil que cumpla esta experiencia."
+      "razon": "La empresa indica disponer de esa clasificación en su perfil."
     }}
   ]
 }}
 
 Reglas del veredicto:
 - YES: Cumple todos los requisitos críticos.
-- NO: Falla en al menos un requisito técnico, financiero o certificación indispensable.
+- NO: Falla en al menos un requisito técnico, financiero, de clasificación o certificación indispensable.
 - MAYBE: Falta información en el perfil de la empresa para estar seguros, o hay requisitos ambiguos.
 
 Perfil de la empresa (JSON):
 {profile_json}
+
+Requisitos estructurados de la plataforma PLACSP (JSON):
+{criteria_json}
 
 Requisitos Administrativos PCAP (JSON):
 {pcap_json}

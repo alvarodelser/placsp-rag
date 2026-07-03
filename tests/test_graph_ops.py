@@ -1,5 +1,5 @@
-from placsp.models import ProcurementRecord, LotResult
-from placsp.graph_ops import (
+from placsp.core.models import ProcurementRecord, LotResult
+from placsp.storage.graph_ops import (
     normalize_nif, normalize_name, is_ute_winner,
     record_to_graph_ops, merge_batches, GraphBatch,
 )

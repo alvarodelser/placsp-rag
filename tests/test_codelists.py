@@ -1,4 +1,4 @@
-from placsp.codelists import parse_gc, Codelists
+from placsp.core.codelists import parse_gc, Codelists
 
 def test_parse_gc_contract_code():
     m = parse_gc("tests/fixtures/ContractCode.gc")

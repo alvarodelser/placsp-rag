@@ -1,5 +1,5 @@
 import os, zipfile, httpx
-from placsp.fetcher import unzip, feed_next_link, download
+from placsp.ingestion.fetcher import unzip, feed_next_link, download
 
 def test_feed_next_link_from_fixture():
     nxt = feed_next_link("tests/fixtures/externos.atom")

@@ -272,15 +272,43 @@ def get_pliegos_analysis(syndication_id: str):
     return hit
 
 
-@app.post("/api/pliegos/{syndication_id:path}/analyze")
-def trigger_pliegos_analysis(syndication_id: str):
-    """Triggers the background Tier 2 analysis in the ingester container."""
+def _queue_nlp_analysis(conn, *, user_id: str, item_id: str,
+                        syndication_id: str) -> None:
+    """Mark the analysis pending and hand it off to the ingester.  Raises
+    ``httpx.HTTPError`` if the ingester rejects or is unreachable."""
+    users.mark_analysis_pending(conn, user_id=user_id, item_id=item_id)
     try:
-        r = httpx.post(f"http://placsp-ingester-api:8093/internal/analyze/{urllib.parse.quote(syndication_id)}", timeout=5)
+        r = httpx.post(
+            f"http://placsp-ingester-api:8093/internal/analyze/{urllib.parse.quote(syndication_id)}",
+            json={"user_id": user_id, "item_id": item_id},
+            timeout=5,
+        )
         r.raise_for_status()
-        return {"status": "accepted"}
-    except Exception as e:
-        raise HTTPException(502, f"Failed to trigger internal analysis: {e}")
+    except httpx.HTTPError as e:
+        users.mark_analysis_failed(conn, user_id=user_id, item_id=item_id,
+                                   reason=f"No se pudo encolar el análisis: {e}")
+        raise
+
+
+@app.post("/api/pliegos/{syndication_id:path}/analyze")
+def trigger_pliegos_analysis(syndication_id: str,
+                             current: dict = Depends(auth.get_current_user)):
+    """(Re-)runs the NLP analysis for a licitación the user has saved."""
+    conn = _users_conn()
+    try:
+        item = users.get_saved_item(conn, user_id=current["user_id"],
+                                    syndication_id=syndication_id)
+        if not item:
+            raise HTTPException(404, "Guarda la licitación antes de analizarla.")
+        try:
+            _queue_nlp_analysis(conn, user_id=current["user_id"],
+                                item_id=item["item_id"],
+                                syndication_id=syndication_id)
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"Failed to trigger internal analysis: {e}")
+    finally:
+        conn.close()
+    return {"status": "accepted"}
 
 
 _FILTER_PARAMS = dict(
@@ -863,20 +891,18 @@ def save_user_item(body: SaveItemIn,
             conn, user_id=current["user_id"],
             event_type="save", item_id=body.item_id,
         )
+        # Trigger NLP pipeline asynchronously
+        if body.syndication_id:
+            try:
+                _queue_nlp_analysis(
+                    conn, user_id=current["user_id"], item_id=body.item_id,
+                    syndication_id=body.syndication_id,
+                )
+            except Exception as e:
+                log.warning(f"failed_to_trigger_nlp: {e}")
     finally:
         conn.close()
-        
-    # Trigger NLP pipeline asynchronously
-    if body.syndication_id:
-        try:
-            httpx.post(
-                f"http://placsp-ingester-api:8093/internal/analyze/{urllib.parse.quote(body.syndication_id)}", 
-                json={"user_id": current["user_id"], "item_id": body.item_id}, 
-                timeout=5
-            )
-        except Exception as e:
-            log.warning(f"failed_to_trigger_nlp: {e}")
-        
+
     return {"ok": True, "item": item}
 
 

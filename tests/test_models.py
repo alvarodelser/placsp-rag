@@ -1,4 +1,4 @@
-from placsp.models import ProcurementRecord, Lot, StatusEvent
+from placsp.core.models import ProcurementRecord, Lot, StatusEvent
 
 def test_record_minimal_and_defaults():
     r = ProcurementRecord(syndication_id="19862167", category="placsp_mayores", updated="2026-06-19T21:50:27+02:00")

@@ -1,12 +1,28 @@
 import React, { useState, useEffect } from 'react'
-import { getPliegos, getSavedAnalysis } from '../api.js'
+import { getPliegos, getSavedAnalysis, triggerPliegosAnalysis } from '../api.js'
 
 export default function PliegosModal({ syndicationId, itemId, title, onClose }) {
   const [data, setData] = useState(null)
   const [analysis, setAnalysis] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [activeTab, setActiveTab] = useState('executive')
+  const [activeTab, setActiveTab] = useState('match')
+  const [retrying, setRetrying] = useState(false)
+
+  const analysisStatus = analysis ? (analysis.status || 'done') : null
+  const analysisReady = analysisStatus === 'done'
+
+  const handleRetry = async () => {
+    setRetrying(true)
+    try {
+      await triggerPliegosAnalysis(syndicationId)
+      setAnalysis(prev => ({ ...(prev || {}), status: 'pending' }))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -55,14 +71,22 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
               <button className={activeTab === 'match' ? 'active' : ''} onClick={() => setActiveTab('match')}>Compatibilidad (Match)</button>
               <button className={activeTab === 'technical' ? 'active' : ''} onClick={() => setActiveTab('technical')}>Specs Técnicas (PPT)</button>
               <button className={activeTab === 'risks' ? 'active' : ''} onClick={() => setActiveTab('risks')}>Riesgos Legales (PCAP)</button>
-              {data && <button className={activeTab === 'criteria' ? 'active' : ''} onClick={() => setActiveTab('criteria')}>Criterios de Valoración</button>}
+              {data && <button className={activeTab === 'criteria' ? 'active' : ''} onClick={() => setActiveTab('criteria')}>Criterios de Adjudicación</button>}
             </div>
 
             <div className="tab-content">
               {activeTab === 'match' && (
                 <div className="tab-pane">
                   <h3>Análisis de Compatibilidad (IA)</h3>
-                  {analysis ? (
+                  {analysisStatus === 'failed' ? (
+                    <div className="loading-state">
+                      <p>El análisis ha fallado.</p>
+                      {analysis.razonamiento && <p className="subtext">{analysis.razonamiento}</p>}
+                      <button className="trigger-btn" onClick={handleRetry} disabled={retrying}>
+                        {retrying ? 'Reintentando...' : 'Reintentar análisis'}
+                      </button>
+                    </div>
+                  ) : analysisReady && analysis.veredicto ? (
                     <div className="ai-content">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                         <div style={{ 
@@ -95,10 +119,18 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
                         </div>
                       )}
                     </div>
+                  ) : analysisReady ? (
+                    <div className="loading-state">
+                      <p>El análisis terminó, pero no hay veredicto: tu perfil de empresa no está configurado.</p>
+                      <p className="subtext">Configura tu perfil y vuelve a lanzar el análisis.</p>
+                      <button className="trigger-btn" onClick={handleRetry} disabled={retrying}>
+                        {retrying ? 'Reintentando...' : 'Reintentar análisis'}
+                      </button>
+                    </div>
                   ) : (
                     <div className="loading-state">
-                      <p>El análisis de compatibilidad se está procesando o tu perfil no está configurado.</p>
-                      <p className="subtext">El análisis se ejecuta automáticamente al guardar la licitación.</p>
+                      <p>El análisis de compatibilidad se está procesando.</p>
+                      <p className="subtext">El análisis se ejecuta automáticamente al guardar la licitación. Cierra y vuelve a abrir este panel para actualizar.</p>
                     </div>
                   )}
                 </div>
@@ -107,7 +139,7 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
               {activeTab === 'technical' && (
                 <div className="tab-pane">
                   <h3>Prescripciones Técnicas (PPT)</h3>
-                  {analysis && analysis.ppt_json ? (
+                  {analysisReady && analysis.ppt_json && Object.keys(analysis.ppt_json).length > 0 ? (
                     <div className="ai-content">
                       <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
                         {JSON.stringify(analysis.ppt_json, null, 2)}
@@ -122,19 +154,6 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
 
               {activeTab === 'criteria' && data && (
                 <div className="tab-pane">
-                  <h3>Estrategia de Puntuación</h3>
-                  {data.scoring_strategy_json ? (
-                    <div className="ai-content" style={{ marginBottom: '20px' }}>
-                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
-                        {data.scoring_strategy_json}
-                      </pre>
-                    </div>
-                  ) : (
-                    <p style={{ color: '#718096', fontStyle: 'italic', marginBottom: '20px' }}>
-                      Estrategia AI no generada aún.
-                    </p>
-                  )}
-                  
                   <h3>Criterios de Adjudicación (Extraídos de la Plataforma)</h3>
                   {data.criteria && data.criteria.criterios_adjudicacion ? (
                     <ul className="criteria-list">
@@ -160,7 +179,7 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
               {activeTab === 'risks' && (
                 <div className="tab-pane">
                   <h3>Análisis de Riesgos Legales (PCAP)</h3>
-                  {analysis && analysis.pcap_json ? (
+                  {analysisReady && analysis.pcap_json && Object.keys(analysis.pcap_json).length > 0 ? (
                     <div className="ai-content">
                       <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: '0.9rem' }}>
                         {JSON.stringify(analysis.pcap_json, null, 2)}

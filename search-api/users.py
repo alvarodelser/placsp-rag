@@ -67,10 +67,16 @@ CREATE TABLE IF NOT EXISTS saved_items_analysis (
     veredicto       TEXT,
     razonamiento    TEXT,
     requisitos_evaluados TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending',
     analyzed_at     TEXT NOT NULL,
     UNIQUE(user_id, item_id)
 );
 """
+
+# Idempotent ALTERs for DBs created before the column existed.
+_MIGRATIONS = [
+    "ALTER TABLE saved_items_analysis ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'",
+]
 
 
 def _now() -> str:
@@ -85,6 +91,11 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for stmt in _MIGRATIONS:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.commit()
 
 
@@ -273,12 +284,47 @@ def save_item_analysis(conn: sqlite3.Connection, *, user_id: str, item_id: str,
                        pcap_json: dict, ppt_json: dict, match_result: dict) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO saved_items_analysis "
-        "(user_id, item_id, pcap_json, ppt_json, veredicto, razonamiento, requisitos_evaluados, analyzed_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(user_id, item_id, pcap_json, ppt_json, veredicto, razonamiento, requisitos_evaluados, status, analyzed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'done', ?)",
         (user_id, item_id, json.dumps(pcap_json), json.dumps(ppt_json),
          match_result.get("veredicto"), match_result.get("razonamiento_general"), json.dumps(match_result.get("requisitos_evaluados", [])), _now())
     )
     conn.commit()
+
+
+def mark_analysis_pending(conn: sqlite3.Connection, *, user_id: str,
+                          item_id: str) -> None:
+    """Record that an analysis was queued, without clobbering previous results."""
+    conn.execute(
+        "INSERT INTO saved_items_analysis (user_id, item_id, status, analyzed_at) "
+        "VALUES (?, ?, 'pending', ?) "
+        "ON CONFLICT(user_id, item_id) DO UPDATE SET "
+        "status='pending', analyzed_at=excluded.analyzed_at",
+        (user_id, item_id, _now()),
+    )
+    conn.commit()
+
+
+def mark_analysis_failed(conn: sqlite3.Connection, *, user_id: str,
+                         item_id: str, reason: str = "") -> None:
+    """Flip a queued analysis to failed (e.g. the ingester was unreachable)."""
+    conn.execute(
+        "UPDATE saved_items_analysis SET status='failed', razonamiento=?, "
+        "analyzed_at=? WHERE user_id = ? AND item_id = ?",
+        (reason[:500], _now(), user_id, item_id),
+    )
+    conn.commit()
+
+
+def get_saved_item(conn: sqlite3.Connection, *, user_id: str,
+                   syndication_id: str) -> dict | None:
+    """Return the user's active saved item for a syndication_id, if any."""
+    row = conn.execute(
+        "SELECT item_id, syndication_id, title FROM saved_items "
+        "WHERE user_id = ? AND syndication_id = ? AND removed_at IS NULL",
+        (user_id, syndication_id),
+    ).fetchone()
+    return _row_to_dict(row)
 
 def get_item_analysis(conn: sqlite3.Connection, user_id: str, item_id: str) -> dict | None:
     row = conn.execute(

@@ -2,8 +2,11 @@ import httpx
 import json
 from typing import Dict, Any, Optional
 from placsp.config import Config
-from placsp.ai.prompts.pliego import PLIEGO_HTML_SUMMARY_PROMPT, PLIEGO_PCAP_EXTRACTION_PROMPT
-from placsp.ai.prompts.analysis import RISK_ANALYSIS_PROMPT, SCORING_STRATEGY_PROMPT, EXECUTIVE_SUMMARY_PROMPT
+from placsp.ai.prompts.pliego import (
+    PLIEGO_PCAP_EXTRACTION_PROMPT,
+    PLIEGO_PPT_EXTRACTION_PROMPT,
+    PLIEGO_MATCH_PROMPT,
+)
 
 class PliegoExtractor:
     def __init__(self, cfg: Config):
@@ -40,47 +43,38 @@ class PliegoExtractor:
         except Exception as e:
             print(f"JSON parsing error: {e}")
             return {}
-    # --- Base Extraction Methods ---
-
-    def summarize_html_criteria(self, criteria_dict: dict) -> Optional[str]:
-        criteria_str = json.dumps(criteria_dict, ensure_ascii=False, indent=2)
-        prompt = PLIEGO_HTML_SUMMARY_PROMPT.format(criteria_json=criteria_str)
-        return self._call_ollama(prompt)
+    # --- Extraction Methods ---
 
     def extract_from_pcap(self, ocr_text: str) -> dict:
         # Limit text length to avoid context window issues
         prompt = PLIEGO_PCAP_EXTRACTION_PROMPT.format(ocr_text=ocr_text[:40000])
         return self._call_llm_json(prompt)
 
-    # --- Analytical Curation Methods ---
-
-    def analyze_risks(self, pcap_json: str, criteria_dict: dict) -> Optional[str]:
-        criteria_str = json.dumps(criteria_dict, ensure_ascii=False, indent=2)
-        prompt = RISK_ANALYSIS_PROMPT.format(pcap_json=pcap_json, criteria_json=criteria_str)
-        return self._call_ollama(prompt)
-
     def extract_from_ppt(self, ppt_text: str) -> dict:
-        """Extracts technical requirements from PPT using Gemma."""
-        from placsp.ai.prompts.pliego import PLIEGO_PPT_EXTRACTION_PROMPT
-        prompt = PLIEGO_PPT_EXTRACTION_PROMPT.format(ppt_text=ppt_text)
+        """Extracts technical requirements from the PPT."""
+        prompt = PLIEGO_PPT_EXTRACTION_PROMPT.format(ppt_text=ppt_text[:40000])
         return self._call_llm_json(prompt)
 
-    def match_profile(self, profile: dict, pcap_json: dict, ppt_json: dict) -> dict:
-        """Matches a user's profile against the extracted requirements."""
-        from placsp.ai.prompts.pliego import PLIEGO_MATCH_PROMPT
+    # --- Profile Match ---
+
+    # The subset of parsed platform criteria that bears on whether a company
+    # *may bid* — the reliable qualification gates fed into the match.
+    _MATCH_CRITERIA_KEYS = (
+        "clasificacion_empresarial", "condiciones_admision", "motivos_exclusion",
+        "num_empleados_min", "garantia_definitiva_pct", "garantia_complementaria_pct",
+        "criterios_adjudicacion",
+    )
+
+    def match_profile(self, profile: dict, pcap_json: dict, ppt_json: dict,
+                      criteria: dict | None = None) -> dict:
+        """Matches a user's profile against the extracted requirements plus the
+        structured platform criteria (the most reliable qualification gates)."""
+        criteria = criteria or {}
+        gates = {k: criteria.get(k) for k in self._MATCH_CRITERIA_KEYS if criteria.get(k)}
         prompt = PLIEGO_MATCH_PROMPT.format(
             profile_json=json.dumps(profile, ensure_ascii=False),
+            criteria_json=json.dumps(gates, ensure_ascii=False),
             pcap_json=json.dumps(pcap_json, ensure_ascii=False),
-            ppt_json=json.dumps(ppt_json, ensure_ascii=False)
+            ppt_json=json.dumps(ppt_json, ensure_ascii=False),
         )
         return self._call_llm_json(prompt)
-
-    def analyze_scoring_strategy(self, criteria_dict: dict) -> Optional[str]:
-        criteria_str = json.dumps(criteria_dict, ensure_ascii=False, indent=2)
-        prompt = SCORING_STRATEGY_PROMPT.format(criteria_json=criteria_str)
-        return self._call_ollama(prompt)
-
-    def generate_executive_summary(self, criteria_dict: dict, pcap_json: str) -> Optional[str]:
-        criteria_str = json.dumps(criteria_dict, ensure_ascii=False, indent=2)
-        prompt = EXECUTIVE_SUMMARY_PROMPT.format(criteria_json=criteria_str, pcap_json=pcap_json)
-        return self._call_ollama(prompt)

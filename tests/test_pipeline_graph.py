@@ -1,4 +1,4 @@
-from placsp.pipeline import Pipeline
+from placsp.ingestion.pipeline import Pipeline
 
 class _StubUpserter:
     def upsert(self, recs, vectors): return len(recs)

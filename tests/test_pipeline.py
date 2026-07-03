@@ -1,14 +1,14 @@
 import httpx, json, uuid
-from placsp.pipeline import collapse, Pipeline
-from placsp.atom_parser import parse_feed
-from placsp.embedder import Embedder
-from placsp.upserter import Upserter, object_uuid
+from placsp.ingestion.pipeline import collapse, Pipeline
+from placsp.parsers.atom_parser import parse_feed
+from placsp.ai.embedder import Embedder
+from placsp.storage.upserter import Upserter, object_uuid
 from placsp.config import load_config
-from placsp.models import ProcurementRecord, StatusEvent
+from placsp.core.models import ProcurementRecord, StatusEvent
 from datetime import datetime
 
 def test_collapse_keeps_latest_and_merges_history():
-    from placsp.models import RawEntry, StatusEvent
+    from placsp.core.models import RawEntry, StatusEvent
     # two versions of same id, different status + updated
     class E: pass
     items = list(parse_feed("tests/fixtures/externos.atom", "externos_mayores"))
@@ -115,7 +115,7 @@ def test_daily_merge_skips_stale_and_merges_history():
     )
 
     # Patch collapse so process_files uses our hand-built records instead of parsing files
-    import placsp.pipeline as pipeline_mod
+    import placsp.ingestion.pipeline as pipeline_mod
     original_collapse = pipeline_mod.collapse
 
     def fake_collapse(items, codelists):

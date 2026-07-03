@@ -1,6 +1,6 @@
 import uuid, json, httpx
-from placsp.upserter import object_uuid, Upserter
-from placsp.models import ProcurementRecord, Tombstone
+from placsp.storage.upserter import object_uuid, Upserter
+from placsp.core.models import ProcurementRecord, Tombstone
 
 def test_object_uuid_deterministic():
     a = object_uuid("19862167"); b = object_uuid("19862167")
