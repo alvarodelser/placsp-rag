@@ -1,0 +1,49 @@
+"""Load the ontology YAML (nlp_service format) and project the inline ExtractionSchema for /ner.
+
+Mirrors nlp_service/pipelines/relations/ontology.py so the same file works in both places.
+"""
+import re
+from pathlib import Path
+
+import yaml
+
+_DT = {"string", "number", "boolean"}
+_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def load(path: Path) -> dict:
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    entity_names = set()
+    for e in data.get("entity_types", []):
+        if not _NAME_RE.match(e["name"]):
+            raise ValueError(f"entity type name must be SCREAMING_SNAKE_CASE: {e['name']!r}")
+        entity_names.add(e["name"])
+        for k, v in (e.get("attributes") or {}).items():
+            if v.get("type") not in _DT:
+                raise ValueError(f"entity {e['name']} attribute {k!r} has invalid datatype")
+    for r in data.get("relation_types", []):
+        for t in [*r["head_types"], *r["tail_types"]]:
+            if t not in entity_names:
+                raise ValueError(f"relation {r['name']!r} references undeclared entity type {t!r}")
+    return data
+
+
+def _attrs(d: dict) -> list[dict]:
+    return [{"name": k, "datatype": v["type"], "description": v.get("description", "")}
+            for k, v in (d.get("attributes") or {}).items()]
+
+
+def _subtypes(d: dict) -> list[dict]:
+    return [{"name": s["name"], "description": s.get("description", "")} for s in d.get("subtypes", [])]
+
+
+def extraction_schema(data: dict) -> dict:
+    """The JSON body of the `schema` field of POST /ner."""
+    return {
+        "entity_types": [{"name": e["name"], "description": e.get("description", ""),
+                          "subtypes": _subtypes(e), "attributes": _attrs(e)} for e in data["entity_types"]],
+        "relation_types": [{"name": r["name"], "description": r.get("description", ""),
+                            "subtypes": _subtypes(r), "attributes": _attrs(r),
+                            "head_types": r["head_types"], "tail_types": r["tail_types"]}
+                           for r in data["relation_types"]],
+    }

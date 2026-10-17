@@ -1,0 +1,229 @@
+# pilot/ontology/placsp_procurement.yaml
+# Public-procurement ontology for PLACSP expedientes, in the nlp_service ontology format
+# (config/ontologies/*.yaml): it can be dropped into nlp_service and run by the relation pipeline
+# unchanged. The pilot projects it into the inline ExtractionSchema it sends to POST /ner.
+#
+# It follows the data model (ContractingAuthority, Tender, Lot, AwardCriterion, Requirement,
+# Qualification, Bid, JointVenture, Result, Contract), adjusted to what public documents contain:
+# - Tender-level facts (procedure, value, deadline, CPV) come from the feed, not from text.
+# - Envelopes, team members and good-execution certificates are never published: not extracted.
+# - Added: Guarantee, Modification, Penalty and the PPT scope (deliverables, team profiles,
+#   technical requirements, service levels), which the pliegos and resolutions do contain.
+version: "1"
+use_case: placsp_procurement
+
+entity_types:
+  - name: CONTRACTING_AUTHORITY
+    description: Órgano de contratación o entidad pública que licita (ayuntamiento, consejería, ministerio, diputación, empresa pública).
+    attributes:
+      nif: {type: string, description: "NIF/CIF si aparece en el texto."}
+
+  - name: COMPANY
+    description: Empresa o persona jurídica que licita, resulta adjudicataria, forma parte de una UTE o es subcontratista. No incluir personas físicas.
+    attributes:
+      nif:  {type: string, description: "NIF/CIF de la empresa si aparece."}
+      sme:  {type: boolean, description: "true si el texto la identifica como PYME."}
+
+  - name: JOINT_VENTURE
+    description: Unión temporal de empresas (UTE) que presenta una oferta conjunta.
+    attributes:
+      nif: {type: string, description: "NIF de la UTE si aparece."}
+
+  - name: LOT
+    description: Lote del contrato, lo que realmente se licita y adjudica. Si el expediente no tiene lotes, usar un único lote llamado "Lote 1".
+    attributes:
+      number: {type: string, description: "Número o código del lote (\"1\" si no hay lotes)."}
+      budget: {type: number, description: "Presupuesto base de licitación del lote en euros sin IVA."}
+      cpv:    {type: string, description: "Código CPV del lote si aparece."}
+
+  - name: AWARD_CRITERION
+    description: Criterio de adjudicación con su puntuación máxima (una línea de baremo).
+    subtypes:
+      - {name: JUDGEMENT, description: Criterio sujeto a juicio de valor.}
+      - {name: FORMULA,   description: Criterio evaluable mediante fórmula o de forma automática.}
+    attributes:
+      points:   {type: number, description: "Puntuación máxima del criterio."}
+      envelope: {type: string, description: "Sobre o archivo en que se presenta (A, B, C, 1, 2...)."}
+      formula:  {type: string, description: "Fórmula, umbral, tope o regla de baja anormal del criterio."}
+
+  - name: REQUIREMENT
+    description: Requisito de solvencia o aptitud que se exige a los licitadores, tal como lo redacta el pliego.
+    subtypes:
+      - {name: TURNOVER,         description: Volumen anual de negocios.}
+      - {name: INSURANCE,        description: Seguro de responsabilidad civil o profesional.}
+      - {name: SIMILAR_SERVICES, description: Trabajos, servicios o suministros similares ejecutados.}
+      - {name: TEAM,             description: Medios personales o equipo mínimo.}
+      - {name: CREDENTIAL,       description: Certificado de calidad, ENS, ISO, habilitación o registro.}
+      - {name: CLASSIFICATION,   description: Clasificación empresarial (grupo, subgrupo, categoría).}
+      - {name: COMMITMENT,       description: Compromiso de adscripción de medios u otra obligación.}
+    attributes:
+      amount:      {type: number, description: "Importe exigido en euros."}
+      years:       {type: number, description: "Años de referencia o de experiencia exigidos."}
+      technicians: {type: number, description: "Número de personas exigidas."}
+
+  - name: QUALIFICATION
+    description: Titulación, certificación, clasificación o campo de experiencia que acredita un requisito o perfil.
+    subtypes:
+      - {name: DEGREE,           description: Titulación académica.}
+      - {name: CERTIFICATION,    description: Certificación profesional o de calidad.}
+      - {name: EXPERIENCE_FIELD, description: Campo o ámbito de experiencia.}
+      - {name: CLASSIFICATION,   description: Grupo/subgrupo/categoría de clasificación.}
+
+  - name: GUARANTEE
+    description: Garantía exigida (provisional, definitiva o complementaria).
+    subtypes:
+      - {name: PROVISIONAL,   description: Garantía provisional.}
+      - {name: DEFINITIVE,    description: Garantía definitiva.}
+      - {name: COMPLEMENTARY, description: Garantía complementaria.}
+    attributes:
+      pct:    {type: number, description: "Porcentaje sobre el precio."}
+      amount: {type: number, description: "Importe en euros."}
+
+  - name: BID
+    description: Oferta presentada a un lote por una empresa o UTE, nombrada por su licitador (p. ej. "Oferta de ACME SL al lote 1").
+    attributes:
+      outcome:          {type: string, description: "admitted, excluded o withdrawn."}
+      exclusion_reason: {type: string, description: "Motivo de exclusión si la oferta fue excluida."}
+      price:            {type: number, description: "Precio ofertado en euros sin IVA."}
+      technical_score:  {type: number, description: "Puntuación técnica (juicio de valor)."}
+      economic_score:   {type: number, description: "Puntuación económica o de fórmulas."}
+      total_score:      {type: number, description: "Puntuación total."}
+      rank:             {type: number, description: "Posición en la clasificación."}
+
+  - name: CONTRACT
+    description: Contrato formalizado con el adjudicatario (o encargo a medio propio).
+    attributes:
+      contract_id: {type: string, description: "Número o referencia del contrato."}
+      signed_date: {type: string, description: "Fecha de firma AAAA-MM-DD."}
+      start:       {type: string, description: "Fecha de inicio AAAA-MM-DD."}
+      end:         {type: string, description: "Fecha de fin AAAA-MM-DD."}
+      duration:    {type: string, description: "Duración (p. ej. \"24 meses\")."}
+      price:       {type: number, description: "Precio del contrato en euros sin IVA."}
+
+  - name: MODIFICATION
+    description: Modificación, prórroga, suspensión o resolución de un contrato.
+    subtypes:
+      - {name: MODIFICATION, description: Modificación del contrato.}
+      - {name: EXTENSION,    description: Prórroga.}
+      - {name: SUSPENSION,   description: Suspensión.}
+      - {name: TERMINATION,  description: Resolución o extinción anticipada.}
+    attributes:
+      date:          {type: string, description: "Fecha AAAA-MM-DD."}
+      amount_change: {type: number, description: "Variación del importe en euros sin IVA."}
+      new_total:     {type: number, description: "Nuevo importe total en euros sin IVA."}
+      new_end:       {type: string, description: "Nueva fecha de fin AAAA-MM-DD."}
+      reason:        {type: string, description: "Motivo."}
+
+  - name: PENALTY
+    description: Penalidad por incumplimiento o demora prevista en el pliego.
+    attributes:
+      amount:    {type: number, description: "Importe o cuantía en euros si es fija."}
+      pct:       {type: number, description: "Porcentaje si se expresa así."}
+      condition: {type: string, description: "Incumplimiento que la activa."}
+
+  - name: DELIVERABLE
+    description: Entregable, fase o prestación concreta que exige el pliego técnico.
+    attributes:
+      deadline: {type: string, description: "Plazo o fecha del entregable."}
+
+  - name: TEAM_PROFILE
+    description: Perfil profesional exigido o valorado en el equipo (jefe de proyecto, técnico...).
+    attributes:
+      count:            {type: number, description: "Número de personas con ese perfil."}
+      experience_years: {type: number, description: "Años de experiencia exigidos."}
+
+  - name: TECHNICAL_REQUIREMENT
+    description: Requisito técnico, tecnología obligatoria o nivel de servicio (ANS/SLA) del pliego técnico.
+    subtypes:
+      - {name: TECHNOLOGY,    description: Tecnología, producto o estándar obligatorio.}
+      - {name: SERVICE_LEVEL, description: Acuerdo de nivel de servicio.}
+      - {name: OTHER,         description: Otro requisito técnico.}
+
+  - name: OTHER_ORGANIZATION
+    description: Otro organismo relevante (tribunal de recursos, mesa de contratación, entidad financiadora).
+
+relation_types:
+  - name: TENDERS
+    description: El órgano de contratación licita el lote.
+    head_types: [CONTRACTING_AUTHORITY]
+    tail_types: [LOT]
+
+  - name: HAS_CRITERION
+    description: El lote se adjudica según este criterio.
+    head_types: [LOT]
+    tail_types: [AWARD_CRITERION]
+
+  - name: REQUIRES
+    description: El lote exige este requisito de solvencia, garantía o requisito técnico.
+    head_types: [LOT]
+    tail_types: [REQUIREMENT, GUARANTEE, TECHNICAL_REQUIREMENT]
+
+  - name: ACCEPTS
+    description: El requisito o perfil se acredita con esta titulación, certificación o clasificación.
+    head_types: [REQUIREMENT, TEAM_PROFILE]
+    tail_types: [QUALIFICATION]
+
+  - name: INCLUDES
+    description: El lote incluye este entregable, perfil de equipo o penalidad.
+    head_types: [LOT]
+    tail_types: [DELIVERABLE, TEAM_PROFILE, PENALTY]
+
+  - name: BID_FOR
+    description: La oferta se presenta al lote.
+    head_types: [BID]
+    tail_types: [LOT]
+
+  - name: SUBMITTED_BY
+    description: La oferta la presenta esta empresa o UTE.
+    head_types: [BID]
+    tail_types: [COMPANY, JOINT_VENTURE]
+
+  - name: MEMBER_OF
+    description: La empresa forma parte de la UTE.
+    head_types: [COMPANY]
+    tail_types: [JOINT_VENTURE]
+    attributes:
+      share: {type: number, description: "Porcentaje de participación en la UTE."}
+
+  - name: AWARDED_TO
+    description: El lote se adjudica (o se propone adjudicar) a esta empresa o UTE.
+    head_types: [LOT]
+    tail_types: [COMPANY, JOINT_VENTURE]
+    attributes:
+      amount:   {type: number, description: "Importe de adjudicación en euros sin IVA."}
+      date:     {type: string, description: "Fecha de adjudicación AAAA-MM-DD."}
+      proposed: {type: boolean, description: "true si es solo propuesta de adjudicación."}
+
+  - name: DECLARED_VOID
+    description: El órgano declara desierto el lote o desiste o renuncia a él.
+    head_types: [CONTRACTING_AUTHORITY]
+    tail_types: [LOT]
+    attributes:
+      reason: {type: string, description: "Motivo."}
+
+  - name: CONTRACT_FOR
+    description: El contrato formaliza la adjudicación de este lote.
+    head_types: [CONTRACT]
+    tail_types: [LOT]
+
+  - name: SIGNED_WITH
+    description: El contrato se firma con esta empresa o UTE.
+    head_types: [CONTRACT]
+    tail_types: [COMPANY, JOINT_VENTURE]
+
+  - name: MODIFIES
+    description: La modificación o prórroga afecta a este contrato.
+    head_types: [MODIFICATION]
+    tail_types: [CONTRACT]
+
+  - name: SUBCONTRACTS
+    description: Una empresa subcontrata parte de la prestación a otra.
+    head_types: [COMPANY, JOINT_VENTURE]
+    tail_types: [COMPANY]
+
+  - name: REVIEWS
+    description: Un tribunal u organismo resuelve un recurso sobre el lote.
+    head_types: [OTHER_ORGANIZATION]
+    tail_types: [LOT]
+    attributes:
+      outcome: {type: string, description: "Estimado, desestimado, inadmitido..."}

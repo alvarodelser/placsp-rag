@@ -63,6 +63,29 @@ services:
     volumes:
       - placsp_neo4j_data:/data
 
+  # ── Qdrant (vector store; the pilot's collections live here) ──────────────
+  # Replaces Weaviate as the vector store. Collections are created by their
+  # owner (`python -m placsp_pilot index` for the pilot_* ones), never implicitly.
+  placsp-qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: placsp-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${QDRANT_HTTP_PORT:-6343}:6333"
+      - "127.0.0.1:${QDRANT_GRPC_PORT:-6344}:6334"
+    environment:
+      QDRANT__SERVICE__API_KEY: "${QDRANT_API_KEY}"
+      QDRANT__SERVICE__ENABLE_STATIC_CONTENT: "false"
+      QDRANT__LOG_LEVEL: INFO
+    volumes:
+      - placsp_qdrant_data:/qdrant/storage
+    # RocksDB keeps files open per segment; Docker's default soft limit of 1024
+    # makes Qdrant stop accepting connections on a large corpus.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
   # ── Schema init (one-shot, idempotent) ───────────────────────────────────
   placsp-init-schema:
     build:
@@ -182,6 +205,8 @@ volumes:
     name: placsp_feedback_data   # relevance-feedback SQLite; same persistence semantics
   placsp_neo4j_data:
     name: placsp_neo4j_data      # company graph; same persistence semantics
+  placsp_qdrant_data:
+    name: placsp_qdrant_data     # vector store; same persistence semantics
 
 # Uncomment to join the vectorizer's existing Docker network so the search-api
 # can reach `http://vectorizer:8089` by service name instead of via the host.
