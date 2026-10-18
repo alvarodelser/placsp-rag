@@ -133,13 +133,15 @@ def summarize(cfg: PilotConfig, store: Store, max_doc_chars: int):
         except ServiceError as e:
             return b, "failed", {"error": str(e)}, int((time.time() - t0) * 1000)
 
+    failed = 0
     with store.stage("summarize") as st, _pool(cfg.nlp_workers) as pool:
         for i, f in enumerate(as_completed([pool.submit(one, b) for b in blobs]), 1):
             b, status, out, ms = f.result()
             store.update("blob", {"sha": b["sha"]}, summary_status=status, summary_json=out, summary_ms=ms)
             st["items"] += 1
+            failed += status == "failed"
             if i % 20 == 0 or i == len(blobs):
-                log(f"summarize {i}/{len(blobs)}")
+                log(f"summarize {i}/{len(blobs)}, {failed} failed" + (f" (last: {out['error'][:120]})" if status == "failed" else ""))
 
 
 # ── ner ───────────────────────────────────────────────────────────────────
