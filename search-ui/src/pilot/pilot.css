@@ -129,3 +129,22 @@ button.mini:hover:not(:disabled) { background: var(--accent-soft); color: var(--
   .plist { position: static; max-height: 40vh; }
   .tv-grid, .ask-grid { grid-template-columns: 1fr; }
 }
+
+.mention { border-left: 3px solid var(--line); padding: 4px 0 4px 10px; margin-bottom: 8px; }
+.mention p { margin: 3px 0 0; font-size: 12.5px; color: #44506a; white-space: pre-wrap; }
+.mention mark { background: #fff1b8; color: var(--ink); padding: 0 1px; }
+.np-warn { background: #fdf6ec; border-radius: var(--radius-sm); padding: 8px 10px; }
+.pg-modes { display: inline-flex; gap: 2px; margin-right: 8px; }
+.pg-modes button { background: none; color: var(--muted); border: 1px solid var(--line); padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.pg-modes button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pg-modes button:hover:not(:disabled):not(.on) { background: var(--chip); color: var(--ink); }
+.lanes-wrap { max-height: 72vh; overflow: auto; background: #fbfcfe; }
+.lane-title { font-size: 11px; font-weight: 700; fill: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.lane-node text { font-size: 11px; fill: var(--ink); cursor: pointer; }
+.lane-node.dim { opacity: .25; }
+.lane-edge { fill: none; stroke: #c3cad8; stroke-width: 1; opacity: .35; }
+.lane-edge.prov { stroke: #3b6ea8; stroke-dasharray: 3 3; }
+.lane-edge.on { opacity: 1; stroke-width: 1.6; }
+.lane-edge.off { opacity: .06; }
+.pilot .warn-text { color: #b45309; }
+.req-children { margin: 6px 0 2px 14px; padding-left: 10px; border-left: 2px solid var(--line); }

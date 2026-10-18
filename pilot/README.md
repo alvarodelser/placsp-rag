@@ -32,20 +32,56 @@ text         pdf, html, doc/docx/odt, xls/xlsx, pptx, bc3, rtf, zip (members bec
              OCR for PDFs without a text layer
 classify     /nli for documents the rules could not label
 summarize    /summarize article: one gist per document
-ner          /ner on ~512-word chunks with ontology/placsp_procurement.yaml
-resolve      /resolve per document
-describe     /summarize entity_desc and relation_desc
-consolidate  /summarize aggregate: one description per expediente (its document summaries in
-             lifecycle order, each headed by position, role and date), one per company seen in
-             several documents
+ner          /ner on ~512-word chunks with ontology/placsp_procurement.yaml (every document is
+             chunked and stored; NER reads up to PILOT_NER_MAX_CHUNKS per document)
+mentions     every NER item becomes a mention, located in its chunk (offsets, page)
+resolve      per expediente: feed anchors, keys, near-identical names, then /resolve type by
+             type over all documents -> one entity per real thing (see "Entities" below)
+refine       /ner with a narrow schema per requirement and award criterion: thresholds, units,
+             periods, accreditation, points, formulas, sub-criteria
+describe     /summarize once per entity (requirement_desc, criterion_desc, else entity_desc)
+             from all its passages and fields, and once per relation
+summary      /summarize aggregate: one description per expediente, from its document
+             summaries in lifecycle order, each headed by position, role and date
 graph        out/nodes.jsonl, out/edges.jsonl, out/expedientes/<id>.json
 index        Qdrant + Neo4j (rebuilds the pilot namespace; embeddings cached in pilot.db)
 validate     every expediente from feed to stores -> validation table, out/validation.csv
 report       out/report.md, out/metrics.json
 ```
 
-`summarize → ner → resolve → describe` is Phase A of `nlp_service`'s relation pipeline,
-called over HTTP. Coreference is skipped, because `nlp_service` doesn't expose it over HTTP.
+`nlp_service` splits entity resolution into three scopes: coreference inside the text (not
+exposed over HTTP, so skipped), `/resolve` within one document, and a cross-document merge
+(`/dedup/corpus`, its relation pipeline's Phase B). The corpus dedup reads Weaviate, so the
+pilot does the cross-document step itself, per expediente, and uses `/resolve` (stateless)
+for the doubtful merges.
+
+## Entities
+
+What NER finds in each chunk is a **mention**. Resolution turns the mentions of all of an
+expediente's documents into **one entity per real thing**:
+
+1. **Feed anchors.** A mention of a lot, criterion, requirement, guarantee, the authority (and
+   its own bodies, such as the Mesa de Contratación), a winner or the contract joins the feed's
+   node. A criterion is matched by name and points (an acta's score of 0 is not a weight).
+2. **Keys.** NIF, lot number, guarantee type, normalised name (accents, punctuation and legal
+   forms removed).
+3. **Near-identical names.** Same words up to typos (`SESRVICIOS` = `SERVICIOS`); names that
+   differ in a code (ENI-03 / ENI-04) never merge.
+4. **The model.** What is left goes to `/resolve`, one call per type, with every document's
+   candidates; two feed nodes are never merged, nor criteria with different points.
+
+Organizations (by NIF, else normalised name) and qualifications are shared across expedientes;
+everything else belongs to one. When the feed only points at the pliego ("según cláusula 8ª
+PCAP"), the PCAP's requirements are linked to that line with `DETAILED_BY`. Values that
+disagree between sources (the feed says *fórmula*, the PCAP *juicio de valor*) are kept as
+`conflicts`, never silently overwritten; feed values win.
+
+**Provenance.** Every mention keeps its chunk, character offsets and page. In Neo4j:
+`(entity)-[:MENTIONED_IN {quote, char_start, char_end, page}]->(Chunk)<-[:HAS_CHUNK]-(Document)`;
+in Qdrant, each chunk lists its mentions and each entity its provenance. Requirements and
+criteria are refined from their passages and described with `requirement_desc` /
+`criterion_desc`, which keep every figure, unit and standard literally (they are in
+`nlp_service`; with an older `nlp_service` the pilot falls back to `entity_desc`).
 
 `ontology/placsp_procurement.yaml` is in `nlp_service`'s ontology format. It can be copied to
 `nlp_service/config/ontologies/` and run by the relation pipeline unchanged.
@@ -113,14 +149,19 @@ the notice it came with, else the date of its lifecycle stage. Documents are sor
 then by stage (preparation → notices → pliegos → clarifications → evaluation → award →
 formalisation → execution), then by role within the stage (PCAP before PPT before annexes).
 
-**Validation.** Every expediente gets about 29 checks, recorded in the `validation` table and in
+**Validation.** Every expediente gets about 40 checks, recorded in the `validation` table and in
 `out/validation.csv`:
 - the feed's required fields;
 - every reference downloaded, and the SHA-1 checked against the feed's `DocumentHash`;
 - text extracted, documents ordered;
-- every NLP output present: one summary per document, every selected chunk through NER, one
-  resolution per document, one description per entity and relation, the tender description;
-- the counts in Qdrant and Neo4j: documents in order, the chain, lots, chunks, winners.
+- every NLP output present: one summary per document, every selected chunk through NER, the
+  tender description;
+- entities: every mention placed on an entity and located in its chunk, no duplicates (same
+  type and name) and no near-duplicates left, every entity and relation described, every
+  requirement and criterion refined, requirements whose passages state a figure carry it,
+  disagreements between sources listed;
+- the counts in Qdrant and Neo4j: documents in order, the chain, lots, chunks, winners, one
+  `MENTIONED_IN` edge per mention.
 
 `fail` means the pilot did not do its job. `warn` means the published data is incomplete: a
 missing pliego, criteria that don't add up to 100, or the source returning HTTP 500.

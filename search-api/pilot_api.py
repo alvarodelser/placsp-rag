@@ -10,6 +10,7 @@ the `:Pilot` nodes in Neo4j, and touches nothing the search above uses.
   PILOT_FILES_DIR           <pilot run dir>/files, to serve the stored documents (optional)
   VECTORIZER_URL            BGE-M3, for semantic search and /ask
 """
+import json
 import os
 import re
 import uuid
@@ -35,7 +36,8 @@ VECTORIZER_URL = os.getenv("VECTORIZER_URL", "http://localhost:8089").rstrip("/"
 # Same namespace as pilot/placsp_pilot/index.py, so point ids can be computed instead of searched.
 NS = uuid.UUID("6f1c3a52-5b0e-4f37-9a1e-7d2b8c4e0a11")
 SHARED = ("org:", "jv:", "qualification:")          # nodes that span tenders
-CHUNK_RELS = ["HAS_CHUNK", "NEXT", "MENTIONS"]
+CHUNK_RELS = ["HAS_CHUNK", "NEXT", "MENTIONS", "MENTIONED_IN"]
+JSON_PROPS = ("detail", "conflicts", "attributes")
 HEAVY = {"evidence", "descriptions", "documents", "file_path", "aliases", "text"}
 CARD = ["tender_id", "name", "channel", "status", "authority", "value", "published", "counts", "analysable",
         "skip_reason", "contract_type", "procedure", "cpv", "nuts", "description", "companies"]
@@ -107,6 +109,12 @@ def node_json(node, full: bool = False) -> dict:
         if isinstance(props.get("summary"), str):
             props["summary"] = props["summary"][:500]
     props.pop("file_path", None)
+    for k in JSON_PROPS:                      # dicts are stored in Neo4j as JSON strings
+        if isinstance(props.get(k), str) and props[k][:1] in "{[":
+            try:
+                props[k] = json.loads(props[k])
+            except ValueError:
+                pass
     return out | props
 
 
@@ -213,16 +221,40 @@ def node(id: str, chunks: int = Query(6, ge=0, le=30)):
         rows = list(s.run(
             f"MATCH (n:`{LABEL}` {{id: $id}})-[r]-(m:`{LABEL}`) WHERE NOT type(r) IN $skip "
             "RETURN type(r) AS rel, startNode(r) = n AS out, m LIMIT 300", id=id, skip=CHUNK_RELS))
+        prov = list(s.run(
+            f"MATCH (n:`{LABEL}` {{id: $id}})-[e:MENTIONED_IN]->(c:`{LABEL}`)<-[:HAS_CHUNK]-(d:`{LABEL}`) "
+            f"OPTIONAL MATCH (:`{LABEL}` {{id: 'tender:' + e.tender}})-[h:HAS_DOCUMENT]->(d) "
+            "RETURN e, c.qdrant_id AS qid, c.idx AS idx, d.role AS role, d.title AS title, d.sha256 AS sha, h.seq AS seq, "
+            "e.tender AS tender ORDER BY e.tender, h.seq, c.idx, e.char_start LIMIT 200", id=id))
     neighbours = defaultdict(list)
     for r in rows:
         neighbours[f"{r['rel']}{'' if r['out'] else ' ←'}"].append(node_json(r["m"]))
     ent = qdrant().retrieve(coll("entities"), ids=[point_id("entity", id)], with_payload=["tender_ids"])
-    mentions = []
-    if chunks:
-        pts, _ = qdrant().scroll(coll("chunks"), scroll_filter=match(entity_ids=id), limit=chunks, with_payload=True)
-        mentions = [chunk_json(p.payload) for p in pts]
-    return {"node": node_json(rec["n"], full=True), "neighbours": dict(neighbours), "mentions": mentions,
+    return {"node": node_json(rec["n"], full=True), "neighbours": dict(neighbours),
+            "mentions": _mentions(prov, chunks), "mention_count": len(prov),
             "tender_ids": ent[0].payload.get("tender_ids", []) if ent else []}
+
+
+def _mentions(rows, limit: int) -> list[dict]:
+    """Each mention with the passage around its quote (from the chunk text in Qdrant)."""
+    rows = rows[:limit]
+    texts = {}
+    ids = list({r["qid"] for r in rows if r["qid"]})
+    if ids:
+        for p in qdrant().retrieve(coll("chunks"), ids=ids, with_payload=["text"]):
+            texts[str(p.id)] = p.payload.get("text") or ""
+    out = []
+    for r in rows:
+        e = dict(r["e"])
+        text, a, b = texts.get(r["qid"], ""), e.get("char_start"), e.get("char_end")
+        if text and a is not None and b is not None:
+            before, quote, after = text[max(0, a - 120):a], text[a:b], text[b:b + 240]
+        else:
+            before, quote, after = "", e.get("quote") or "", ""
+        out.append({"tender_id": r["tender"], "doc_seq": r["seq"], "doc_role": r["role"], "doc_title": r["title"],
+                    "doc_sha256": r["sha"], "chunk_idx": r["idx"], "page": e.get("page"), "surface": e.get("surface"),
+                    "located": e.get("located"), "before": before, "quote": quote, "after": after})
+    return out
 
 
 def chunk_json(p: dict, score: float | None = None) -> dict:

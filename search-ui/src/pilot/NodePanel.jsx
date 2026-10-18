@@ -6,7 +6,14 @@ import { CircleNotch, X } from '../icons.js'
 import { go } from './route.js'
 
 const SKIP = new Set(['id', 'label', 'name', 'title', 'description', 'descriptions', 'evidence', 'summary', 'documents',
-  'aliases', 'url', 'sha256', 'source'])
+  'aliases', 'url', 'sha256', 'source', 'mentions', 'detail', 'conflicts'])
+const SOURCE = { feed: 'del feed', documents: 'extraído de documentos', 'feed+documents': 'feed + documentos' }
+const DETAIL = {
+  threshold_amount: 'Cifra mínima', threshold_unit: 'Unidad', period_years: 'Periodo (años)', reference_base: 'Referencia',
+  accreditation: 'Acreditación', standard: 'Norma / certificación', applies_to_lots: 'Lotes', nature: 'Naturaleza',
+  mandatory: 'Obligatorio', points: 'Puntos', formula: 'Fórmula', scoring_rule: 'Cómo se puntúa', subcriteria: 'Subcriterios',
+  threshold_points: 'Umbral', envelope: 'Sobre', evidence_required: 'Documentación', subtype: 'Tipo',
+}
 
 export default function NodePanel({ id, onSelect, onClose }) {
   const [state, setState] = useState({ status: 'loading' })
@@ -39,7 +46,8 @@ function Body({ d, onSelect }) {
     <div className="np-body">
       <h3>{n.label === 'Document' ? (n.title || n.filename) : (n.name || n.id)}</h3>
       <div className="chips">
-        <span className="chip">{n.source === 'document' ? 'extraído de documentos' : n.source === 'feed' ? 'del feed' : n.id.split(':')[0]}</span>
+        <span className="chip">{SOURCE[n.source] || n.id.split(':')[0]}</span>
+        {d.mention_count > 0 && <span className="chip">{d.mention_count} menciones</span>}
         {n.role && <span className="chip">{roleEs(n.role)}</span>}
         {isOrg && <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(n.id)}`)}>Ver en todos los expedientes →</button>}
       </div>
@@ -49,7 +57,30 @@ function Body({ d, onSelect }) {
           {props.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{String(v)}</dd></div>)}
         </dl>
       )}
-      {evidence.length > 0 && (
+      {n.detail && Object.keys(n.detail).length > 0 && (
+        <div className="np-sec">
+          <div className="np-rel">Detalle extraído</div>
+          <dl className="np-props">
+            {Object.entries(n.detail).filter(([, v]) => v !== '' && v != null).map(([k, v]) => (
+              <div key={k}><dt>{DETAIL[k] || k}</dt><dd>{String(v)}</dd></div>))}
+          </dl>
+        </div>
+      )}
+      {n.conflicts && Object.keys(n.conflicts).length > 0 && (
+        <div className="np-sec np-warn">
+          <div className="np-rel">Discrepancias entre fuentes</div>
+          {Object.entries(n.conflicts).map(([k, vs]) => (
+            <div key={k} className="small"><b>{DETAIL[k] || k}:</b> {vs.map((v) => `${v.value} (${v.source === 'feed' ? 'feed' : `${v.mentions} menc.`})`).join(' · ')}</div>
+          ))}
+        </div>
+      )}
+      {d.mentions.length > 0 && (
+        <div className="np-sec">
+          <div className="np-rel">Dónde aparece {d.mention_count > d.mentions.length && <span>{d.mentions.length} de {d.mention_count}</span>}</div>
+          {d.mentions.map((m, i) => <Mention key={i} m={m} />)}
+        </div>
+      )}
+      {evidence.length > 0 && d.mentions.length === 0 && (
         <details className="np-sec"><summary>Evidencia ({evidence.length})</summary>
           {evidence.slice(0, 6).map((e, i) => <blockquote key={i}>{e}</blockquote>)}
         </details>
@@ -67,18 +98,25 @@ function Body({ d, onSelect }) {
           </ul>
         </div>
       ))}
-      {d.mentions.length > 0 && (
-        <div className="np-sec">
-          <div className="np-rel">Fragmentos que lo mencionan</div>
-          {d.mentions.map((c, i) => <Chunk key={i} c={c} />)}
-        </div>
-      )}
       {d.tender_ids.length > 1 && (
         <div className="np-sec">
           <div className="np-rel">Aparece en {d.tender_ids.length} expedientes</div>
           <div className="chips">{d.tender_ids.map((t) => <button key={t} type="button" className="chip linkchip" onClick={() => go(`/t/${t}`)}>{t}</button>)}</div>
         </div>
       )}
+    </div>
+  )
+}
+
+function Mention({ m }) {
+  return (
+    <div className="mention">
+      <div className="chunk-meta">
+        <span>Doc {m.doc_seq ?? '?'} · {roleEs(m.doc_role)}</span>
+        {m.page && <span>pág. {m.page}</span>}
+        {!m.located && <span title="La cita no se encontró literal en el texto">cita aproximada</span>}
+      </div>
+      <p>{m.before && '…'}{m.before}<mark>{m.quote}</mark>{m.after}{m.after && '…'}</p>
     </div>
   )
 }

@@ -205,13 +205,15 @@ class Store:
             "summary": "UPDATE blob SET summary_status='pending' WHERE summary_status='failed'",
             "chunk": "UPDATE chunk SET status='pending' WHERE status='failed'",
             "ner": "UPDATE blob SET ner_status='pending' WHERE ner_status IN ('failed','partial')",
-            "resolve": "UPDATE blob SET resolve_status='pending', describe_status='pending' WHERE resolve_status='failed'",
-            "description": "DELETE FROM description WHERE status!='ok'",
-            "describe": "UPDATE blob SET describe_status='pending' WHERE describe_status='partial'",
-            "aggregate": "DELETE FROM extraction WHERE status!='ok'",
+            "resolve": "DELETE FROM resolution WHERE status!='ok'",
+            "refine": "DELETE FROM refinement WHERE status!='ok'",
+            "describe": "DELETE FROM entity_description WHERE status!='ok'",
+            "summary": "DELETE FROM extraction WHERE status!='ok'",
         }
+        from placsp_pilot.entities import SCHEMA   # the entity tables may not exist yet
         out = {}
         with self.tx() as c:
+            c.executescript(SCHEMA)
             for k, sql in stmts.items():
                 out[k] = c.execute(sql).rowcount
         return out

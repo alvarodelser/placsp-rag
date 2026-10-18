@@ -7,10 +7,14 @@ Stages run in this order; `run` does them all. Each is resumable.
   text         extract text (OCR service for scanned PDFs), unpack zips
   classify     nlp_service /nli: zero-shot role for documents the rules could not label
   summarize    nlp_service /summarize (article): one gist per document
-  ner          nlp_service /ner per chunk with the procurement ontology
-  resolve      nlp_service /resolve per document
-  describe     nlp_service /summarize entity_desc / relation_desc
-  consolidate  nlp_service /summarize aggregate: expediente and company descriptions
+  ner          nlp_service /ner per chunk with the procurement ontology (every document is chunked)
+  mentions     every NER item as a mention, located in its chunk (offsets, page)
+  resolve      per expediente: feed anchors, keys, near-identical names, then nlp_service /resolve
+               type by type over every document -> one entity per real thing
+  refine       nlp_service /ner with a narrow schema per requirement and award criterion
+  describe     nlp_service /summarize once per entity (requirement_desc, criterion_desc,
+               entity_desc) and per relation
+  summary      nlp_service /summarize aggregate: one description per expediente
   graph        nodes/edges and one JSON per expediente (out/)
   index        Qdrant pilot_tenders / pilot_chunks / pilot_entities + Neo4j Pilot graph
                (BGE-M3 embeddings through the vectorizer)
@@ -21,12 +25,12 @@ import argparse
 import sys
 import warnings
 
-from placsp_pilot import graph, index, nlpstages, report, stages, validate
+from placsp_pilot import entities, graph, index, nlpstages, report, stages, validate
 from placsp_pilot.config import DEFAULT_QUOTAS, load_config
 from placsp_pilot.store import Store
 
-ORDER = ["select", "discover", "fetch", "text", "classify", "summarize", "ner", "resolve", "describe", "consolidate",
-         "graph", "index", "validate", "report"]
+ORDER = ["select", "discover", "fetch", "text", "classify", "summarize", "ner", "mentions", "resolve", "refine",
+         "describe", "summary", "graph", "index", "validate", "report"]
 
 
 def _quotas(s: str | None) -> dict:
@@ -67,9 +71,11 @@ def main(argv=None):
         "classify": lambda: nlpstages.classify(cfg, store),
         "summarize": lambda: nlpstages.summarize(cfg, store, args.max_doc_chars),
         "ner": lambda: nlpstages.ner(cfg, store),
-        "resolve": lambda: nlpstages.resolve(cfg, store),
-        "describe": lambda: nlpstages.describe(cfg, store),
-        "consolidate": lambda: nlpstages.consolidate(cfg, store),
+        "mentions": lambda: entities.mentions(cfg, store),
+        "resolve": lambda: entities.resolve(cfg, store),
+        "refine": lambda: entities.refine(cfg, store),
+        "describe": lambda: entities.describe(cfg, store),
+        "summary": lambda: nlpstages.summary(cfg, store),
         "graph": lambda: graph.build(cfg, store),
         "index": lambda: index.index(cfg, store),
         "validate": lambda: validate.validate(cfg, store),

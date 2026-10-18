@@ -154,29 +154,20 @@ function Lots({ t }) {
                 <tbody>
                   {l.award_criteria.map((c, i) => (
                     <tr key={i}>
-                      <td>{c.name}{c.formula && <div className="muted small">{c.formula}</div>}</td>
+                      <td>{c.name}{c.formula && <div className="muted small">{c.formula}</div>}
+                        {c.conflicts && <div className="small warn-text">Discrepancia: {Object.entries(c.conflicts).map(([k, vs]) => `${k} ${vs.map((v) => v.value).join(' / ')}`).join('; ')}</div>}</td>
                       <td>{c.subtype === 'JUDGEMENT' ? 'Juicio de valor' : c.subtype === 'FORMULA' ? 'Fórmula' : c.subtype || '—'}</td>
                       <td className="num">{c.points ?? '—'}</td>
-                      <td>{c.source === 'feed' ? 'feed' : 'documento'}</td>
+                      <td>{{ feed: 'feed', documents: 'documentos', 'feed+documents': 'feed + docs' }[c.source] || c.source}{c.mentions ? ` · ${c.mentions} menc.` : ''}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </>
           )}
-          {(l.requirements || []).length > 0 && (
-            <>
-              <h4>Solvencia y requisitos</h4>
-              <ul className="plain">
-                {l.requirements.map((r, i) => (
-                  <li key={i}><span className="chip">{r.subtype || r.label}</span> {r.name || r.text}
-                    {r.amount != null && <b> · {money(r.amount)}</b>}
-                    {(r.qualifications || []).length > 0 && <span className="muted"> · acredita: {r.qualifications.join(', ')}</span>}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+          <Requirements reqs={(l.requirements || []).filter((r) => r.label === 'Requirement')} title="Solvencia y requisitos de participación" />
+          <Requirements reqs={(l.requirements || []).filter((r) => r.label === 'TechnicalRequirement')} title="Requisitos técnicos de la prestación" />
+          <Requirements reqs={(l.requirements || []).filter((r) => !['Requirement', 'TechnicalRequirement'].includes(r.label))} title="Garantías y otras exigencias" />
           {((l.bids || []).length > 0 || l.result) && (
             <>
               <h4>Resultado {l.result?.bids_received != null && <span className="muted">· {l.result.bids_received} ofertas recibidas</span>}</h4>
@@ -193,6 +184,32 @@ function Lots({ t }) {
         </details>
       ))}
     </div>
+  )
+}
+
+function Requirements({ reqs, title }) {
+  if (!reqs.length) return null
+  // Requirements a feed line points to ("según cláusula 8ª") are listed under that line.
+  const byId = Object.fromEntries(reqs.map((r) => [r.id, r]))
+  const nested = new Set(reqs.flatMap((r) => r.detailed_by || []))
+  const item = (r, child = false) => (
+    <li key={r.id || r.name} className={child ? 'req-child' : ''}>
+      <span className="chip">{r.detail?.subtype || r.subtype || r.label}</span> {r.name || r.text}
+      {r.amount != null && <b> · {money(r.amount)}</b>}
+      {r.detail?.threshold_amount != null && <b> · {r.detail.threshold_amount} {r.detail.threshold_unit || ''}{r.detail.period_years ? ` (${r.detail.period_years} años)` : ''}</b>}
+      {r.source === 'feed' && <span className="muted small"> · feed</span>}
+      {(r.qualifications || []).length > 0 && <span className="muted"> · acredita: {r.qualifications.join(', ')}</span>}
+      {r.description && <div className="muted small">{r.description}</div>}
+      {(r.detailed_by || []).length > 0 && (
+        <ul className="plain req-children">{r.detailed_by.map((id) => byId[id] && item(byId[id], true))}</ul>
+      )}
+    </li>
+  )
+  return (
+    <>
+      <h4>{title}</h4>
+      <ul className="plain">{reqs.filter((r) => !nested.has(r.id)).map((r) => item(r))}</ul>
+    </>
   )
 }
 

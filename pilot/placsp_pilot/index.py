@@ -12,7 +12,8 @@ Qdrant, three collections (prefix PILOT_COLLECTION_PREFIX, default pilot_):
 
 Neo4j: the same graph, every node labelled `Pilot` plus `Pilot<Type>` so it never collides with
 the app's Company/Lot/Contract constraints. Documents are chained in order (HAS_DOCUMENT {seq},
-NEXT_DOCUMENT) and split into Chunk nodes (HAS_CHUNK, NEXT, MENTIONS -> entity); chunk text
+NEXT_DOCUMENT) and split into Chunk nodes (HAS_CHUNK, NEXT); every mention is an edge
+(entity)-[:MENTIONED_IN {quote, char_start, char_end, page}]->(Chunk); chunk text
 stays in Qdrant (qdrant_id on the node).
 
 The index is a projection of pilot.db: each run deletes the pilot namespace and rewrites it, so
@@ -31,12 +32,11 @@ from pathlib import Path
 
 from placsp_pilot.config import PilotConfig
 from placsp_pilot.graph import Graph, build
-from placsp_pilot.nlpstages import split_words
+from placsp_pilot.nlpstages import page_ranges, split_words  # noqa: F401  (page_ranges re-exported)
 from placsp_pilot.services import Services
 from placsp_pilot.store import Store
 
 NS = uuid.UUID("6f1c3a52-5b0e-4f37-9a1e-7d2b8c4e0a11")
-PAGE = re.compile(r"\[Página (\d+)\]")
 TENDER_ID = re.compile(r":(\d{5,})(?::|$)")
 SKIP_ENTITY_LABELS = {"Tender", "Document", "Notice"}
 
@@ -51,35 +51,17 @@ def _clean(node: dict, drop=("id", "label", "evidence", "documents", "descriptio
 
 # ── chunks ────────────────────────────────────────────────────────────────
 
-def page_ranges(pieces: list[str]) -> list[tuple[int | None, int | None]]:
-    """Page span of each chunk from the "[Página N]" markers text extraction leaves in PDFs."""
-    out, current = [], None
-    for p in pieces:
-        marks = [int(m) for m in PAGE.findall(p)]
-        start = current if (not marks or not p.lstrip().startswith("[Página")) else marks[0]
-        if start is None and marks:
-            start = marks[0]
-        end = marks[-1] if marks else start
-        out.append((start, end))
-        current = end
-    return out
-
-
-def chunk_records(cfg: PilotConfig, store: Store, g: Graph, sha: str, text_path: str) -> list[dict]:
+def chunk_records(cfg: PilotConfig, store: Store, g: Graph, eid: str, sha: str, text_path: str) -> list[dict]:
+    """Every chunk of a document, with the mentions resolution placed in it."""
     pieces = split_words(Path(text_path).read_text(encoding="utf-8"), cfg.chunk_words)
-    ner = {r["idx"]: r for r in store.q("SELECT idx, status, result_json FROM chunk WHERE sha=?", (sha,))}
-    names = g.doc_names.get(sha, {})
+    ner = {r["idx"]: r["status"] for r in store.q("SELECT idx, status FROM chunk WHERE sha=?", (sha,))}
+    found = g.mentions.get((eid, sha), {})
     out = []
     for i, (piece, (pf, pt)) in enumerate(zip(pieces, page_ranges(pieces))):
-        row = ner.get(i)
-        ents = []
-        if row is not None and row["status"] == "ok":
-            for e in json.loads(row["result_json"]).get("entities", []):
-                nid = names.get(e["name"])
-                if nid and nid not in ents:
-                    ents.append(nid)
+        ms = found.get(i, [])
         out.append({"idx": i, "text": piece, "words": len(piece.split()), "page_from": pf, "page_to": pt,
-                    "ner": row["status"] if row is not None else "not_planned", "entity_ids": ents})
+                    "ner": ner.get(i, "not_planned"), "mentions": ms,
+                    "entity_ids": list(dict.fromkeys(m["entity_id"] for m in ms))})
     return out
 
 
@@ -107,8 +89,9 @@ def tender_object(g: Graph, rec: dict, n_chunks: int) -> dict:
         lot["award_criteria"] = [_clean(g.nodes[c]) for c in g.out(lid, "HAS_CRITERION")]
         lot["criteria_points_total"] = sum(c.get("points") or 0 for c in lot["award_criteria"] if c.get("source") == "feed") or \
             sum(c.get("points") or 0 for c in lot["award_criteria"]) or None
-        lot["requirements"] = [dict(_clean(g.nodes[r]), label=g.nodes[r]["label"],
-                                    qualifications=[g.nodes[q].get("name") for q in g.out(r, "ACCEPTS")])
+        lot["requirements"] = [dict(_clean(g.nodes[r]), label=g.nodes[r]["label"], id=r,
+                                    qualifications=[g.nodes[q].get("name") for q in g.out(r, "ACCEPTS")],
+                                    detailed_by=g.out(r, "DETAILED_BY"))
                                for r in g.out(lid, "REQUIRES")]
         lot["scope"] = [dict(_clean(g.nodes[x]), label=g.nodes[x]["label"]) for x in g.out(lid, "INCLUDES")]
         bids = list(dict.fromkeys(g.out(lid, "RECEIVED_BID") + g.into(lid, "BID_FOR")))
@@ -318,9 +301,12 @@ class Neo4jIndex:
             props = {k: v for k, v in e.items() if k not in ("src", "dst", "rel")}
             by_rel[_REL.sub("_", e["rel"].upper())].append({"src": e["src"], "dst": e["dst"], "props": neo_props(props)})
         for rel, rows in by_rel.items():
-            keyed = [r for r in rows if "tender" in r["props"]]
-            plain = [r for r in rows if "tender" not in r["props"]]
-            for subset, key in ((plain, ""), (keyed, " {tender: r.props.tender}")):
+            # Edges that may repeat between the same two nodes carry what tells them apart:
+            # the expediente (NEXT_DOCUMENT) or the mention (MENTIONED_IN).
+            plain = [r for r in rows if "tender" not in r["props"] and "key" not in r["props"]]
+            by_tender = [r for r in rows if "tender" in r["props"] and "key" not in r["props"]]
+            by_key = [r for r in rows if "key" in r["props"]]
+            for subset, key in ((plain, ""), (by_tender, " {tender: r.props.tender}"), (by_key, " {key: r.props.key}")):
                 for i in range(0, len(subset), 2000):
                     self.run(f"UNWIND $rows AS r MATCH (a:`{self.base}` {{id: r.src}}) MATCH (b:`{self.base}` {{id: r.dst}})"
                              f" MERGE (a)-[e:`{rel}`{key}]->(b) SET e += r.props", rows=subset[i:i + 2000])
@@ -369,6 +355,7 @@ def index(cfg: PilotConfig, store: Store):
         neo.reset()
 
         chunk_nodes, chunk_edges, entity_points = [], [], []
+        provenance: dict[str, list] = defaultdict(list)
         for eid, rec in sorted(recs.items()):
             te = time.time()
             points = []
@@ -379,14 +366,15 @@ def index(cfg: PilotConfig, store: Store):
                 tp = store.one("SELECT text_path FROM blob WHERE sha=?", (d["sha256"],))
                 if not tp or not tp["text_path"]:
                     continue
-                for ch in chunk_records(cfg, store, g, d["sha256"], tp["text_path"]):
+                for ch in chunk_records(cfg, store, g, eid, d["sha256"], tp["text_path"]):
                     pid = point_id("chunk", eid, d["sha256"], ch["idx"])
                     points.append((pid, ch["text"], {
                         "chunk_id": pid, "tender_id": eid, "folder_id": rec["folder_id"], "channel": rec["channel"],
                         "doc_sha256": d["sha256"], "doc_seq": d["seq"], "doc_role": d.get("role"), "doc_title": d.get("title"),
                         "doc_url": d.get("url"), "effective_date": d.get("effective_date"), "chunk_idx": ch["idx"],
                         "page_from": ch["page_from"], "page_to": ch["page_to"], "words": ch["words"], "ner": ch["ner"],
-                        "entity_ids": ch["entity_ids"], "text": ch["text"]}))
+                        "entity_ids": ch["entity_ids"], "text": ch["text"],
+                        "mentions": [{k: m[k] for k in ("entity_id", "char_start", "char_end", "page")} for m in ch["mentions"]]}))
                     cid = f"chunk:{d['sha256']}:{ch['idx']}"
                     chunk_nodes.append({"id": cid, "label": "Chunk", "idx": ch["idx"], "doc_sha256": d["sha256"],
                                         "page_from": ch["page_from"], "page_to": ch["page_to"], "words": ch["words"],
@@ -394,8 +382,13 @@ def index(cfg: PilotConfig, store: Store):
                     chunk_edges.append({"src": f"doc:{d['sha256']}", "rel": "HAS_CHUNK", "dst": cid, "idx": ch["idx"]})
                     if prev_chunk and prev_chunk.startswith(f"chunk:{d['sha256']}:"):
                         chunk_edges.append({"src": prev_chunk, "rel": "NEXT", "dst": cid})
-                    for nid in ch["entity_ids"]:
-                        chunk_edges.append({"src": cid, "rel": "MENTIONS", "dst": nid})
+                    for m in ch["mentions"]:
+                        chunk_edges.append({"src": m["entity_id"], "rel": "MENTIONED_IN", "dst": cid, "key": f"{eid}:{m['mention_id']}",
+                                            "tender": eid, "quote": m["quote"], "surface": m["surface"], "page": m["page"],
+                                            "char_start": m["char_start"], "char_end": m["char_end"], "located": m["located"]})
+                        provenance[m["entity_id"]].append({
+                            "tender_id": eid, "doc_sha256": d["sha256"], "doc_seq": d["seq"], "doc_role": d.get("role"),
+                            "chunk_idx": ch["idx"], "chunk_id": pid, "page": m["page"], "quote": m["quote"][:300]})
                     prev_chunk = cid
             vecs = emb.embed([p[1] for p in points]) if points else []
             qd.upsert("chunks", [(pid, v, payload) for (pid, _, payload), v in zip(points, vecs)])
@@ -420,6 +413,8 @@ def index(cfg: PilotConfig, store: Store):
             entity_points.append((point_id("entity", n["id"]), v, {
                 "node_id": n["id"], "label": n["label"], "name": n.get("name"), "subtype": n.get("subtype"),
                 "nif": n.get("nif"), "description": n.get("description"), "tender_ids": sorted(owners.get(n["id"], ())),
+                "mention_count": len(provenance.get(n["id"], [])), "provenance": provenance.get(n["id"], [])[:20],
+                "detail": n.get("detail"), "conflicts": n.get("conflicts"),
                 **{k: v for k, v in _clean(n).items() if isinstance(v, (int, float, str, bool)) and k not in ("description", "name")}}))
         qd.upsert("entities", entity_points)
 

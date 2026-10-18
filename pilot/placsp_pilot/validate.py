@@ -12,6 +12,7 @@ import base64
 import csv
 import hashlib
 import json
+import re
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -128,7 +129,7 @@ def _nlp_checks(r: Recorder, store: Store, cfg: PilotConfig, eid: str):
     shas = [x["sha"] for x in store.q("SELECT DISTINCT d.sha FROM docref d JOIN blob b ON b.sha=d.sha"
                                       " WHERE d.exp_id=? AND d.status='fetched' AND b.text_status='ok'", (eid,))]
     if not shas:
-        for c in ("nlp.summary", "nlp.ner", "nlp.resolve", "nlp.describe"):
+        for c in ("nlp.summary", "nlp.ner"):
             r.check(c, None, "fail", 0, 0, "no text documents")
     else:
         q = ",".join("?" * len(shas))
@@ -139,17 +140,67 @@ def _nlp_checks(r: Recorder, store: Store, cfg: PilotConfig, eid: str):
         not_planned = [b["sha"][:10] for b in blobs.values() if b["ner_status"] == "pending"]
         r.check("nlp.ner", (ch["sel"] or 0) == (ch["ok"] or 0) and not not_planned, "fail", ch["sel"] or 0, ch["ok"] or 0,
                 f"not chunked: {len(not_planned)}" if not_planned else "")
-        need = [b for b in blobs.values() if b["ner_status"] in ("ok", "partial") and b["resolve_status"] != "skipped"]
-        resolved = [b for b in need if b["resolve_status"] == "ok"]
-        r.check("nlp.resolve", len(resolved) == len(need), "fail", len(need), len(resolved))
-        exp_items = 0
-        for b in resolved:
-            res = json.loads(b["resolve_json"])
-            exp_items += len(res.get("entities", [])) + (len(res.get("relations", [])) if cfg.describe_relations else 0)
-        got = store.one(f"SELECT COUNT(*) n FROM description WHERE status='ok' AND sha IN ({q})", shas)["n"]
-        r.check("nlp.describe", got == exp_items, "fail", exp_items, got)
     agg = store.one("SELECT status FROM extraction WHERE exp_id=? AND kind='tender_description'", (eid,))
     r.check("nlp.tender_description", bool(agg and agg["status"] == "ok"), "fail", "ok", agg["status"] if agg else "missing")
+
+
+def _entity_checks(r: Recorder, store: Store, cfg: PilotConfig, eid: str):
+    """No duplicates, every mention placed and traceable, every entity described and refined."""
+    from placsp_pilot.entities import REFINE_TYPES, same_codes, schema, similarity, typo_equal
+    from placsp_pilot.graph import norm_name
+    schema(store)
+    res = store.one("SELECT status, error FROM resolution WHERE exp_id=?", (eid,))
+    r.check("entities.resolved", bool(res and res["status"] == "ok"), "fail" if not res or res["status"] == "failed" else "warn",
+            "ok", res["status"] if res else "missing", (res["error"] or "") if res else "")
+    total = store.one("SELECT COUNT(*) n, SUM(located) loc FROM mention WHERE sha IN"
+                      " (SELECT sha FROM docref WHERE exp_id=? AND status='fetched')", (eid,))
+    linked = store.one("SELECT COUNT(*) n FROM entity_mention WHERE exp_id=?", (eid,))["n"]
+    r.check("entities.mentions", linked == total["n"], "fail", total["n"], linked, "mentions placed on an entity")
+    loc = (total["loc"] or 0) / total["n"] if total["n"] else 1.0
+    r.check("entities.located", loc >= 0.9, "warn", ">=90% quotes found in their chunk", f"{loc:.0%}")
+    ents = store.q("SELECT * FROM entity WHERE exp_id=?", (eid,))
+    keys = Counter((x["type"], norm_name(x["name"])) for x in ents)
+    dupes = [f"{t}: {n}" for (t, n), c in keys.items() if c > 1]
+    r.check("entities.duplicates", not dupes, "fail", 0, len(dupes), "; ".join(dupes[:8]))
+    near = []
+    by_type = defaultdict(list)
+    for x in ents:
+        by_type[x["type"]].append(x)
+    for typ, xs in by_type.items():
+        for i, a in enumerate(xs):
+            for b in xs[i + 1:]:
+                # The pairs resolution should have merged: same words up to typos, or nearly the same string.
+                if not (a["anchor"] and b["anchor"]) and (typo_equal(a["name"], b["name"]) or (similarity(a["name"], b["name"]) >= 0.95 and same_codes(a["name"], b["name"]))):
+                    near.append(f"{typ}: {a['name']} ~ {b['name']}")
+    r.check("entities.near_duplicates", not near, "warn", 0, len(near), "; ".join(near[:8]))
+    desc = {(x["kind"], x["item_id"]) for x in store.q(
+        "SELECT kind, item_id FROM entity_description WHERE status='ok' AND exp_id IN (?, '*')", (eid,))}
+    undescribed = [x["name"] for x in ents if ("entity", x["id"]) not in desc]
+    r.check("entities.described", not undescribed, "fail", len(ents), len(ents) - len(undescribed), "; ".join(map(str, undescribed[:8])))
+    if cfg.describe_relations:
+        rels = store.q("SELECT id FROM entity_relation WHERE exp_id=? AND type != 'DETAILED_BY'", (eid,))
+        missing = [x["id"] for x in rels if ("relation", x["id"]) not in desc]
+        r.check("entities.relations_described", not missing, "fail", len(rels), len(rels) - len(missing))
+    want = [x for x in ents if x["type"] in REFINE_TYPES]
+    got = {x["entity_id"] for x in store.q("SELECT entity_id FROM refinement WHERE exp_id=? AND status='ok'", (eid,))}
+    r.check("entities.refined", all(x["id"] in got for x in want), "fail", len(want), sum(1 for x in want if x["id"] in got))
+    # A requirement whose passages state a figure should come out with that figure.
+    refined = {x["entity_id"]: json.loads(x["result_json"]) for x in store.q(
+        "SELECT entity_id, result_json FROM refinement WHERE exp_id=? AND status='ok'", (eid,))}
+    missing_fig = []
+    for x in ents:
+        if x["type"] != "REQUIREMENT":
+            continue
+        quotes = " ".join(m["evidence"] or "" for m in store.q(
+            "SELECT m.evidence FROM entity_mention em JOIN mention m ON m.id=em.mention_id WHERE em.exp_id=? AND em.entity_id=?",
+            (eid, x["id"])))
+        attrs = {**json.loads(x["attributes"] or "{}"), **refined.get(x["id"], {})}
+        if re.search(r"\d[\d.,]*\s*(€|euros?|%|años|contratos|personas|veces)", quotes, re.I) and not any(
+                attrs.get(k) is not None for k in ("threshold_amount", "amount", "years", "technicians", "standard")):
+            missing_fig.append(x["name"])
+    r.check("requirements.figures", not missing_fig, "warn", 0, len(missing_fig), "; ".join(missing_fig[:8]))
+    conflicts = [f"{x['name']}: {', '.join(json.loads(x['conflicts']))}" for x in ents if json.loads(x["conflicts"] or "{}")]
+    r.check("entities.conflicts", not conflicts, "warn", 0, len(conflicts), "; ".join(conflicts[:8]))
 
 
 def _expected_chunks(cfg: PilotConfig, store: Store, rec: dict) -> tuple[int, int]:
@@ -168,7 +219,7 @@ def _graph_and_index_checks(r: Recorder, cfg: PilotConfig, store: Store, rec: di
     eid = rec["id"]
     t = rec["feed"]
     nodes = {n["id"]: n for n in rec.get("graph", {}).get("nodes", [])}
-    doc_lots = [n for n in nodes if n.startswith(f"lot:{eid}:doc:")]
+    doc_lots = [n for n, x in nodes.items() if x["label"] == "Lot" and x.get("source") == "documents"]
     r.check("graph.lots_mapped", not doc_lots, "warn", "every document lot maps to a feed lot", f"{len(doc_lots)} unmapped",
             "; ".join(nodes[n].get("name") or "" for n in doc_lots[:5]))
     n_docs = len(rec["documents"])
@@ -206,7 +257,9 @@ def _graph_and_index_checks(r: Recorder, cfg: PilotConfig, store: Store, rec: di
         OPTIONAL MATCH (t)-[:HAS_DOCUMENT]->(:`{b}`)-[:HAS_CHUNK]->(c)
         WITH t, docs, seqs, lots, count(DISTINCT c) AS chunks
         OPTIONAL MATCH ()-[nx:NEXT_DOCUMENT {{tender: $eid}}]->()
-        RETURN docs, seqs, lots, chunks, count(nx) AS chain""", tid=f"tender:{eid}", eid=eid)
+        WITH docs, seqs, lots, chunks, count(nx) AS chain
+        OPTIONAL MATCH ()-[mi:MENTIONED_IN {{tender: $eid}}]->()
+        RETURN docs, seqs, lots, chunks, chain, count(mi) AS mentions""", tid=f"tender:{eid}", eid=eid)
     if not rows:
         r.check("neo4j.tender", False, "fail", "node", "missing")
         return
@@ -215,6 +268,8 @@ def _graph_and_index_checks(r: Recorder, cfg: PilotConfig, store: Store, rec: di
     r.check("neo4j.documents", ok, "fail", f"{n_docs} docs, chain {max(0, n_docs - 1)}", f"{x['docs']} docs, chain {x['chain']}")
     r.check("neo4j.lots", x["lots"] >= len(t.get("lots", [])), "fail", len(t.get("lots", [])), x["lots"])
     r.check("neo4j.chunks", x["chunks"] == exp_chunk_nodes, "fail", exp_chunk_nodes, x["chunks"])
+    linked = store.one("SELECT COUNT(*) n FROM entity_mention WHERE exp_id=?", (eid,))["n"]
+    r.check("neo4j.provenance", x["mentions"] == linked, "fail", linked, x["mentions"], "MENTIONED_IN edges, one per mention")
 
 
 def validate(cfg: PilotConfig, store: Store):
@@ -245,6 +300,7 @@ def validate(cfg: PilotConfig, store: Store):
             _feed_checks(r, e, t)
             _doc_checks(r, store, e, rec)
             _nlp_checks(r, store, cfg, e["id"])
+            _entity_checks(r, store, cfg, e["id"])
             if rec is not None:
                 _graph_and_index_checks(r, cfg, store, rec, qd, neo)
             with store.tx() as c:

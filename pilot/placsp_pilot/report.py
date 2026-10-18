@@ -118,8 +118,28 @@ def compute(cfg: PilotConfig, store: Store) -> dict:
     # Time NER would take without the per-document chunk cap, at this run's mean time per chunk.
     ner["skipped"] = (ner["total"] or 0) - (ner["selected"] or 0)
     ner["extra_ms_without_cap"] = int((ner["avg_ms"] or 0) * ner["skipped"])
+    from placsp_pilot.entities import schema as entity_schema
+    entity_schema(store)
     desc = dict(q("SELECT COUNT(*) n, SUM(CASE WHEN kind='entity' THEN 1 ELSE 0 END) entities,"
-                  " SUM(CASE WHEN kind='relation' THEN 1 ELSE 0 END) relations, SUM(ms) ms FROM description")[0])
+                  " SUM(CASE WHEN kind='relation' THEN 1 ELSE 0 END) relations, SUM(ms) ms FROM entity_description"
+                  " WHERE status='ok'")[0])
+    desc["profiles"] = {r["profile"]: r["n"] for r in q("SELECT profile, COUNT(*) n FROM entity_description GROUP BY profile")}
+    merges = Counter()
+    for r in q("SELECT merges FROM resolution"):
+        merges.update(json.loads(r["merges"] or "{}"))
+    ent = {
+        "mentions": q("SELECT COUNT(*) n FROM mention")[0]["n"],
+        "located": q("SELECT COALESCE(SUM(located), 0) n FROM mention")[0]["n"],
+        "entities": q("SELECT COUNT(*) n FROM entity")[0]["n"],
+        "shared": q("SELECT COUNT(DISTINCT id) n FROM entity WHERE scope='global'")[0]["n"],
+        "anchored": q("SELECT COUNT(*) n FROM entity WHERE anchor=1 AND mentions>0")[0]["n"],
+        "by_type": {r["type"]: [r["m"], r["e"]] for r in q(
+            "SELECT e.type, SUM(e.mentions) m, COUNT(*) e FROM entity e GROUP BY e.type ORDER BY m DESC")},
+        "merges": dict(merges),
+        "llm_calls": q("SELECT COALESCE(SUM(llm_calls), 0) n FROM resolution")[0]["n"],
+        "conflicts": q("SELECT COUNT(*) n FROM entity WHERE conflicts NOT IN ('{}', '')")[0]["n"],
+        "refined": q("SELECT COUNT(*) n FROM refinement WHERE status='ok'")[0]["n"],
+    }
 
     # Per-expediente work time: every item's own duration, each file counted once (on its first expediente).
     per = defaultdict(lambda: Counter())
@@ -193,7 +213,7 @@ def compute(cfg: PilotConfig, store: Store) -> dict:
                   "ocr_pages": sum(b["ocr_pages"] or 0 for b in blobs), "ocr_ms": sum(b["ocr_ms"] or 0 for b in blobs)},
         "by_role": {k: dict(v) for k, v in sorted(by_role.items(), key=lambda kv: -kv[1]["bytes"])},
         "service_calls": {"total": calls_tot, "by_task": calls},
-        "ner": ner, "descriptions": desc,
+        "ner": ner, "descriptions": desc, "entities": ent,
         "by_channel": by_channel,
         "per_expediente": {eid: dict(p, channel=exp_channel.get(eid)) for eid, p in per.items()},
         "disk_bytes": disk,
@@ -227,8 +247,8 @@ def render(m: dict) -> str:
 
     w("## Wall time per stage\n\n| Stage | Wall time | Items |\n|---|---:|---:|")
     total = 0
-    for s in ("select", "discover", "fetch", "text", "classify", "summarize", "ner", "resolve", "describe", "consolidate",
-              "graph", "index", "validate"):
+    for s in ("select", "discover", "fetch", "text", "classify", "summarize", "ner", "mentions", "resolve", "refine",
+              "describe", "summary", "graph", "index", "validate"):
         if s in m["stages"]:
             st = m["stages"][s]
             total += st["wall_s"]
@@ -260,7 +280,18 @@ def render(m: dict) -> str:
       f"{n['entities'] or 0:,} entities and {n['relations'] or 0:,} relations extracted; mean {_fmt_s(n['avg_ms'])} per chunk. "
       f"{n['skipped']:,} chunks of {n['total'] or 0:,} were left out by the per-document cap; processing them would add about "
       f"{_fmt_s(n['extra_ms_without_cap'])} of call time.")
-    w(f"Descriptions: {dsc['entities'] or 0:,} entities and {dsc['relations'] or 0:,} relations.\n")
+    w(f"Descriptions: {dsc['entities'] or 0:,} entities and {dsc['relations'] or 0:,} relations "
+      f"({', '.join(f'{k} {v}' for k, v in dsc['profiles'].items())}).\n")
+    en = m["entities"]
+    w(f"### Entities\n\n{en['mentions']:,} mentions ({en['located']:,} located in their chunk) resolved into "
+      f"{en['entities']:,} entities ({en['anchored']:,} of them the feed's own node, {en['shared']:,} shared across "
+      f"expedientes). Merges: " + ", ".join(f"{k} {v}" for k, v in en["merges"].items())
+      + f"; {en['llm_calls']} /resolve calls. {en['refined']:,} requirements and criteria refined; "
+      f"{en['conflicts']} entities with values that disagree between sources.\n")
+    w("| Type | Mentions | Entities |\n|---|---:|---:|")
+    for k, (mm, ee) in en["by_type"].items():
+        w(f"| {k} | {mm or 0:,} | {ee:,} |")
+    w("")
     w("| Service | Task | Calls | Failed | Input chars | Time | Mean per successful call |\n|---|---|---:|---:|---:|---:|---:|")
     for r in m["service_calls"]["by_task"]:
         w(f"| {r['service']} | {r['task']} | {r['calls']} | {r['calls'] - (r['ok'] or 0)} | {(r['inp'] or 0):,} | "

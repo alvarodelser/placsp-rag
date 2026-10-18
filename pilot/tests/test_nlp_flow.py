@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from placsp_pilot import graph, nlpstages, ontology, report
+from placsp_pilot import entities, graph, nlpstages, ontology, report
 from placsp_pilot.codelists import Codelists
 from placsp_pilot.codice import Parser, iter_entries
 from placsp_pilot.config import load_config
@@ -72,10 +72,14 @@ def test_nlp_stages_build_the_graph(run):
     assert blob["summary_status"] == "ok"
     # The cap keeps one chunk: the one with the most procurement vocabulary.
     assert blob["ner_chunks_selected"] == 1 and blob["ner_chunks_total"] > 1 and blob["ner_status"] == "ok"
-    nlpstages.resolve(cfg, store)
-    nlpstages.describe(cfg, store)
-    nlpstages.consolidate(cfg, store)
-    assert store.one("SELECT resolve_status s FROM blob WHERE sha=?", (sha,))["s"] in ("ok", "skipped")
+    entities.mentions(cfg, store)
+    entities.resolve(cfg, store)
+    entities.refine(cfg, store)
+    entities.describe(cfg, store)
+    nlpstages.summary(cfg, store)
+    assert store.one("SELECT status FROM resolution WHERE exp_id=?", (rec["id"],))["status"] == "ok"
+    n_ent = store.one("SELECT COUNT(*) n FROM entity WHERE exp_id=?", (rec["id"],))["n"]
+    assert n_ent and store.one("SELECT COUNT(*) n FROM entity_description WHERE status='ok' AND kind='entity'")["n"] >= n_ent - 5
     g = graph.build(cfg, store)
     labels = {n["label"] for n in g.nodes.values()}
     assert {"Tender", "Lot", "Document", "Organization"} <= labels
@@ -114,8 +118,10 @@ def test_index_and_validate_against_real_stores(run, monkeypatch):
     monkeypatch.setenv("PILOT_COLLECTION_PREFIX", "pilottest_")
     monkeypatch.setenv("PILOT_NEO4J_LABEL_PREFIX", "PilotTest")
     cfg = load_config(str(cfg.run_dir))
-    for stage in ("summarize", "ner", "resolve", "describe", "consolidate"):
-        getattr(nlpstages, stage)(cfg, store, 10_000) if stage == "summarize" else getattr(nlpstages, stage)(cfg, store)
+    nlpstages.summarize(cfg, store, 10_000)
+    nlpstages.ner(cfg, store)
+    for stage in (entities.mentions, entities.resolve, entities.refine, entities.describe, nlpstages.summary):
+        stage(cfg, store)
     index.index(cfg, store)
     validate.validate(cfg, store)
     fails = store.q("SELECT check_id, expected, actual FROM validation WHERE status='fail'")

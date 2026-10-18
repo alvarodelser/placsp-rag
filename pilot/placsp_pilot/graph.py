@@ -4,27 +4,28 @@ Two sources per expediente:
 - feed (CODICE): authority, tender, lots, notices, award criteria, solvency requirements,
   guarantees, execution conditions, results with winners, contracts, modifications. Structured
   and authoritative, so it is the skeleton.
-- documents: every document is a Document node with its gist; its resolved NER entities and
-  relations hang from it (EXTRACTED_FROM) and attach to the skeleton: LOT entities map onto the
-  feed's lots, companies merge by NIF (else normalised name) across all expedientes, and the
-  other entities merge by name within the expediente (a criterion in the PCAP and in its
-  rectification is one node).
+- documents: every document is a Document node with its gist. The entities found in them come
+  already resolved per expediente (entities.py): one node per real thing, the feed's own node
+  when the feed has it, with EXTRACTED_FROM edges to the documents that mention it and the
+  mention-level provenance kept for the chunk index (g.mentions).
 
 Output under <run>/out: expedientes/<id>.json, nodes.jsonl, edges.jsonl.
 Roles (client, awarded, partner, competitor) are derived at query time, never stored.
 """
-import difflib
 import json
 import re
 import time
 import unicodedata
+from collections import Counter
 
 from placsp_pilot import classify as C
 from placsp_pilot.config import PilotConfig
 from placsp_pilot.order import order_documents
 from placsp_pilot.store import Store
 
-_LEGAL = re.compile(r"\b(s\.?\s?l\.?\s?u?|s\.?\s?a\.?\s?u?|s\.?\s?l\.?\s?l|s\.?\s?coop\.?|sociedad limitada|sociedad anonima|slp|s\.?\s?c\.?)\.?$", re.I)
+# Legal forms at the end of a name, after punctuation became spaces ("S.A.U." -> "s a u").
+_LEGAL = re.compile(r"\b(sociedad (anonima|limitada|cooperativa)( (laboral|unipersonal))?|sociedad unipersonal|unipersonal"
+                    r"|s\s?a\s?u|s\s?l\s?u|s\s?l\s?l|s\s?l\s?p|s\s?coop|s\s?a|s\s?l|s\s?c|coop)$", re.I)
 
 # Ontology entity type -> graph label. Organizations are one label with kinds.
 LABEL = {
@@ -72,10 +73,6 @@ def org_id(name: str | None, nif) -> str:
     return f"org:nif:{n}" if n else f"org:name:{norm_name(name)}"
 
 
-def _similar(a: str, b: str) -> float:
-    return difflib.SequenceMatcher(None, norm_name(a), norm_name(b)).ratio()
-
-
 class Graph:
     def __init__(self):
         self.nodes: dict[str, dict] = {}
@@ -84,8 +81,8 @@ class Graph:
         self._out: dict[str, set] = {}
         self._in: dict[str, set] = {}
         self._props: dict[tuple, dict] = {}
-        # sha -> {surface name in the text -> node id}, to link chunks to the entities they mention
-        self.doc_names: dict[str, dict[str, str]] = {}
+        # (expediente, sha) -> chunk idx -> mentions in that chunk (entity id, offsets, page, quote)
+        self.mentions: dict[tuple, dict[int, list[dict]]] = {}
 
     def node(self, nid: str, label: str, **props) -> str:
         cur = self.nodes.get(nid)
@@ -107,7 +104,7 @@ class Graph:
     def edge(self, src: str, rel: str, dst: str, **props):
         # Edges that belong to one expediente's sequence (NEXT_DOCUMENT) are keyed by it too:
         # two sibling expedientes can share a document pair in different chains.
-        key = (src, rel, dst, props.get("tender"))
+        key = (src, rel, dst, props.get("tender") or props.get("key"))
         if key in self._edge_keys:
             return
         self._edge_keys.add(key)
@@ -189,20 +186,26 @@ def _feed_skeleton(g: Graph, eid: str, e, t: dict, tender_desc: str | None) -> t
         g.edge(tid, "HAS_NOTICE", g.node(f"notice:{eid}:{i}", "Notice", type=(n.get("type") or {}).get("code"),
                                          type_label=(n.get("type") or {}).get("label"), published=n.get("published"),
                                          media=n.get("media")))
+    # One node per line of the baremo or the solvency table, linked to every lot it applies to:
+    # a criterion shared by 36 lots is one criterion, not 36.
     for i, c in enumerate(t.get("award_criteria", [])):
+        cid = g.node(f"crit:{eid}:feed{i}", "AwardCriterion", name=c.get("name"),
+                     subtype={"judgement": "JUDGEMENT", "formula": "FORMULA"}.get(c.get("kind")),
+                     points=c.get("points"), formula=c.get("detail"), lot=c.get("lot"), source="feed")
         for lid in lots_for(c.get("lot")):
-            g.edge(lid, "HAS_CRITERION", g.node(f"crit:{lid}:feed{i}", "AwardCriterion", name=c.get("name"),
-                                                subtype={"judgement": "JUDGEMENT", "formula": "FORMULA"}.get(c.get("kind")),
-                                                points=c.get("points"), formula=c.get("detail"), source="feed"))
+            g.edge(lid, "HAS_CRITERION", cid)
     for i, r in enumerate(x for x in t.get("requirements", []) if x["group"] != "declaration"):
+        rid = g.node(f"req:{eid}:feed{i}", "Requirement", name=(r.get("text") or "")[:120],
+                     subtype=_feed_req_kind(r), group=r["group"], text=r.get("text"), amount=r.get("threshold"),
+                     lot=r.get("lot"), source="feed")
         for lid in lots_for(r.get("lot")):
-            g.edge(lid, "REQUIRES", g.node(f"req:{lid}:feed{i}", "Requirement", name=(r.get("text") or "")[:120],
-                                           subtype=_feed_req_kind(r), text=r.get("text"), amount=r.get("threshold"),
-                                           source="feed"))
+            g.edge(lid, "REQUIRES", rid)
     for gr in t.get("guarantees", []):
-        g.edge(tid, "REQUIRES", g.node(f"guarantee:{eid}:{(gr.get('type') or {}).get('code')}:{gr.get('lot') or '*'}",
-                                       "Guarantee", name=(gr.get("type") or {}).get("label"), amount=gr.get("amount"),
-                                       pct=gr.get("rate_pct"), source="feed"))
+        code = (gr.get("type") or {}).get("code")
+        name = {"1": "Garantía provisional", "2": "Garantía definitiva", "3": "Garantía complementaria"}.get(code) \
+            or (gr.get("type") or {}).get("label")
+        g.edge(tid, "REQUIRES", g.node(f"guarantee:{eid}:{code}:{gr.get('lot') or '*'}", "Guarantee", name=name,
+                                       amount=gr.get("amount"), pct=gr.get("rate_pct"), source="feed"))
     for i, ec in enumerate(t.get("execution_conditions", [])):
         g.edge(tid, "HAS_CONDITION", g.node(f"cond:{eid}:{i}", "ExecutionCondition", name=ec.get("name"),
                                             kind=(ec.get("type") or {}).get("label"), text=ec.get("text")))
@@ -244,78 +247,61 @@ def _feed_skeleton(g: Graph, eid: str, e, t: dict, tender_desc: str | None) -> t
     return tid, {"lots": lots, "contracts": contracts, "auth": auth}
 
 
-def _doc_entities(g: Graph, store: Store, eid: str, sha: str, did: str, sk: dict, lot_names: dict):
-    """Map one document's resolved entities and relations onto the graph."""
-    from placsp_pilot.nlpstages import join_attributes
-    row = store.one("SELECT resolve_json FROM blob WHERE sha=? AND resolve_status='ok'", (sha,))
-    if row is None:
-        return 0, 0
-    res = json.loads(row["resolve_json"])
-    attrs = res.get("attrs", [])
-    descs = {(r["kind"], r["item_id"]): r["text"] for r in
-             store.q("SELECT kind, item_id, text FROM description WHERE sha=? AND status='ok'", (sha,))}
-    lots = sk["lots"]
-    idmap: dict[str, str] = {}
-    types: dict[str, str] = {}
-    for ent in res.get("entities", []):
-        etype, name = ent["type"], ent["canonical_name"]
-        at = join_attributes(ent["names"], attrs)
-        if etype in ORG_KIND:
-            nid = g.org(name, at.get("nif"), ORG_KIND[etype])
-        elif etype == "JOINT_VENTURE":
-            nid = g.node(f"jv:{norm_nif(at.get('nif')) or norm_name(name)}", "JointVenture", name=name, nif=norm_nif(at.get("nif")))
-        elif etype == "QUALIFICATION":
-            nid = g.node(f"qualification:{norm_name(name)}", "Qualification", name=name, subtype=ent.get("subtype"))
-        elif etype == "LOT":
-            num = str(at.get("number") or "").strip()
-            num = re.sub(r"(?i)^lote\s*", "", num)
-            nid = lots.get(num)
-            if nid is None:
-                m = re.search(r"(?i)lote\s*(\w+)", name)
-                nid = lots.get(m.group(1)) if m else None
-            if nid is None and len(lots) == 1:
-                nid = next(iter(lots.values()))
-            if nid is None:
-                best = max(lot_names.items(), key=lambda kv: _similar(kv[0], name), default=None)
-                nid = best[1] if best and _similar(best[0], name) > 0.7 else None
-            if nid is None:
-                nid = g.node(f"lot:{eid}:doc:{norm_name(name)}", "Lot", name=name, number=num or None, source="document")
-                g.edge(f"tender:{eid}", "HAS_LOT", nid)
-        elif etype == "CONTRACT" and len(sk["contracts"]) == 1:
-            nid = sk["contracts"][0]
-        else:
-            nid = g.node(f"{etype.lower()}:{eid}:{norm_name(name)[:80]}", LABEL.get(etype, etype.title()), name=name)
-        node = g.nodes[nid]
-        if etype not in ORG_KIND and etype != "LOT":
-            node.setdefault("subtype", ent.get("subtype"))
-            for k, v in at.items():
-                node.setdefault(k, v)
-        g.add_to_list(nid, "descriptions", descs.get(("entity", ent["id"])))
-        g.add_to_list(nid, "documents", sha)
-        for ev in ent.get("evidence", [])[:2]:
-            g.add_to_list(nid, "evidence", ev[:500])
-        g.edge(nid, "EXTRACTED_FROM", did)
-        names = g.doc_names.setdefault(sha, {})
-        for n in ent["names"]:
-            names[n] = nid
-        idmap[ent["id"]] = nid
-        types[nid] = etype
-    n_rel = 0
-    for k, rel in enumerate(res.get("relations", [])):
-        src, dst = idmap.get(rel["head_id"]), idmap.get(rel["tail_id"])
-        if not src or not dst:
-            continue
-        g.edge(src, rel["type"], dst, attributes=rel.get("attributes"), description=descs.get(("relation", str(k))),
-               evidence=(rel.get("evidence") or [""])[0][:500], doc=sha, confidence=rel.get("confidence"))
-        n_rel += 1
-    # Entities that should hang from a lot but the text did not say which one: attach to all lots.
-    lot_ids = set(lots.values())
-    for nid, etype in types.items():
-        rel = LOT_EDGE.get(etype)
-        if rel and not any(nid in g.out(l, rel) for l in lot_ids | {n for n, t in types.items() if t == "LOT"}):
-            for l in lot_ids:
-                g.edge(l, rel, nid, inferred=True)
-    return len(idmap), n_rel
+def _entities(g: Graph, store: Store, eid: str, sk: dict) -> tuple[Counter, Counter]:
+    """Put the expediente's resolved entities on the graph. Returns entities and relations per document."""
+    from placsp_pilot.entities import schema
+    schema(store)
+    descs = {(r["kind"], r["item_id"]): r["text"] for r in store.q(
+        "SELECT kind, item_id, text FROM entity_description WHERE status='ok' AND exp_id IN (?, '*')", (eid,))}
+    refined = {r["entity_id"]: json.loads(r["result_json"]) for r in store.q(
+        "SELECT entity_id, result_json FROM refinement WHERE exp_id=? AND status='ok'", (eid,))}
+    lots = list(sk["lots"].values())
+    for r in store.q("SELECT * FROM entity WHERE exp_id=?", (eid,)):
+        typ, nid = r["type"], r["id"]
+        g.node(nid, r["label"], name=r["name"], subtype=r["subtype"])
+        n = g.nodes[nid]
+        if typ in ORG_KIND:
+            g.add_to_list(nid, "kinds", ORG_KIND[typ])
+        for alias in json.loads(r["aliases"] or "[]"):
+            g.add_to_list(nid, "aliases", alias)
+        for k, v in json.loads(r["attributes"] or "{}").items():
+            if n.get(k) in (None, "", [], {}):
+                n[k] = v                                  # the feed's own values are already there and win
+        if json.loads(r["conflicts"] or "{}"):
+            n["conflicts"] = json.loads(r["conflicts"])
+        if refined.get(nid):
+            n["detail"] = refined[nid]
+        n["source"] = "feed+documents" if r["anchor"] and r["mentions"] else "feed" if r["anchor"] else "documents"
+        n["mentions"] = (n.get("mentions") or 0) + r["mentions"]
+        if descs.get(("entity", nid)):
+            n["description"] = descs[("entity", nid)]
+        for sha in json.loads(r["documents"] or "[]"):
+            g.add_to_list(nid, "documents", sha)
+        rel = LOT_EDGE.get(typ)
+        if rel and not g.into(nid, rel):
+            entity_lots = json.loads(r["lots"] or "[]")
+            for lid in entity_lots or lots:              # unsaid lot: the entity applies to all of them
+                g.edge(lid, rel, nid, inferred=not entity_lots or None)
+    for r in store.q("SELECT * FROM entity_relation WHERE exp_id=?", (eid,)):
+        if r["src"] in g.nodes and r["dst"] in g.nodes:
+            ev = json.loads(r["evidence"] or "[]")
+            g.edge(r["src"], r["type"], r["dst"], attributes=json.loads(r["attributes"] or "{}") or None,
+                   evidence=ev[0][:500] if ev else None, description=descs.get(("relation", r["id"])),
+                   mentions=len(json.loads(r["mentions"] or "[]")) or None)
+    ent_per_doc, per_pair = Counter(), Counter()
+    for m in store.q("SELECT em.entity_id, m.* FROM entity_mention em JOIN mention m ON m.id=em.mention_id"
+                     " WHERE em.exp_id=?", (eid,)):
+        g.mentions.setdefault((eid, m["sha"]), {}).setdefault(m["idx"], []).append({
+            "entity_id": m["entity_id"], "mention_id": m["id"], "surface": m["name"], "quote": (m["evidence"] or "")[:400],
+            "char_start": m["char_start"], "char_end": m["char_end"], "page": m["page"], "located": bool(m["located"])})
+        per_pair[(m["entity_id"], m["sha"])] += 1
+    for (nid, sha), count in per_pair.items():
+        if f"doc:{sha}" in g.nodes and nid in g.nodes:
+            g.edge(nid, "EXTRACTED_FROM", f"doc:{sha}", mentions=count)
+            ent_per_doc[sha] += 1
+    rel_per_doc = Counter({r["sha"]: r["n"] for r in store.q(
+        "SELECT sha, COUNT(*) n FROM mrelation WHERE sha IN (SELECT sha FROM docref WHERE exp_id=?) GROUP BY sha", (eid,))})
+    return ent_per_doc, rel_per_doc
 
 
 def build_expediente(g: Graph, store: Store, e) -> dict:
@@ -324,7 +310,6 @@ def build_expediente(g: Graph, store: Store, e) -> dict:
     agg = store.one("SELECT result_json FROM extraction WHERE exp_id=? AND kind='tender_description' AND status='ok'", (eid,))
     tender_desc = json.loads(agg["result_json"]).get("description") if agg else None
     tid, sk = _feed_skeleton(g, eid, e, t, tender_desc)
-    lot_names = {(g.nodes[l].get("name") or ""): l for l in sk["lots"].values() if g.nodes[l].get("name")}
 
     rows = store.q("SELECT d.sha, d.role, d.label, d.source, d.published, d.notice_type, d.url, b.bytes, b.ext, b.pages,"
                    " b.text_chars, b.text_status, b.summary_json, b.ner_chunks_total, b.ner_chunks_selected, b.path"
@@ -363,21 +348,12 @@ def build_expediente(g: Graph, store: Store, e) -> dict:
         }[anchor]
         for tgt in targets:
             g.edge(did, "CONCERNS", tgt)
-        n_ent, n_rel = _doc_entities(g, store, eid, d["sha"], did, sk, lot_names)
         doc_list.append(dict({k: v for k, v in g.nodes[did].items() if k not in ("id", "label")},
                              seq=d["seq"], stage=d["stage_name"], effective_date=d["effective_date"],
-                             date_source=d["date_source"], entities=n_ent, relations=n_rel))
-
-    # Link document criteria to the feed's when they are the same line of the baremo.
-    for lid in sk["lots"].values():
-        crits = [g.nodes[c] for c in g.out(lid, "HAS_CRITERION")]
-        feed = [c for c in crits if c.get("source") == "feed"]
-        for c in crits:
-            if c.get("source") == "feed":
-                continue
-            best = max(feed, key=lambda f: _similar(f.get("name") or "", c.get("name") or ""), default=None)
-            if best and _similar(best.get("name") or "", c.get("name") or "") > 0.75:
-                g.edge(c["id"], "SAME_AS", best["id"])
+                             date_source=d["date_source"]))
+    ent_per_doc, rel_per_doc = _entities(g, store, eid, sk)
+    for d in doc_list:
+        d["entities"], d["relations"] = ent_per_doc[d["sha256"]], rel_per_doc[d["sha256"]]
 
     return {"id": eid, "channel": e["channel"], "folder_id": t.get("folder_id"), "title": e["title"],
             "analysable": bool(e["analysable"]), "skip_reason": e["skip_reason"], "description": tender_desc,
@@ -396,12 +372,6 @@ def build(cfg: PilotConfig, store: Store):
             rec["graph"] = {"nodes": [n for n in g.nodes.values() if f":{e['id']}:" in n["id"] or n["id"].endswith(f":{e['id']}")]}
             (exp_dir / f"{e['id']}.json").write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
             st["items"] += 1
-        for x in store.q("SELECT sha, result_json FROM extraction WHERE kind='org_description' AND status='ok'"):
-            if x["sha"] in g.nodes:
-                g.nodes[x["sha"]]["description"] = json.loads(x["result_json"]).get("description")
-        for n in g.nodes.values():
-            if not n.get("description") and n.get("descriptions"):
-                n["description"] = n["descriptions"][0]
         with (cfg.out_dir / "nodes.jsonl").open("w", encoding="utf-8") as fh:
             for n in g.nodes.values():
                 fh.write(json.dumps(n, ensure_ascii=False) + "\n")

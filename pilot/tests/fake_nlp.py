@@ -61,7 +61,7 @@ def summarize(body: dict) -> dict:
     if body["profile"] == "article":
         words = f["text"].split()
         return {"result": {"headline": " ".join(words[:10]) or f.get("title", ""), "summary": " ".join(words[:60]) + "."}}
-    if body["profile"] in ("entity_desc", "relation_desc", "aggregate"):
+    if body["profile"] in ("entity_desc", "relation_desc", "aggregate", "requirement_desc", "criterion_desc"):
         name = f.get("name") or f"{f.get('head')} -> {f.get('tail')}"
         return {"result": {"description": f"{name} ({f.get('type')}): descripción de prueba."}}
     return None
