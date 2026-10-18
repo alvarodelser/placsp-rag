@@ -2,3 +2,4 @@
 pilot_runs/
 __pycache__/
 *.egg-info/
+.no-files/

@@ -11,6 +11,8 @@ import UserProfile from './components/UserProfile.jsx'
 import { useAuth } from './AuthContext.jsx'
 import { SlidersHorizontal, CircleNotch } from './icons.js'
 import statusMap from './codelists/status.json'
+import PilotApp from './pilot/PilotApp.jsx'
+import { isPilot, useHash } from './pilot/route.js'
 
 const K = 15
 
@@ -30,6 +32,7 @@ const [filtersOpen, setFiltersOpen] = useState(false)
   const [savedOpen, setSavedOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const didMount = useRef(false)
+  const hash = useHash()
 
   async function run(offset = 0, f = filters, query = q) {
     if (query.trim() === '' && activeFilterList(f).length === 0) {
@@ -95,6 +98,7 @@ const [filtersOpen, setFiltersOpen] = useState(false)
   if (user === null) {
     return <AuthPage />
   }
+  if (isPilot(hash)) return <PilotApp />
 
   return (
     <>

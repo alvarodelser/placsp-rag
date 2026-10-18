@@ -35,7 +35,8 @@ summarize    /summarize article: one gist per document
 ner          /ner on ~512-word chunks with ontology/placsp_procurement.yaml
 resolve      /resolve per document
 describe     /summarize entity_desc and relation_desc
-consolidate  /summarize aggregate: one description per expediente, one per company seen in
+consolidate  /summarize aggregate: one description per expediente (its document summaries in
+             lifecycle order, each headed by position, role and date), one per company seen in
              several documents
 graph        out/nodes.jsonl, out/edges.jsonl, out/expedientes/<id>.json
 index        Qdrant + Neo4j (rebuilds the pilot namespace; embeddings cached in pilot.db)
@@ -192,6 +193,25 @@ Download and text figures are real; NLP times are not.
 - 29,000 NER chunks in total; 10,770 with the cap of 60 per document. PCAP: 2,851 of 3,470.
 - NER is the cost to watch: at `t` seconds per `/ner` call, the capped sample is about
   `10,770 × t / PILOT_NLP_WORKERS` seconds. The calibration run gives `t`.
+
+## Viewer
+
+The pilot has its own screens in the search UI, at `#/pilot` (user menu → *Piloto documental*).
+They read only `/api/pilot` (`search-api/pilot_api.py`), which reads only the pilot namespace.
+
+- **Expedientes:** semantic search over the tenders, then the unified tender: summary,
+  lots with criteria (feed and document side by side), solvency, results, documents in
+  lifecycle order with their summaries and files, and the tender's graph.
+- **Grafo:** filled nodes come from the feed, outlined ones were extracted from documents.
+  Clicking a node shows its description, evidence, neighbours and the chunks that mention it.
+- **Empresa:** every tender a company or authority appears in, with its role, the companies
+  it competes with and the authorities it works for.
+- **Preguntar:** GraphRAG retrieval without generation: the closest chunks, the closest
+  entities, and each entity's neighbourhood in the graph.
+
+On the server, `placsp-search-api` reads the pilot collections in `placsp-qdrant` with
+`QDRANT_API_KEY`. To serve the stored files as well, set `PILOT_FILES_DIR=<run dir>/files`
+in `.env`. Then rebuild: `docker compose up -d --build placsp-search-api`, and the UI.
 
 ## Tests
 

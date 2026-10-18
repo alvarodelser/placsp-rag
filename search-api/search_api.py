@@ -34,6 +34,7 @@ import feedback as fb
 import filters as filt
 import users
 from graph_api import router as graph_router
+from pilot_api import router as pilot_router
 
 VECTORIZER_URL = os.getenv("VECTORIZER_URL", "http://localhost:8089").rstrip("/")
 WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8087").rstrip("/")
@@ -75,6 +76,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"], allow_headers=["*"],
 )
 app.include_router(graph_router)
+app.include_router(pilot_router)  # document pilot, read-only, separate namespace
 
 
 def _fb_conn():

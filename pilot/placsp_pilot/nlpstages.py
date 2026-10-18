@@ -23,6 +23,7 @@ from pathlib import Path
 from placsp_pilot import classify as C
 from placsp_pilot import ontology
 from placsp_pilot.config import PilotConfig
+from placsp_pilot.order import order_documents
 from placsp_pilot.services import ServiceError, Services
 from placsp_pilot.store import Store
 
@@ -383,14 +384,20 @@ def consolidate(cfg: PilotConfig, store: Store):
     for e in store.q("SELECT id, title, tender_json FROM expediente"):
         if (e["id"], "tender_description", "-") in done:
             continue
-        docs = store.q("SELECT d.role, d.label, b.summary_json FROM docref d JOIN blob b ON b.sha=d.sha"
-                       " WHERE d.exp_id=? AND b.summary_status='ok' GROUP BY d.sha", (e["id"],))
-        docs = sorted(docs, key=lambda d: ROLE_ORDER.get(d["role"], 99))[:MAX_AGG_DESCRIPTIONS]
+        tender = json.loads(e["tender_json"])
+        docs = [dict(d) for d in store.q(
+            "SELECT d.sha, d.role, d.label, MIN(d.published) published, MAX(d.notice_type) notice_type, b.summary_json"
+            " FROM docref d JOIN blob b ON b.sha=d.sha WHERE d.exp_id=? AND b.summary_status='ok' GROUP BY d.sha", (e["id"],))]
+        # Over the cap, the most informative roles are kept; either way the model reads the
+        # documents in lifecycle order, each introduced by its position, role and date.
+        keep = {d["sha"] for d in sorted(docs, key=lambda d: ROLE_ORDER.get(d["role"], 99))[:MAX_AGG_DESCRIPTIONS]}
         descriptions = []
-        for d in docs:
-            s = json.loads(d["summary_json"])
-            descriptions.append(f"[{d['role']}] {s.get('headline', '')}: {s.get('summary', '')}")
-        evidence = [l for l in facts_brief(json.loads(e["tender_json"])).split("\n") if l.split(":", 1)[-1].strip()]
+        for d in order_documents(docs, tender):
+            if d["sha"] in keep:
+                s = json.loads(d["summary_json"])
+                descriptions.append(f"[Documento {d['seq']} · {d['role']} · {d['effective_date'] or 'sin fecha'}] "
+                                    f"{s.get('headline', '')}: {s.get('summary', '')}")
+        evidence = [l for l in facts_brief(tender).split("\n") if l.split(":", 1)[-1].strip()]
         jobs.append((e["id"], "tender_description", "-", {
             "name": e["title"] or e["id"], "type": "Expediente de contratación pública",
             "descriptions": descriptions or ["(sin documentos)"], "evidence": evidence}))

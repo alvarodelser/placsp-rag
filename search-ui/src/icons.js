@@ -11,5 +11,5 @@ export {
   Trophy,
   // Layout
   FunnelSimple, SortAscending,
-  BookmarkSimple, User, SignOut, Tray, EnvelopeSimple, Lock, Eye, EyeSlash, UserPlus
+  BookmarkSimple, User, SignOut, Tray, Graph, EnvelopeSimple, Lock, Eye, EyeSlash, UserPlus
 } from '@phosphor-icons/react'
