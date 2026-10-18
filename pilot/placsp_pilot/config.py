@@ -49,6 +49,8 @@ class PilotConfig:
     ner_max_chunks: int
     describe_relations: bool
     ner_skip_roles: str     # comma-separated document roles to leave out of NER (default: none)
+    # Seconds one /ner call may take before the stage stops: catches Ollama running on the CPU.
+    ner_preflight_s: float
     ocr_min_chars_per_page: int
     quotas: dict = field(default_factory=lambda: dict(DEFAULT_QUOTAS))
 
@@ -97,6 +99,7 @@ def load_config(run_dir: str | None = None) -> PilotConfig:
         ner_max_chunks=int(_env("PILOT_NER_MAX_CHUNKS", "60")),
         describe_relations=_env("PILOT_DESCRIBE_RELATIONS", "1") not in ("0", "false", "no"),
         ner_skip_roles=_env("PILOT_NER_SKIP_ROLES", ""),
+        ner_preflight_s=float(_env("PILOT_NER_PREFLIGHT_S", "60")),
         ocr_min_chars_per_page=int(_env("PILOT_OCR_MIN_CHARS_PER_PAGE", "80")),
     )
     for d in (cfg.run_dir, cfg.files_dir, cfg.text_dir, cfg.raw_dir, cfg.out_dir):

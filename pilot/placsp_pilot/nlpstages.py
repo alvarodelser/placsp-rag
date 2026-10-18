@@ -190,13 +190,30 @@ def ner(cfg: PilotConfig, store: Store):
         except ServiceError as e:
             return r, "failed", {"error": str(e)}, int((time.time() - t0) * 1000)
 
+    def save(r, status, out, ms):
+        with store.tx() as c:
+            c.execute("UPDATE chunk SET status=?, ms=?, entities=?, relations=?, result_json=? WHERE sha=? AND idx=?",
+                      (status, ms, len(out.get("entities", [])), len(out.get("relations", [])),
+                       json.dumps(out, ensure_ascii=False), r["sha"], r["idx"]))
+
+    # Preflight: the first call may include loading the model, so a slow one gets a second try.
+    # Two slow calls in a row mean thousands of them would be too: stop before queueing the rest.
+    for _ in range(min(2, len(rows))):
+        r, status, out, ms = one(rows[0])
+        save(r, status, out, ms)
+        rows = rows[1:]
+        if status == "ok" and ms <= cfg.ner_preflight_s * 1000:
+            break
+        log(f"ner preflight: {status} in {ms / 1000:.0f}s")
+    else:
+        if rows:
+            raise SystemExit(f"ner: one /ner call took {ms / 1000:.0f}s ({status}), over PILOT_NER_PREFLIGHT_S="
+                             f"{cfg.ner_preflight_s:.0f}. Check that Ollama runs on the GPU (`ollama ps`) "
+                             "and that thinking is off (OLLAMA_THINK=false).")
+
     with store.stage("ner") as st, _pool(cfg.nlp_workers) as pool:
         for i, f in enumerate(as_completed([pool.submit(one, r) for r in rows]), 1):
-            r, status, out, ms = f.result()
-            with store.tx() as c:
-                c.execute("UPDATE chunk SET status=?, ms=?, entities=?, relations=?, result_json=? WHERE sha=? AND idx=?",
-                          (status, ms, len(out.get("entities", [])), len(out.get("relations", [])),
-                           json.dumps(out, ensure_ascii=False), r["sha"], r["idx"]))
+            save(*f.result())
             st["items"] += 1
             if i % 25 == 0 or i == len(rows):
                 log(f"ner {i}/{len(rows)} chunks")

@@ -135,14 +135,23 @@ export NLP_SERVICE_URL=http://localhost:4200    # nlp_service (NLP_PORT); http:/
 export OCR_URL=http://localhost:8084            # OCR service
 export VECTORIZER_URL=http://localhost:8089     # BGE-M3
 export QDRANT_URL=http://localhost:6343 QDRANT_API_KEY=...       # placsp-qdrant (docker compose up -d placsp-qdrant)
-export NEO4J_URL=bolt://localhost:7687 NEO4J_PASSWORD=...        # placsp-neo4j
+export NEO4J_URL=bolt://localhost:7689 NEO4J_PASSWORD=...        # placsp-neo4j (NEO4J_BOLT_PORT=7689: 7687 is taken on the server)
 export PILOT_RUN_DIR=/opt/placsp/pilot_runs/$(date +%F)
 
+# 0. nlp_service's Ollama must run on the GPU with thinking off (see "Before running" below).
 # 1. Calibrate on 10 expedientes, read out/report.md.
 .venv/bin/python -m placsp_pilot run --quota placsp_mayores=5,externos_mayores=2,placsp_menores=2,propios=1
 # 2. Top up to the full sample in the same run dir (selection only adds the missing ones).
 nohup .venv/bin/python -m placsp_pilot run > $PILOT_RUN_DIR/run.log 2>&1 &
 ```
+
+**Before running.** Check that `nlp_service`'s Ollama has the GPU and that thinking is off.
+On the server, `ollama_high` once lost its GPU after a host `systemctl daemon-reload`
+(`docker exec ollama_high nvidia-smi` gave `Failed to initialize NVML`), and gemma4:31b ran on
+the CPU: 3.5 min per call against about 1 s on the L40. `docker restart ollama_high` brings the
+GPU back. `docker exec ollama_high ollama ps` must show `100% GPU`, and `nlp-service` must run
+with `OLLAMA_THINK=false`. The `ner` stage stops by itself if two calls in a row take longer
+than `PILOT_NER_PREFLIGHT_S`.
 
 Every stage is resumable: rerun the same command after an interruption. `--retry-failed` puts
 failed downloads and service calls back to pending. Single stages run with
@@ -155,6 +164,7 @@ Tuning (environment):
 | `PILOT_NER_MAX_CHUNKS` | 60 | NER chunks per document (0 = all). Over it, the chunks richest in procurement vocabulary are kept; the report says how many were left out and how long they would take. |
 | `PILOT_CHUNK_WORDS` | 512 | Words per NER chunk (same as `RELATIONS_CHUNK_TOKENS`). |
 | `PILOT_NER_SKIP_ROLES` | (none) | Roles to leave out of NER, e.g. `Annex,ProjectDocument,TechnicalAnnex`. |
+| `PILOT_NER_PREFLIGHT_S` | 60 | The `ner` stage stops if its first two calls each take longer (Ollama on the CPU, thinking on). |
 | `PILOT_DESCRIBE_RELATIONS` | 1 | Describe relations as well as entities. |
 | `PILOT_NLP_WORKERS` | 2 | Concurrent calls to nlp_service. |
 | `PILOT_FETCH_WORKERS` | 4 | Concurrent downloads and text extraction. |
@@ -174,9 +184,7 @@ text and regex matches. The `nlp.*` checks only show that every expected output 
 right number. The feed, document, order and index checks ran on real data and real stores.
 Extraction quality can only be measured on the server, against the real `nlp_service`.
 
-
-This ran on the 100 latest expedientes against `tests/fake_nlp.py`, a stand-in with the same
-HTTP contracts. Its download and text figures are real; its NLP times are not.
+Download and text figures are real; NLP times are not.
 
 - 1,586 document references, 888 unique files: 1.36 GB, 20,930 PDF pages, 90 M characters.
 - Download plus text extraction took 6 minutes.

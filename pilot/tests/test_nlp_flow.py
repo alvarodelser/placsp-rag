@@ -125,3 +125,15 @@ def test_index_and_validate_against_real_stores(run, monkeypatch):
     for short in index.COLLECTIONS:
         qd.client.delete_collection(qd.name(short))
     index.Neo4jIndex(cfg).reset()
+
+
+def test_ner_stops_when_calls_are_too_slow(run, monkeypatch):
+    cfg, store, rec, sha = run
+    monkeypatch.setenv("PILOT_NER_MAX_CHUNKS", "0")
+    monkeypatch.setenv("PILOT_CHUNK_WORDS", "10")
+    monkeypatch.setenv("PILOT_NER_PREFLIGHT_S", "-1")  # every call counts as too slow
+    cfg = load_config(str(cfg.run_dir))
+    with pytest.raises(SystemExit, match="PILOT_NER_PREFLIGHT_S"):
+        nlpstages.ner(cfg, store)
+    counts = {r["status"]: r["n"] for r in store.q("SELECT status, COUNT(*) n FROM chunk GROUP BY status")}
+    assert counts["ok"] == 2 and counts["pending"] > 0  # two tries, the rest left for the next run
