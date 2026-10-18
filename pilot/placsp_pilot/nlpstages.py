@@ -204,10 +204,12 @@ def ner(cfg: PilotConfig, store: Store):
         rows = rows[1:]
         if status == "ok" and ms <= cfg.ner_preflight_s * 1000:
             break
-        log(f"ner preflight: {status} in {ms / 1000:.0f}s")
+        log(f"ner preflight: {status} in {ms / 1000:.0f}s {out.get('error', '')}")
     else:
+        if rows and status != "ok":
+            raise SystemExit(f"ner: /ner failed twice, last error: {out.get('error')}")
         if rows:
-            raise SystemExit(f"ner: one /ner call took {ms / 1000:.0f}s ({status}), over PILOT_NER_PREFLIGHT_S="
+            raise SystemExit(f"ner: one /ner call took {ms / 1000:.0f}s, over PILOT_NER_PREFLIGHT_S="
                              f"{cfg.ner_preflight_s:.0f}. Check that Ollama runs on the GPU (`ollama ps`) "
                              "and that thinking is off (OLLAMA_THINK=false).")
 
