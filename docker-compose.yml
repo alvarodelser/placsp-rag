@@ -8,11 +8,12 @@
 #   # init-schema / init-graph services create the schema and graph constraints.
 #
 # Vectorizer note:
-#   The BGE-M3 vectorizer is a pre-existing container (iarag project).
-#   By default the search-api reaches it via `host.docker.internal:8089`
-#   (Docker 20.10+ host-gateway alias, works on Linux and Mac).
-#   To use the container service name instead, uncomment the networks block
-#   at the bottom and set the vectorizer's network name.
+#   The BGE-M3 vectorizer is a pre-existing container (iarag project). It publishes its port on
+#   the host's loopback only, so containers reach it by name on its own network: the search-api
+#   joins that network (VECTORIZER_NETWORK, default vectorizer_default) and calls
+#   SEARCH_VECTORIZER_URL (default http://vectorizer:8089). VECTORIZER_URL in .env is for
+#   processes on the host (ingester, pilot): http://localhost:8089.
+#   Find the network: docker inspect vectorizer --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
 
 services:
 
@@ -171,7 +172,7 @@ services:
     environment:
       WEAVIATE_URL: "http://placsp-weaviate:8080"
       WEAVIATE_API_KEY: "${WEAVIATE_API_KEY}"
-      VECTORIZER_URL: "${VECTORIZER_URL:-http://host.docker.internal:8089}"
+      VECTORIZER_URL: "${SEARCH_VECTORIZER_URL:-http://vectorizer:8089}"
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
       FEEDBACK_DB: "/data/feedback.db"
       USERS_DB: "/data/users.db"
@@ -188,6 +189,7 @@ services:
     volumes:
       - placsp_feedback_data:/data
       - "${PILOT_FILES_DIR:-./pilot/.no-files}:/pilot-files:ro"
+    networks: [default, vectorizer]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -213,11 +215,8 @@ volumes:
   placsp_qdrant_data:
     name: placsp_qdrant_data     # vector store; same persistence semantics
 
-# Uncomment to join the vectorizer's existing Docker network so the search-api
-# can reach `http://vectorizer:8089` by service name instead of via the host.
-# Find the network: docker inspect -f '{{json .NetworkSettings.Networks}}' vectorizer
-#
-# networks:
-#   default:
-#     external: true
-#     name: <vectorizer-network-name>
+networks:
+  # The vectorizer's own network (see the note at the top); it must exist before `up`.
+  vectorizer:
+    external: true
+    name: ${VECTORIZER_NETWORK:-vectorizer_default}
