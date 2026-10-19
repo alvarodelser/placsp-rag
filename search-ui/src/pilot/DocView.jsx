@@ -96,6 +96,7 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
     if (!el) return
     el.scrollIntoView({ block: 'center' })
     pending.current = null
+    if (el.tagName === 'SECTION') { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash') }  // a passage opened from an answer
     if (el.tagName === 'MARK') el.click()
   }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
 

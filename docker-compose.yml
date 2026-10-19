@@ -184,6 +184,12 @@ services:
       PILOT_QDRANT_URL: "http://placsp-qdrant:6333"
       PILOT_QDRANT_API_KEY: "${QDRANT_API_KEY}"
       PILOT_FILES_DIR: "${PILOT_FILES_DIR:+/pilot-files}"
+      # Questions over the pilot's documents (search-api/pilot_rag.py): the reranker below, and the
+      # Ollama that writes the answers. Empty values switch that step off, and the viewer says so.
+      RERANKER_URL: "${RERANKER_URL:-http://placsp-reranker:80}"
+      ANSWER_OLLAMA_URL: "${ANSWER_OLLAMA_URL:-}"
+      ANSWER_MODEL: "${ANSWER_MODEL:-gemma4:e4b}"
+      ANSWER_KEEP_ALIVE: "${ANSWER_KEEP_ALIVE:-30m}"
       # APP_VERSION is baked into the image at build time (build.args above), not
       # set here — a runtime default would override the baked commit with "unknown".
     volumes:
@@ -204,6 +210,20 @@ services:
       start_period: 10s
 
 
+  # Reranker for the pilot's questions: Hugging Face text-embeddings-inference serving the
+  # cross-encoder BAAI/bge-reranker-v2-m3 (POST /rerank). No code of ours. CPU by default; for a
+  # GPU, RERANKER_IMAGE=ghcr.io/huggingface/text-embeddings-inference:89-1.8 (L40) and a device
+  # reservation. The model (~2.3 GB) is downloaded on first start into placsp_reranker_data.
+  placsp-reranker:
+    image: "${RERANKER_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.8}"
+    container_name: placsp-reranker
+    restart: unless-stopped
+    command: ["--model-id", "${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}", "--max-client-batch-size", "64"]
+    ports:
+      - "127.0.0.1:${RERANKER_PORT:-8095}:80"
+    volumes:
+      - placsp_reranker_data:/data
+
 volumes:
   placsp_weaviate_data:
     name: placsp_weaviate_data   # compose-managed, stable name; persists across down/up
@@ -212,6 +232,8 @@ volumes:
     name: placsp_feedback_data   # relevance-feedback SQLite; same persistence semantics
   placsp_neo4j_data:
     name: placsp_neo4j_data      # company graph; same persistence semantics
+  placsp_reranker_data:
+    name: placsp_reranker_data   # the reranker's downloaded model
   placsp_qdrant_data:
     name: placsp_qdrant_data     # vector store; same persistence semantics
 

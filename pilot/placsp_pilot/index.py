@@ -30,6 +30,7 @@ import warnings
 from collections import defaultdict
 from pathlib import Path
 
+from placsp_pilot import lexical
 from placsp_pilot.config import PilotConfig
 from placsp_pilot.graph import Graph, build
 from placsp_pilot.nlpstages import page_ranges, split_words  # noqa: F401  (page_ranges re-exported)
@@ -38,6 +39,9 @@ from placsp_pilot.store import Store
 
 NS = uuid.UUID("6f1c3a52-5b0e-4f37-9a1e-7d2b8c4e0a11")
 TENDER_ID = re.compile(r":(\d{5,})(?::|$)")
+# BM25's average document length, fixed rather than measured per run so a chunk's weights do not
+# change when other expedientes are added: 512-word chunks keep about half their words as terms.
+AVG_CHUNK_TERMS = 250
 SKIP_ENTITY_LABELS = {"Tender", "Document", "Notice"}
 
 
@@ -223,17 +227,26 @@ class QdrantIndex:
         vector, indexes = COLLECTIONS[short]
         if self.client.collection_exists(name):
             self.client.delete_collection(name)
-        self.client.create_collection(name, vectors_config={vector: m.VectorParams(size=dim, distance=m.Distance.COSINE)})
+        # Chunks also carry BM25 term weights for the keyword half of the hybrid search; Qdrant adds the IDF.
+        sparse = {"bm25": m.SparseVectorParams(modifier=m.Modifier.IDF)} if short == "chunks" else None
+        self.client.create_collection(name, vectors_config={vector: m.VectorParams(size=dim, distance=m.Distance.COSINE)},
+                                      sparse_vectors_config=sparse)
         kinds = {"keyword": m.PayloadSchemaType.KEYWORD, "integer": m.PayloadSchemaType.INTEGER,
                  "float": m.PayloadSchemaType.FLOAT, "datetime": m.PayloadSchemaType.DATETIME, "bool": m.PayloadSchemaType.BOOL}
         for field, kind in indexes.items():
             self.client.create_payload_index(name, field_name=field, field_schema=kinds[kind], wait=True)
 
-    def upsert(self, short: str, points: list[tuple[str, list[float], dict]]):
+    def upsert(self, short: str, points: list[tuple[str, list[float], dict]], sparse: list | None = None):
+        """Points as (id, dense vector, payload); `sparse`, when given, one (indices, values) per point."""
         vector = COLLECTIONS[short][0]
         for i in range(0, len(points), 128):
-            self.client.upsert(self.name(short), wait=True, points=[
-                self.m.PointStruct(id=pid, vector={vector: vec}, payload=payload) for pid, vec, payload in points[i:i + 128]])
+            batch = []
+            for j, (pid, vec, payload) in enumerate(points[i:i + 128]):
+                vectors = {vector: vec}
+                if sparse is not None and sparse[i + j][0]:
+                    vectors["bm25"] = self.m.SparseVector(indices=sparse[i + j][0], values=sparse[i + j][1])
+                batch.append(self.m.PointStruct(id=pid, vector=vectors, payload=payload))
+            self.client.upsert(self.name(short), wait=True, points=batch)
 
     def count(self, short: str, **match) -> int:
         flt = None
@@ -393,7 +406,8 @@ def index(cfg: PilotConfig, store: Store):
                             "chunk_idx": ch["idx"], "chunk_id": pid, "page": m["page"], "quote": m["quote"][:300]})
                     prev_chunk = cid
             vecs = emb.embed([p[1] for p in points]) if points else []
-            qd.upsert("chunks", [(pid, v, payload) for (pid, _, payload), v in zip(points, vecs)])
+            sparse = [lexical.doc_vector(p[1], AVG_CHUNK_TERMS) for p in points]
+            qd.upsert("chunks", [(pid, v, payload) for (pid, _, payload), v in zip(points, vecs)], sparse)
 
             obj = tender_object(g, rec, len(points))
             desc = obj.get("description") or ""

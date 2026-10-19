@@ -21,8 +21,9 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
+import pilot_rag
 from graph_api import get_driver
 
 router = APIRouter(prefix="/api/pilot", tags=["pilot"])
@@ -167,6 +168,7 @@ def health():
         out["vectorizer"] = f"ok ({len(embed('prueba'))} dims)"
     except HTTPException as e:
         out["vectorizer"] = f"error: {e.detail}"
+    out["reranker"], out["answer_model"] = pilot_rag.status()
     return out
 
 
@@ -545,40 +547,26 @@ def company(org_id: str):
 
 
 @router.get("/ask")
-def ask(q: str, tender_id: str = "", k: int = Query(8, ge=1, le=30)):
-    """GraphRAG retrieval, no generation: the chunks closest to the question, the entities whose
-    descriptions are closest, and each entity's neighbourhood in the graph."""
+def ask(q: str, tender_id: str = ""):
+    """The passages a question is answered from: hybrid retrieval (meaning + keywords), reranked."""
     if not q.strip():
         raise HTTPException(400, "empty question")
-    from qdrant_client import models as m
-    vec = embed(q.strip())
-    chunk_hits = qdrant().query_points(coll("chunks"), query=vec, using="text", query_filter=match(tender_id=tender_id),
-                                       limit=k, with_payload=True).points
-    ent_filter = m.Filter(must=[m.FieldCondition(key="tender_ids", match=m.MatchAny(any=[tender_id]))]) if tender_id else None
-    ent_hits = qdrant().query_points(coll("entities"), query=vec, using="description", query_filter=ent_filter,
-                                     limit=6, with_payload=["node_id", "label", "name", "description", "tender_ids"]).points
-    ids = [p.payload["node_id"] for p in ent_hits]
-    context = defaultdict(list)
-    if ids:
-        with get_driver().session() as s:
-            for r in s.run(f"MATCH (n:`{LABEL}`)-[r]-(m:`{LABEL}`) WHERE n.id IN $ids AND NOT type(r) IN $skip "
-                           "WITH n, r, m LIMIT 400 RETURN n.id AS id, type(r) AS rel, startNode(r) = n AS out, m",
-                           ids=ids, skip=CHUNK_RELS + ["HAS_DOCUMENT", "NEXT_DOCUMENT"]):
-                if len(context[r["id"]]) < 10:
-                    context[r["id"]].append({"rel": r["rel"], "out": r["out"], "node": node_json(r["m"])})
-    tender_ids = list(dict.fromkeys(p.payload["tender_id"] for p in chunk_hits))
-    cards = {}
-    if tender_ids:
-        for p in qdrant().retrieve(coll("tenders"), ids=[point_id("tender", t) for t in tender_ids], with_payload=CARD):
-            cards[p.payload["tender_id"]] = card(p.payload)
-    return {
-        "chunks": [chunk_json(p.payload, p.score) for p in chunk_hits],
-        "entities": [{"id": p.payload["node_id"], "label": p.payload.get("label"), "name": p.payload.get("name"),
-                      "description": (p.payload.get("description") or "")[:600], "score": round(p.score, 3),
-                      "tender_ids": p.payload.get("tender_ids", []), "context": context.get(p.payload["node_id"], [])}
-                     for p in ent_hits],
-        "tenders": [cards[t] for t in tender_ids if t in cards],
-    }
+    passages, info = pilot_rag.retrieve(qdrant(), coll("chunks"), q.strip(), embed(q.strip()), tender_id)
+    return {"passages": passages, "info": info}
+
+
+@router.get("/answer")
+def answer(q: str, tender_id: str = ""):
+    """A cited answer, streamed as NDJSON: {type: passages}, then {type: token}*, then {type: done, cited}."""
+    if not q.strip():
+        raise HTTPException(400, "empty question")
+    passages, info = pilot_rag.retrieve(qdrant(), coll("chunks"), q.strip(), embed(q.strip()), tender_id)
+    facts = ""
+    if tender_id:
+        t = qdrant().retrieve(coll("tenders"), ids=[point_id("tender", tender_id)], with_payload=True)
+        facts = pilot_rag.facts_of(t[0].payload) if t else ""
+    return StreamingResponse(pilot_rag.events(q.strip(), facts, passages, info), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 @router.get("/file/{sha}")

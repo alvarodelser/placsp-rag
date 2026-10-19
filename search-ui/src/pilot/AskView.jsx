@@ -1,79 +1,107 @@
-// search-ui/src/pilot/AskView.jsx — GraphRAG retrieval: passages, entities and their graph context.
-// No generated answer: what comes back is exactly what a generator would be given.
-import { useEffect, useState } from 'react'
-import { ask } from './pilotApi.js'
-import { nodeInfo, CHANNEL } from './labels.js'
+// search-ui/src/pilot/AskView.jsx — a question over one tender's documents, answered with citations.
+// The passages come first (meaning + keywords, reordered by a reranker); the answer streams in as
+// a small model writes it from them, each claim citing [n]. A citation points to its passage; a
+// passage opens in the document viewer at its fragment.
+import { useEffect, useRef, useState } from 'react'
+import { answer } from './pilotApi.js'
+import { roleEs } from './labels.js'
 import { CircleNotch } from '../icons.js'
-import { Chunk } from './NodePanel.jsx'
 import { go } from './route.js'
 
-const EXAMPLES = ['solvencia económica volumen anual de negocios', 'criterios evaluables mediante juicio de valor',
-  'penalidades por incumplimiento', 'subcontratación', 'equipo mínimo y titulaciones exigidas']
+const EXAMPLES = ['¿Qué solvencia económica se exige?', '¿Cuál es la garantía definitiva?', '¿Cómo se valora el precio?',
+  '¿Qué penalidades hay por incumplimiento?', '¿Se permite subcontratar?', '¿Qué equipo mínimo se exige?']
 
-export default function AskView({ tenderId = '', initial = '' }) {
-  const [q, setQ] = useState(initial)
-  const [state, setState] = useState({ status: 'idle' })
+export default function AskView({ tenderId }) {
+  const [q, setQ] = useState('')
+  const [st, setSt] = useState({ status: 'idle' })
+  const [lit, setLit] = useState(null)
+  const abort = useRef(null)
+  useEffect(() => () => abort.current?.abort(), [])
 
   async function run(query = q) {
     if (!query.trim()) return
-    setState({ status: 'loading' })
+    abort.current?.abort()
+    const ctl = new AbortController()
+    abort.current = ctl
+    setLit(null)
+    setSt({ status: 'loading', q: query.trim(), text: '', passages: null })
     try {
-      setState({ status: 'done', d: await ask({ q: query.trim(), tender_id: tenderId, k: 10 }) })
+      await answer({ q: query.trim(), tender_id: tenderId }, (e) => setSt((s) => {
+        if (e.type === 'passages') return { ...s, passages: e.passages, info: e.info, model: e.model, status: 'writing' }
+        if (e.type === 'token') return { ...s, text: s.text + e.text }
+        if (e.type === 'done') return { ...s, status: 'done', text: e.text || s.text, cited: e.cited, ms: e.ms, note: e.note }
+        if (e.type === 'error') return { ...s, status: 'error', error: e.error }
+        return s
+      }), ctl.signal)
     } catch (e) {
-      setState({ status: 'error', e: e.message })
+      if (e.name !== 'AbortError') setSt((s) => ({ ...s, status: 'error', error: e.message }))
     }
   }
-  useEffect(() => { if (initial) run(initial) }, [initial]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const busy = st.status === 'loading' || st.status === 'writing'
   return (
     <div className="ask">
-      <form onSubmit={(e) => { e.preventDefault(); if (!tenderId) go(`/ask?q=${encodeURIComponent(q)}`); run() }}>
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder={tenderId ? 'Pregunta sobre este expediente…' : 'Pregunta sobre todos los expedientes del piloto…'} />
-        <button type="submit" disabled={state.status === 'loading'}>Buscar</button>
+      <form onSubmit={(e) => { e.preventDefault(); run() }}>
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Pregunta sobre los documentos de este expediente…" />
+        <button type="submit" disabled={busy}>Preguntar</button>
       </form>
-      {state.status === 'idle' && (
+      {st.status === 'idle' && (
         <div className="chips ask-ex">{EXAMPLES.map((x) => <button key={x} type="button" className="chip linkchip" onClick={() => { setQ(x); run(x) }}>{x}</button>)}</div>
       )}
-      {state.status === 'loading' && <div className="loading-state"><CircleNotch size={26} className="spinner" /></div>}
-      {state.status === 'error' && <div className="err">{state.e}</div>}
-      {state.status === 'done' && (
-        <div className="ask-grid">
-          <section>
-            <h3>Fragmentos</h3>
-            {state.d.chunks.length === 0 && <p className="muted">Ninguno.</p>}
-            {state.d.chunks.map((c, i) => <Chunk key={i} c={c} showTender={!tenderId} />)}
+      {st.status !== 'idle' && (
+        <div className="ask-res">
+          <section className="tv-card ask-answer">
+            <div className="np-rel">Respuesta {st.model && <span className="muted">· {st.model}{st.ms ? ` · ${(st.ms / 1000).toFixed(1)} s` : ''}</span>}</div>
+            {st.status === 'loading' && <div className="muted small"><CircleNotch size={14} className="spinner" /> Buscando en los documentos…</div>}
+            {(st.text || st.status === 'writing') && <p className="ask-text">{withCitations(st.text, setLit)}{st.status === 'writing' && <span className="ask-caret" />}</p>}
+            {st.note && <div className="muted small">{st.note}</div>}
+            {st.status === 'error' && <div className="err">{st.error}</div>}
+            {st.info && <Info info={st.info} />}
           </section>
-          <section>
-            <h3>Entidades del grafo</h3>
-            {state.d.entities.map((e) => (
-              <div key={e.id} className="tv-card ent">
-                <div className="ent-head"><i style={{ background: nodeInfo(e.label).color }} />{nodeInfo(e.label).es}<span className="score">{e.score}</span></div>
-                <b>{e.name}</b>
-                {e.description && <p className="small">{e.description}</p>}
-                {e.context.length > 0 && (
-                  <ul className="ctx">
-                    {e.context.map((c, i) => <li key={i}><span className="muted">{c.out ? c.rel : `← ${c.rel}`}</span> {c.node.name || c.node.title || c.node.id}</li>)}
-                  </ul>
-                )}
-                {!tenderId && e.tender_ids.length > 0 && (
-                  <div className="chips">{e.tender_ids.slice(0, 6).map((t) => <button key={t} type="button" className="chip linkchip" onClick={() => go(`/t/${t}`)}>{t}</button>)}</div>
-                )}
-              </div>
-            ))}
-            {!tenderId && state.d.tenders.length > 0 && (
-              <>
-                <h3>Expedientes</h3>
-                {state.d.tenders.map((t) => (
-                  <button key={t.tender_id} type="button" className="mini" onClick={() => go(`/t/${t.tender_id}`)}>
-                    <span className="badge">{CHANNEL[t.channel] || t.channel}</span> {t.name}
-                  </button>
-                ))}
-              </>
-            )}
-          </section>
+          {st.passages && (
+            <section>
+              <div className="np-rel">Fragmentos usados <span>{st.passages.length}</span></div>
+              {st.passages.map((p, i) => (
+                <div key={i} id={`ask-p${i + 1}`} className={`chunk ask-p ${lit === i + 1 ? 'lit' : ''} ${st.cited?.includes(i + 1) ? 'cited' : ''}`}>
+                  <div className="chunk-meta">
+                    <b>[{i + 1}]</b><span>Doc {p.doc_seq} · {roleEs(p.doc_role)}</span>
+                    {p.page_from && <span>pág. {p.page_from}{p.page_to && p.page_to !== p.page_from ? `–${p.page_to}` : ''}</span>}
+                    {p.rerank != null && <span className="score" title="Puntuación del reranker">{p.rerank.toFixed(2)}</span>}
+                    <button type="button" className="linkish small" onClick={() => go(`/t/${p.tender_id}/d/${p.doc_sha256}?c=${p.chunk_idx}`)}>Abrir en el documento →</button>
+                  </div>
+                  <p>{p.text}{p.text.length >= 900 ? '…' : ''}</p>
+                </div>
+              ))}
+            </section>
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+// [n] become buttons that light their passage; [F] (the tender's own data) a plain tag.
+function withCitations(text, onLight) {
+  const out = []
+  let last = 0
+  for (const m of text.matchAll(/\[(\d+|F)\]/g)) {
+    out.push(text.slice(last, m.index))
+    const n = m[1]
+    out.push(n === 'F'
+      ? <span key={m.index} className="cite f" title="Datos del expediente en PLACSP">F</span>
+      : <button key={m.index} type="button" className="cite" onMouseEnter={() => onLight(Number(n))} onMouseLeave={() => onLight(null)}
+          onClick={() => document.getElementById(`ask-p${n}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })}>{n}</button>)
+    last = m.index + m[0].length
+  }
+  out.push(text.slice(last))
+  return out
+}
+
+function Info({ info }) {
+  return (
+    <div className="ask-info small muted">
+      {info.hybrid ? 'Significado + palabras clave' : 'Solo significado'} · {info.reranked ? 'reordenado por el reranker' : 'sin reranker'}
+      {(info.notes || []).map((n, i) => <div key={i} className="warn-text">{n}</div>)}
     </div>
   )
 }
