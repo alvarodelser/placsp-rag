@@ -39,7 +39,7 @@ NS = uuid.UUID("6f1c3a52-5b0e-4f37-9a1e-7d2b8c4e0a11")
 SHARED = ("org:", "jv:", "qualification:")          # nodes that span tenders
 MARGIN = 0.08                                      # /search keeps hits within this of the best
 CHUNK_RELS = ["HAS_CHUNK", "NEXT", "MENTIONS", "MENTIONED_IN"]
-JSON_PROPS = ("detail", "conflicts", "attributes")
+JSON_PROPS = ("detail", "conflicts", "attributes", "formula_model")
 HEAVY = {"evidence", "descriptions", "documents", "file_path", "aliases", "text"}
 CARD = ["tender_id", "name", "short_title", "channel", "status", "authority", "value", "published", "counts", "analysable",
         "skip_reason", "contract_type", "procedure", "cpv", "nuts", "description", "companies"]

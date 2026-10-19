@@ -14,6 +14,8 @@ Stages run in this order; `run` does them all. Each is resumable.
   coref        nlp_service /coref/links: references that do not name the entity ("la empresa",
                "la adjudicataria", "dicha entidad") become mentions of it, with offsets
   refine       nlp_service /ner with a narrow schema per requirement and award criterion
+  formulas     nlp_service /summarize criterion_formula: each criterion not judged by value, its
+               formula as an expression with every symbol explained (rendered and evaluated by the viewer)
   describe     nlp_service /summarize once per entity (requirement_desc, criterion_desc,
                entity_desc) and per relation
   summary      nlp_service /summarize aggregate: one description per expediente
@@ -32,7 +34,7 @@ from placsp_pilot.config import DEFAULT_QUOTAS, load_config
 from placsp_pilot.store import Store
 
 ORDER = ["select", "discover", "fetch", "text", "classify", "summarize", "ner", "mentions", "resolve", "coref", "refine",
-         "describe", "summary", "graph", "index", "validate", "report"]
+         "formulas", "describe", "summary", "graph", "index", "validate", "report"]
 
 
 def _quotas(s: str | None) -> dict:
@@ -77,6 +79,7 @@ def main(argv=None):
         "resolve": lambda: entities.resolve(cfg, store),
         "coref": lambda: entities.coref(cfg, store),
         "refine": lambda: entities.refine(cfg, store),
+        "formulas": lambda: entities.formulas(cfg, store),
         "describe": lambda: entities.describe(cfg, store),
         "summary": lambda: nlpstages.summary(cfg, store),
         "graph": lambda: graph.build(cfg, store),

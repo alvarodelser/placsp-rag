@@ -75,6 +75,7 @@ def test_nlp_stages_build_the_graph(run):
     entities.mentions(cfg, store)
     entities.resolve(cfg, store)
     entities.refine(cfg, store)
+    entities.formulas(cfg, store)
     entities.describe(cfg, store)
     nlpstages.summary(cfg, store)
     assert store.one("SELECT status FROM resolution WHERE exp_id=?", (rec["id"],))["status"] == "ok"

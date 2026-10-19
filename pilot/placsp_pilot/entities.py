@@ -69,6 +69,10 @@ CREATE TABLE IF NOT EXISTS resolution (
     exp_id TEXT PRIMARY KEY, status TEXT, ms INTEGER, mentions INTEGER, entities INTEGER,
     merges TEXT, llm_calls INTEGER, error TEXT
 );
+CREATE TABLE IF NOT EXISTS formula (
+    exp_id TEXT NOT NULL, entity_id TEXT NOT NULL, status TEXT, ms INTEGER, result_json TEXT,
+    PRIMARY KEY (exp_id, entity_id)
+);
 CREATE TABLE IF NOT EXISTS coref_run (
     exp_id TEXT PRIMARY KEY, status TEXT, ms INTEGER, chunks INTEGER, calls INTEGER, links INTEGER, error TEXT
 );
@@ -742,7 +746,7 @@ def _write(store, eid, e, t, ms, by_id, uf, fg, sk, lots) -> int:
         # members may have changed. Shared entities are described again from all expedientes.
         shared = [r[1] for r in rows if r[2] == "global"]
         c.executemany("DELETE FROM entity_description WHERE exp_id='*' AND kind='entity' AND item_id=?", [(x,) for x in shared])
-        for table in ("entity", "entity_mention", "entity_relation", "refinement", "entity_description", "coref_run"):
+        for table in ("entity", "entity_mention", "entity_relation", "refinement", "entity_description", "coref_run", "formula"):
             c.execute(f"DELETE FROM {table} WHERE exp_id=?", (eid,))
         c.execute("DELETE FROM mention WHERE kind='coref' AND id LIKE ?", (f"%:c:{eid}:%",))
         c.execute("DELETE FROM extraction WHERE exp_id=? AND kind='tender_description'", (eid,))
@@ -1008,6 +1012,57 @@ def refine(cfg: PilotConfig, store: Store):
                           (r["exp_id"], r["id"], status, ms, json.dumps(result, ensure_ascii=False)))
             st["items"] += 1
     log(f"refine: {len(jobs)} requirements and criteria")
+
+
+# ── formulas ──────────────────────────────────────────────────────────────
+
+def formulas(cfg: PilotConfig, store: Store):
+    """Each criterion scored by a rule (not a judgement): its formula as an expression with every
+    symbol explained (nlp_service criterion_formula), for the viewer to render and evaluate."""
+    schema(store)
+    svc = Services(cfg, store)
+    done = {(r["exp_id"], r["entity_id"]) for r in store.q("SELECT exp_id, entity_id FROM formula WHERE status='ok'")}
+    refined = {(r["exp_id"], r["entity_id"]): json.loads(r["result_json"]) for r in
+               store.q("SELECT exp_id, entity_id, result_json FROM refinement WHERE status='ok'")}
+    jobs = []
+    for r in store.q("SELECT exp_id, id, name, subtype, attributes FROM entity WHERE type='AWARD_CRITERION'"):
+        ref = refined.get((r["exp_id"], r["id"]), {})
+        if (r["exp_id"], r["id"]) in done or (ref.get("subtype") or r["subtype"]) == "JUDGEMENT":
+            continue
+        jobs.append((r, ref))
+
+    def one(job):
+        r, ref = job
+        t0 = time.time()
+        attrs = json.loads(r["attributes"] or "{}")
+        points = _points(ref.get("points")) or _points(attrs.get("points"))
+        fields = {"name": r["name"], "points": points if points is not None else "no consta",
+                  "attributes_text": attributes_text(attrs, ref, {}),
+                  "evidence": [p[:1500] for p in passages(store, cfg, r["exp_id"], r["id"], window=900, limit=4)]
+                  or [r["name"]]}
+        try:
+            return r, "ok", svc.summarize("criterion_formula", fields, exp_id=r["exp_id"]), int((time.time() - t0) * 1000)
+        except ServiceError as e:
+            return r, "failed", {"error": str(e)}, int((time.time() - t0) * 1000)
+
+    if jobs:
+        r, status, out, ms = one(jobs[0])                  # a service without the profile: say so once
+        if status == "failed" and ("422" in out["error"] or "404" in out["error"]):
+            log("formulas: nlp_service has no criterion_formula profile yet; update it and run this stage again")
+            return
+        results = [(r, status, out, ms)]
+    else:
+        results = []
+    found = failed = 0
+    with store.stage("formulas") as st, _pool(cfg.nlp_workers) as pool:
+        for r, status, out, ms in results + list(pool.map(one, jobs[1:])):
+            with store.tx() as c:
+                c.execute("INSERT OR REPLACE INTO formula VALUES (?,?,?,?,?)",
+                          (r["exp_id"], r["id"], status, ms, json.dumps(out, ensure_ascii=False)))
+            st["items"] += 1
+            found += status == "ok" and bool(out.get("has_formula"))
+            failed += status == "failed"
+    log(f"formulas: {len(jobs)} criteria not judged by value, {found} with a formula, {failed} failed")
 
 
 # ── describe ──────────────────────────────────────────────────────────────

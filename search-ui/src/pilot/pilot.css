@@ -218,3 +218,46 @@ button.mini:hover:not(:disabled) { background: var(--accent-soft); color: var(--
 button.tl-doc:hover:not(:disabled) { color: var(--accent); text-decoration: none; }
 .doc-title .linkish { color: var(--ink); font-weight: 600; font-size: 14px; }
 @media (max-width: 900px) { .tv-sum { grid-template-columns: 1fr; } .tv-ficha { position: static; } }
+
+/* Lotes tab */
+.lv { display: grid; gap: 14px; }
+.lv-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.lv-tabs button { background: #fff; color: var(--muted); border: 1.5px solid var(--line); padding: 5px 12px; font-size: 13px; font-weight: 600; }
+.lv-tabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.lv-tabs button:hover:not(:disabled):not(.on) { color: var(--ink); border-color: #c8cfe8; background: #fff; }
+.lv h4:first-child { margin-top: 0; }
+.lv-bids { margin-top: 10px; font-size: 13px; }
+.cr-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin: 2px 0 12px; background: var(--chip); }
+.cr-bar span { display: block; height: 100%; border-right: 1.5px solid #fff; }
+.cr-table td { vertical-align: middle; }
+.cr-name { cursor: pointer; border-bottom: 1px dashed #b8c0d4; }
+.cr-name:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.cr-w { white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.cr-wbar { display: inline-block; width: 90px; height: 7px; background: var(--chip); border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
+.cr-wbar i { display: block; height: 100%; }
+.cr-fx > td { background: #fbfcfe; padding: 12px 14px 16px; }
+.sh { cursor: pointer; }
+
+/* Formula viewer */
+.fx { display: grid; gap: 10px; }
+.fx-head { display: flex; gap: 8px; align-items: center; }
+.chip.fx-deduced { background: #fdf0e6; color: #b45309; }
+.fx-math { background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 14px; overflow-x: auto; font-size: 16px; }
+.fx-vars td { vertical-align: middle; }
+.fx-in { width: 110px; padding: 4px 6px; font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.fx-score { font-size: 14px; }
+.fx-plot { background: #fff; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
+.fx-plot-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.fx-plot-bar label { display: inline-flex; gap: 6px; align-items: center; }
+.fx-plot-bar select { font-size: 12.5px; padding: 3px 6px; max-width: 260px; }
+.fx-slider { flex: 1; min-width: 140px; }
+.fx-svg { width: 100%; max-width: 720px; height: auto; display: block; margin-top: 6px; }
+.fx-grid { stroke: #eef1f6; }
+.fx-axis { stroke: #8b95a7; }
+.fx-max { stroke: #8b5cf6; stroke-dasharray: 4 3; opacity: .7; }
+.fx-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.fx-dot { fill: #f59e0b; stroke: #fff; stroke-width: 1.5; }
+.fx-tick { font-size: 10.5px; fill: var(--muted); }
+.fx-label { font-size: 11.5px; fill: var(--ink); }
+.fx-src { margin: 6px 0 0; padding: 6px 10px; border-left: 3px solid var(--line); color: #44506a; white-space: pre-wrap; }
+.fx-cond ul { padding-left: 0; }

@@ -143,6 +143,19 @@ def test_describe_uses_domain_profiles_and_passages(expediente):
     assert any(p.startswith("[PCAP") and "31 puntos" in p for p in passages)
 
 
+def test_formulas_for_criteria_scored_by_rule(expediente):
+    cfg, store, rec, docs = expediente
+    for stage in (E.mentions, E.resolve, E.refine, E.formulas):
+        stage(cfg, store)
+    rows = {r["entity_id"]: json.loads(r["result_json"]) for r in store.q("SELECT * FROM formula WHERE status='ok'")}
+    price = rows[f"crit:{rec['id']}:feed0"]
+    assert price["has_formula"] and price["expression"].startswith("P =")
+    assert not [i for i in rows if "memoria" in i.lower()]            # judged by value: not asked
+    from placsp_pilot import graph
+    g = graph.build(cfg, store)
+    assert g.nodes[f"crit:{rec['id']}:feed0"]["formula_model"]["variables"][0]["symbol"] == "P"
+
+
 def test_coref_links_references_to_their_entity(expediente):
     cfg, store, rec, docs = expediente
     for stage in (E.mentions, E.resolve, E.coref):

@@ -175,6 +175,9 @@ def _feed_skeleton(g: Graph, eid: str, e, t: dict, tender_desc: str | None) -> t
     for lot in t.get("lots", []):
         lid = g.node(f"lot:{eid}:{lot['number']}", "Lot", number=str(lot["number"]), name=lot.get("name"),
                      cpv=lot.get("cpv"), budget=lot.get("budget_tax_excl"), budget_total=lot.get("budget_total"),
+                     value=lot.get("value_estimated"), nuts=(lot.get("location") or {}).get("nuts"),
+                     place=", ".join(x for x in [(lot.get("location") or {}).get("city"),
+                                                 (lot.get("location") or {}).get("region")] if x) or None,
                      implicit=lot.get("implicit"))
         lots[str(lot["number"])] = lid
         g.edge(tid, "HAS_LOT", lid)
@@ -255,6 +258,9 @@ def _entities(g: Graph, store: Store, eid: str, sk: dict) -> tuple[Counter, Coun
         "SELECT kind, item_id, text FROM entity_description WHERE status='ok' AND exp_id IN (?, '*')", (eid,))}
     refined = {r["entity_id"]: json.loads(r["result_json"]) for r in store.q(
         "SELECT entity_id, result_json FROM refinement WHERE exp_id=? AND status='ok'", (eid,))}
+    formulas = {r["entity_id"]: f for r in store.q(
+        "SELECT entity_id, result_json FROM formula WHERE exp_id=? AND status='ok'", (eid,))
+        if (f := json.loads(r["result_json"])).get("has_formula")}
     lots = list(sk["lots"].values())
     for r in store.q("SELECT * FROM entity WHERE exp_id=?", (eid,)):
         typ, nid = r["type"], r["id"]
@@ -271,6 +277,8 @@ def _entities(g: Graph, store: Store, eid: str, sk: dict) -> tuple[Counter, Coun
             n["conflicts"] = json.loads(r["conflicts"])
         if refined.get(nid):
             n["detail"] = refined[nid]
+        if formulas.get(nid):
+            n["formula_model"] = formulas[nid]
         n["source"] = "feed+documents" if r["anchor"] and r["mentions"] else "feed" if r["anchor"] else "documents"
         n["mentions"] = (n.get("mentions") or 0) + r["mentions"]
         if descs.get(("entity", nid)):

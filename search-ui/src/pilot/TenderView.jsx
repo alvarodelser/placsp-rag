@@ -1,7 +1,7 @@
 // search-ui/src/pilot/TenderView.jsx — the unified tender: summary, lots, documents in order, graph, questions.
 // The head reads title, state and dates, money, authority; the summary the object (what, where,
 // how long), guarantees, the timeline (each document previewed on hover) and the record's details.
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { getTender, getTenderGraph, fileUrl } from './pilotApi.js'
 import { CHANNEL, roleEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
@@ -12,6 +12,9 @@ import GraphView from './GraphView.jsx'
 import NodePanel from './NodePanel.jsx'
 import AskView from './AskView.jsx'
 import DocHover from './DocHover.jsx'
+import SourceHover from './SourceHover.jsx'
+import FormulaView from './FormulaView.jsx'
+import { guessModel } from './formula.js'
 import { go } from './route.js'
 
 const TABS = [['resumen', 'Resumen'], ['lotes', 'Lotes'], ['documentos', 'Documentos'], ['grafo', 'Grafo'], ['preguntar', 'Preguntar']]
@@ -185,57 +188,112 @@ function fmtDuration(d) {
 
 function Lots({ t }) {
   const lots = t.lots || []
+  const [i, setI] = useState(0)
   if (!lots.length) return <p className="empty">Sin lotes.</p>
+  const l = lots[Math.min(i, lots.length - 1)]
+  const reqs = l.requirements || []
   return (
-    <div className="lots">
-      {lots.map((l) => (
-        <details key={l.number || l.name} className="tv-card lot" open={lots.length <= 3}>
-          <summary>
-            <b>{l.number ? `Lote ${l.number}` : 'Lote único'}</b> {l.name && l.name !== l.number && <span>· {l.name}</span>}
-            {l.budget != null && <span className="muted"> · {money(l.budget)}</span>}
-            {(l.awarded_to || []).length > 0 && <span className="chip role-winner">{l.awarded_to.map((o) => o.name).join(', ')}</span>}
-          </summary>
-          {l.description && <p className="tv-desc">{l.description}</p>}
-          {(l.award_criteria || []).length > 0 && (
-            <>
-              <h4>Criterios de adjudicación {l.criteria_points_total != null && <span className="muted">· {l.criteria_points_total} puntos</span>}</h4>
-              <table className="ptable">
-                <thead><tr><th>Criterio</th><th>Tipo</th><th>Puntos</th><th>Origen</th></tr></thead>
-                <tbody>
-                  {l.award_criteria.map((c, i) => (
-                    <tr key={i}>
-                      <td>{c.name}{c.formula && <div className="muted small">{c.formula}</div>}
-                        {c.conflicts && <div className="small warn-text">Discrepancia: {Object.entries(c.conflicts).map(([k, vs]) => `${k} ${vs.map((v) => v.value).join(' / ')}`).join('; ')}</div>}</td>
-                      <td>{c.subtype === 'JUDGEMENT' ? 'Juicio de valor' : c.subtype === 'FORMULA' ? 'Fórmula' : c.subtype || '—'}</td>
-                      <td className="num">{c.points ?? '—'}</td>
-                      <td>{{ feed: 'feed', documents: 'documentos', 'feed+documents': 'feed + docs' }[c.source] || c.source}{c.mentions ? ` · ${c.mentions} menc.` : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
+    <div className="lv">
+      {lots.length > 1 && (
+        <nav className="lv-tabs" aria-label="Lotes">
+          {lots.map((x, k) => (
+            <button key={x.number || k} type="button" className={k === i ? 'on' : ''} title={x.name || ''} onClick={() => setI(k)}>
+              Lote {x.number || k + 1}
+            </button>
+          ))}
+        </nav>
+      )}
+      <section className="tv-card">
+        <h3>{l.implicit || lots.length === 1 ? 'Lote único' : `Lote ${l.number}`}{l.name && !/^lote\s*\d*$/i.test(l.name.trim()) && <span className="muted"> · {l.name}</span>}</h3>
+        {l.description && <p className="tv-desc">{l.description}</p>}
+        <dl className="tv-facts">
+          {l.value != null && <div><dt>Valor estimado</dt><dd>{money(l.value)}</dd></div>}
+          {l.budget != null && <div><dt>Presupuesto</dt><dd>{money(l.budget)} sin IVA{l.budget_total != null && <span className="muted"> · {money(l.budget_total)} con IVA</span>}</dd></div>}
+          {(l.cpv || []).length > 0 && (
+            <div><dt>CPV</dt><dd>{l.cpv.map((c) => <div key={c}><span className="mono">{c}</span> {cpvLabel(c)}
+              {cpvDivision(c) && <span className="muted"> · {cpvDivision(c)}</span>}</div>)}</dd></div>
           )}
-          <Requirements reqs={(l.requirements || []).filter((r) => r.label === 'Requirement')} title="Solvencia y requisitos de participación" />
-          <Requirements reqs={(l.requirements || []).filter((r) => r.label === 'TechnicalRequirement')} title="Requisitos técnicos de la prestación" />
-          <Requirements reqs={(l.requirements || []).filter((r) => !['Requirement', 'TechnicalRequirement'].includes(r.label))} title="Garantías y otras exigencias" />
-          {((l.bids || []).length > 0 || l.result) && (
-            <>
-              <h4>Resultado {l.result?.bids_received != null && <span className="muted">· {l.result.bids_received} ofertas recibidas</span>}</h4>
-              <ul className="plain">
-                {(l.bids || []).map((b, i) => (
-                  <li key={i}>{b.winner ? '🏆 ' : ''}{b.bidders.map((o) => (
-                    <button key={o.id} type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(o.id)}`)}>{o.name}</button>
-                  ))}
-                  {b.price != null && <b> · {money(b.price)}</b>}{b.outcome && <span className="muted"> · {b.outcome}</span>}</li>
-                ))}
-              </ul>
-            </>
-          )}
-        </details>
-      ))}
+          {(l.place || l.nuts) && <div><dt>Lugar</dt><dd>{l.place || nutsLabel(l.nuts)}{l.nuts && <span className="mono muted"> {l.nuts}</span>}</dd></div>}
+          {(l.awarded_to || []).length > 0 && <div><dt>Adjudicataria</dt><dd>{l.awarded_to.map((o) => (
+            <button key={o.id} type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(o.id)}`)}>{o.name}</button>))}</dd></div>}
+          {l.result?.bids_received != null && <div><dt>Ofertas recibidas</dt><dd>{l.result.bids_received}</dd></div>}
+        </dl>
+        {(l.bids || []).length > 0 && (
+          <ul className="plain lv-bids">
+            {l.bids.map((b, k) => (
+              <li key={k}>{b.winner ? '🏆 ' : ''}{b.bidders.map((o) => (
+                <button key={o.id} type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(o.id)}`)}>{o.name}</button>
+              ))}
+              {b.price != null && <b> · {money(b.price)}</b>}{b.outcome && <span className="muted"> · {b.outcome}</span>}</li>
+            ))}
+          </ul>
+        )}
+      </section>
+      {reqs.length > 0 && (
+        <section className="tv-card">
+          <Requirements reqs={reqs.filter((r) => r.label === 'Requirement')} title="Solvencia y requisitos de participación" />
+          <Requirements reqs={reqs.filter((r) => r.label === 'TechnicalRequirement')} title="Requisitos técnicos de la prestación" />
+          <Requirements reqs={reqs.filter((r) => !['Requirement', 'TechnicalRequirement'].includes(r.label))} title="Garantías y otras exigencias" />
+        </section>
+      )}
+      <Criteria lot={l} />
     </div>
   )
 }
+
+const CRIT_KIND = { JUDGEMENT: 'Juicio de valor', FORMULA: 'Fórmula' }
+const CRIT_COLOR = { JUDGEMENT: '#d14d72', FORMULA: '#8b5cf6' }
+
+// Criteria with their weight in the lot's total, each one's source on hover, and its formula
+// (from the pipeline, or found in its text) opened below it.
+function Criteria({ lot }) {
+  const cs = lot.award_criteria || []
+  const [open, setOpen] = useState(null)
+  if (!cs.length) return null
+  const total = cs.reduce((n, c) => n + (c.points || 0), 0)
+  const byKind = {}
+  for (const c of cs) byKind[c.subtype || 'OTHER'] = (byKind[c.subtype || 'OTHER'] || 0) + (c.points || 0)
+  const pct = (p) => (total ? (100 * (p || 0)) / total : 0)
+  return (
+    <section className="tv-card">
+      <h3>Criterios de adjudicación <span className="muted">· {fmtNum(total)} puntos
+        {Object.entries(byKind).map(([k, p]) => <span key={k}> · {CRIT_KIND[k] || 'Sin tipo'} {fmtNum(p)} ({fmtNum(pct(p))} %)</span>)}</span></h3>
+      {total > 0 && (
+        <div className="cr-bar" role="img" aria-label="Peso de cada criterio">
+          {cs.filter((c) => c.points).map((c, k) => (
+            <span key={k} style={{ width: `${pct(c.points)}%`, background: CRIT_COLOR[c.subtype] || '#94a3b8', opacity: 0.45 + 0.55 * ((k % 3) / 2) }}
+              title={`${c.name}: ${fmtNum(c.points)} puntos (${fmtNum(pct(c.points))} %)`} />
+          ))}
+        </div>
+      )}
+      <table className="ptable cr-table">
+        <thead><tr><th>Criterio</th><th>Tipo</th><th className="num">Puntos</th><th>Peso</th><th /></tr></thead>
+        <tbody>
+          {cs.map((c, k) => {
+            const model = c.formula_model || guessModel([c.detail?.formula, c.formula].filter(Boolean).join('\n'))
+            const isOpen = open === k
+            return (
+              <Fragment key={k}>
+                <tr>
+                  <td>{c.id ? <SourceHover id={c.id}><span className="cr-name">{c.name}</span></SourceHover> : c.name}
+                    {c.formula && !c.formula_model && <div className="muted small">{c.formula}</div>}
+                    {c.conflicts && <div className="small warn-text">Discrepancia: {Object.entries(c.conflicts).map(([key, vs]) => `${key} ${vs.map((v) => v.value).join(' / ')}`).join('; ')}</div>}</td>
+                  <td>{CRIT_KIND[c.subtype] || c.subtype || '—'}</td>
+                  <td className="num">{c.points != null ? fmtNum(c.points) : '—'}</td>
+                  <td className="cr-w">{c.points ? <><span className="cr-wbar"><i style={{ width: `${pct(c.points)}%`, background: CRIT_COLOR[c.subtype] || '#94a3b8' }} /></span> {fmtNum(pct(c.points))} %</> : null}</td>
+                  <td>{model && <button type="button" className="linkish small" onClick={() => setOpen(isOpen ? null : k)}>{isOpen ? 'Ocultar' : 'Ver fórmula'}</button>}</td>
+                </tr>
+                {isOpen && model && <tr className="cr-fx"><td colSpan={5}><FormulaView model={model} points={c.points} /></td></tr>}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </section>
+  )
+}
+
+const fmtNum = (x) => Number(x || 0).toLocaleString('es-ES', { maximumFractionDigits: 1 })
 
 function Requirements({ reqs, title }) {
   if (!reqs.length) return null

@@ -86,7 +86,7 @@ def tender_object(g: Graph, rec: dict, n_chunks: int) -> dict:
     lots = []
     for lid in sorted(g.out(tid, "HAS_LOT"), key=lambda x: (len(g.nodes[x].get("number") or "zz"), g.nodes[x].get("number") or "")):
         lot = _clean(g.nodes[lid])
-        lot["award_criteria"] = [_clean(g.nodes[c]) for c in g.out(lid, "HAS_CRITERION")]
+        lot["award_criteria"] = [dict(_clean(g.nodes[c]), id=c) for c in g.out(lid, "HAS_CRITERION")]
         lot["criteria_points_total"] = sum(c.get("points") or 0 for c in lot["award_criteria"] if c.get("source") == "feed") or \
             sum(c.get("points") or 0 for c in lot["award_criteria"]) or None
         lot["requirements"] = [dict(_clean(g.nodes[r]), label=g.nodes[r]["label"], id=r,

@@ -73,6 +73,16 @@ def summarize(body: dict) -> dict:
     if body["profile"] in ("entity_desc", "relation_desc", "aggregate", "requirement_desc", "criterion_desc"):
         name = f.get("name") or f"{f.get('head')} -> {f.get('tail')}"
         return {"result": {"description": f"{name} ({f.get('type')}): descripción de prueba."}}
+    if body["profile"] == "criterion_formula":
+        if not any(w in f["name"].lower() for w in ("precio", "economica", "económica")):
+            return {"result": {"has_formula": False, "literal": False, "expression": "", "variables": [],
+                               "conditions": [], "source_text": ""}}
+        return {"result": {"has_formula": True, "literal": True, "expression": "P = Pmax * Of_min / Of",
+                           "variables": [{"symbol": "P", "meaning": "puntuación", "kind": "output", "value": None, "unit": "puntos"},
+                                         {"symbol": "Pmax", "meaning": "puntos máximos", "kind": "constant", "value": 60, "unit": "puntos"},
+                                         {"symbol": "Of_min", "meaning": "oferta más baja", "kind": "parameter", "value": None, "unit": "euros"},
+                                         {"symbol": "Of", "meaning": "oferta del licitador", "kind": "input", "value": None, "unit": "euros"}],
+                           "conditions": [], "source_text": "P = Pmax x Of_min / Of"}}
     return None
 
 

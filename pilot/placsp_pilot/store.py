@@ -208,6 +208,7 @@ class Store:
             "resolve": "DELETE FROM resolution WHERE status!='ok'",
             "coref": "DELETE FROM coref_run WHERE status!='ok'",
             "refine": "DELETE FROM refinement WHERE status!='ok'",
+            "formulas": "DELETE FROM formula WHERE status!='ok'",
             "describe": "DELETE FROM entity_description WHERE status!='ok'",
             "summary": "DELETE FROM extraction WHERE status!='ok'",
         }
