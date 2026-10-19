@@ -336,6 +336,39 @@ def _attrs(m) -> dict:
     return json.loads(m["attributes"] or "{}")
 
 
+# ── lots ──────────────────────────────────────────────────────────────────
+
+_LOT_NAMED = re.compile(r"\blote\s*(?:n\s*[º°o.]*\s*)?(?:\d+|[ivx]+\b)", re.I)
+
+
+def divided(tender_json: dict) -> bool:
+    """Whether the contract is divided into lots. Without lots the feed still gives one, marked
+    implicit; it is the contract itself, not a lot."""
+    lots = tender_json.get("lots") or []
+    return len(lots) > 1 or any(not lot.get("implicit") for lot in lots)
+
+
+def lot_mention_ok(m, lot_names, is_divided: bool) -> bool:
+    """A LOT mention that names a lot: "Lote 2", "lote nº 3", or a lot's own name from the feed.
+    In a contract not divided into lots there is none, whatever NER tagged as "Lote 1" (the
+    contract's object, "se justifica la no división en lotes", a requirement)."""
+    if not is_divided:
+        return False
+    if _LOT_NAMED.search(f"{m['name'] or ''} {m['surface'] or ''} {(m['evidence'] or '')[:200]}"):
+        return True
+    return any(n and similarity(n, m["name"] or "") >= ANCHOR_SIMILAR for n in lot_names)
+
+
+def lot_object(number: str, evidences: list[str]) -> str | None:
+    """What a lot is, as the documents state it: "Lote 2: Suministro de mobiliario…" -> the object."""
+    pat = re.compile(rf"\blote\s*(?:n\s*[º°o.]*\s*)?{re.escape(str(number))}\b\s*[:.\-–—)]\s*(.{{12,220}}?)(?:\.\s|\n|$)", re.I)
+    for ev in evidences:
+        hit = pat.search(ev or "")
+        if hit:
+            return re.sub(r"\s+", " ", hit.group(1)).strip(" .;,")
+    return None
+
+
 def _lot_of(m, lots: dict[str, str]) -> str | None:
     num = re.sub(r"(?i)^lote\s*", "", str(_attrs(m).get("number") or "")).strip()
     if num in lots:
@@ -381,6 +414,10 @@ def _resolve_expediente(svc: Services, store: Store, e, ms: list) -> dict:
     for n in fg.nodes.values():
         feed[n["label"]].append(n)
     auth_id = sk["auth"]
+    # LOT mentions that do not name a lot are not mentions of one: dropped, and counted.
+    is_divided = divided(t)
+    kept = [m for m in ms if m["type"] != "LOT" or lot_mention_ok(m, lot_names.values(), is_divided)]
+    lot_dropped, ms = len(ms) - len(kept), kept
     by_id = {m["id"]: m for m in ms}
     uf = _UF()
     merges = Counter()
@@ -504,6 +541,8 @@ def _resolve_expediente(svc: Services, store: Store, e, ms: list) -> dict:
                         join(other, group[0], "llm")
 
     n = _write(store, eid, e, t, ms, by_id, uf, fg, sk, lots)
+    if lot_dropped:
+        merges["lot_mentions_dropped"] = lot_dropped
     return {"entities": n, "merges": dict(merges), "llm_calls": llm_calls, "llm_failed": llm_failed}
 
 
@@ -854,8 +893,11 @@ def coref(cfg: PilotConfig, store: Store):
 
 
 def _coref_expediente(cfg: PilotConfig, store: Store, svc: Services, eid: str) -> dict:
+    # Without lots, "el lote" has nothing to refer to: the lot is the contract.
+    types = COREF_TYPES if divided(json.loads(store.one("SELECT tender_json FROM expediente WHERE id=?", (eid,))["tender_json"])) \
+        else tuple(x for x in COREF_TYPES if x != "LOT")
     cands = store.q("SELECT id, type, name, attributes FROM entity WHERE exp_id=? AND type IN (%s) ORDER BY mentions DESC"
-                    % ",".join("?" * len(COREF_TYPES)), (eid, *COREF_TYPES))[:COREF_CANDIDATES]
+                    % ",".join("?" * len(types)), (eid, *types))[:COREF_CANDIDATES]
     if not cands:
         return {"status": "ok", "chunks": 0, "calls": 0, "links": 0}
     listing = [{"name": c["name"], "type": c["type"]} for c in cands]
@@ -1067,6 +1109,19 @@ def formulas(cfg: PilotConfig, store: Store):
 
 # ── describe ──────────────────────────────────────────────────────────────
 
+# A lot is its number, its object and its figures, all in the feed or stated as "Lote 2: …" in the
+# documents (graph.py writes that); a generated paragraph only restated them, or contradicted them.
+NOT_DESCRIBED = {"LOT"}
+# The prompt reads the type as a word ("Penalidad"), not as a code: with "PENALTY" the model wrote
+# "X es una entidad de tipo PENALTY…", which says nothing.
+TYPE_ES = {
+    "CONTRACTING_AUTHORITY": "Órgano de contratación", "COMPANY": "Empresa", "JOINT_VENTURE": "Unión temporal de empresas",
+    "OTHER_ORGANIZATION": "Organismo", "AWARD_CRITERION": "Criterio de adjudicación",
+    "REQUIREMENT": "Requisito de solvencia o de participación", "TECHNICAL_REQUIREMENT": "Requisito técnico de la prestación",
+    "QUALIFICATION": "Acreditación o certificado", "GUARANTEE": "Garantía", "BID": "Oferta", "CONTRACT": "Contrato",
+    "MODIFICATION": "Modificación del contrato", "PENALTY": "Penalidad por incumplimiento", "DELIVERABLE": "Entregable o prestación",
+    "TEAM_PROFILE": "Perfil del equipo exigido",
+}
 PROFILE = {"REQUIREMENT": "requirement_desc", "TECHNICAL_REQUIREMENT": "requirement_desc",
            "AWARD_CRITERION": "criterion_desc"}
 _FALLBACK = set()     # profiles the deployed nlp_service does not know yet
@@ -1090,6 +1145,8 @@ def describe(cfg: PilotConfig, store: Store):
     # Shared entities (organizations, qualifications) are described once, from every expediente.
     shared = defaultdict(list)
     for r in store.q("SELECT * FROM entity ORDER BY exp_id"):
+        if r["type"] in NOT_DESCRIBED:
+            continue
         if r["scope"] == "global":
             shared[r["id"]].append(r)
             continue
@@ -1118,7 +1175,7 @@ def describe(cfg: PilotConfig, store: Store):
             attrs = json.loads(r["attributes"] or "{}")
             conflicts = json.loads(r["conflicts"] or "{}")
             ref = refined.get((r["exp_id"], item_id), {})
-            fields = {"name": r["name"], "type": r["type"], "subtype": ref.get("subtype") or r["subtype"],
+            fields = {"name": r["name"], "type": TYPE_ES.get(r["type"], r["type"]), "subtype": ref.get("subtype") or r["subtype"],
                       "attributes_text": attributes_text(attrs, ref, conflicts),
                       "evidence": evidence or [f"{r['name']}: " + attributes_text(attrs, ref, {})]}
         if profile in _FALLBACK:

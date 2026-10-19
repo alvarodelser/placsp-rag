@@ -126,8 +126,10 @@ def test_resolution_merges_across_documents_into_the_feed(expediente):
     # The feed's "Según pliego" is spelt out by the PCAP's requirement.
     detail = store.q("SELECT src, dst FROM entity_relation WHERE exp_id=? AND type='DETAILED_BY'", (eid,))
     assert [r["dst"] for r in detail] == [f"requirement:{eid}:volumen anual de negocios"]
-    # Every mention is placed, and nothing is left twice.
-    assert store.one("SELECT COUNT(*) n FROM entity_mention WHERE exp_id=?", (eid,))["n"] == 13
+    # Every mention is placed but the "Lote 1" of a contract without lots, which is dropped and counted.
+    assert store.one("SELECT COUNT(*) n FROM entity_mention WHERE exp_id=?", (eid,))["n"] == 12
+    merges = json.loads(store.one("SELECT merges FROM resolution WHERE exp_id=?", (eid,))["merges"])
+    assert merges["lot_mentions_dropped"] == 1
     names = [(r["type"], r["name"].lower()) for r in ents.values()]
     assert len(names) == len(set(names))
 
@@ -141,6 +143,24 @@ def test_describe_uses_domain_profiles_and_passages(expediente):
     assert profiles[f"crit:{rec['id']}:feed0"] == "criterion_desc"
     passages = E.passages(store, cfg, rec["id"], f"crit:{rec['id']}:feed0")
     assert any(p.startswith("[PCAP") and "31 puntos" in p for p in passages)
+
+
+def test_lots_are_mentioned_only_by_name():
+    m = lambda name, ev="": {"name": name, "surface": name, "evidence": ev}
+    assert not E.divided({"lots": [{"number": "1", "implicit": True}]})
+    assert E.divided({"lots": [{"number": "1"}, {"number": "2"}]})
+    # Without lots, nothing is a lot: not the object, not "no se divide en lotes".
+    assert not E.lot_mention_ok(m("Lote 1", "se justifica la no división del objeto del contrato en lotes"), [], False)
+    assert E.lot_mention_ok(m("Lote nº 2"), [], True)
+    assert E.lot_mention_ok(m("Suministro de mobiliario escolar"), ["Suministro de mobiliario escolar"], True)
+    assert E.lot_mention_ok(m("Lote 1", "la plataforma deberá permitir mantener un registro"), ["Limpieza"], True)
+    assert not E.lot_mention_ok(m("Plataforma electrónica", "la plataforma deberá permitir mantener un registro"), ["Limpieza"], True)
+
+
+def test_a_lot_is_described_by_what_the_documents_say_it_is():
+    evs = ["El contrato se divide en dos lotes.", "LOTE 2: Suministro de mobiliario para las aulas de infantil. Presupuesto…"]
+    assert E.lot_object("2", evs) == "Suministro de mobiliario para las aulas de infantil"
+    assert E.lot_object("1", evs) is None
 
 
 def test_formulas_for_criteria_scored_by_rule(expediente):

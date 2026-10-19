@@ -16,7 +16,7 @@ import json
 import re
 import time
 import unicodedata
-from collections import Counter
+from collections import Counter, defaultdict
 
 from placsp_pilot import classify as C
 from placsp_pilot.config import PilotConfig
@@ -252,8 +252,11 @@ def _feed_skeleton(g: Graph, eid: str, e, t: dict, tender_desc: str | None) -> t
 
 def _entities(g: Graph, store: Store, eid: str, sk: dict) -> tuple[Counter, Counter]:
     """Put the expediente's resolved entities on the graph. Returns entities and relations per document."""
-    from placsp_pilot.entities import schema
+    from placsp_pilot.entities import divided, lot_mention_ok, lot_object, schema
     schema(store)
+    is_divided = divided(json.loads(store.one("SELECT tender_json FROM expediente WHERE id=?", (eid,))["tender_json"]))
+    lot_names = [g.nodes[l].get("name") or "" for l in sk["lots"].values()]
+    lot_entities = set()
     descs = {(r["kind"], r["item_id"]): r["text"] for r in store.q(
         "SELECT kind, item_id, text FROM entity_description WHERE status='ok' AND exp_id IN (?, '*')", (eid,))}
     refined = {r["entity_id"]: json.loads(r["result_json"]) for r in store.q(
@@ -281,7 +284,9 @@ def _entities(g: Graph, store: Store, eid: str, sk: dict) -> tuple[Counter, Coun
             n["formula_model"] = formulas[nid]
         n["source"] = "feed+documents" if r["anchor"] and r["mentions"] else "feed" if r["anchor"] else "documents"
         n["mentions"] = (n.get("mentions") or 0) + r["mentions"]
-        if descs.get(("entity", nid)):
+        if typ == "LOT":
+            lot_entities.add(nid)                     # mentions recounted and described below, from the kept ones
+        elif descs.get(("entity", nid)):
             n["description"] = descs[("entity", nid)]
         for sha in json.loads(r["documents"] or "[]"):
             g.add_to_list(nid, "documents", sha)
@@ -297,13 +302,25 @@ def _entities(g: Graph, store: Store, eid: str, sk: dict) -> tuple[Counter, Coun
                    evidence=ev[0][:500] if ev else None, description=descs.get(("relation", r["id"])),
                    mentions=len(json.loads(r["mentions"] or "[]")) or None)
     ent_per_doc, per_pair = Counter(), Counter()
+    lot_kept = defaultdict(list)
     for m in store.q("SELECT em.entity_id, m.* FROM entity_mention em JOIN mention m ON m.id=em.mention_id"
                      " WHERE em.exp_id=?", (eid,)):
+        if m["entity_id"] in lot_entities:
+            # What NER called a lot but names none (an undivided contract's "Lote 1", earlier runs) is not evidence.
+            if not (is_divided and (m["kind"] == "coref" or lot_mention_ok(m, lot_names, True))):
+                continue
+            lot_kept[m["entity_id"]].append(m["evidence"] or "")
         g.mentions.setdefault((eid, m["sha"]), {}).setdefault(m["idx"], []).append({
             "entity_id": m["entity_id"], "mention_id": m["id"], "surface": m["name"], "quote": (m["evidence"] or "")[:400],
             "char_start": m["char_start"], "char_end": m["char_end"], "page": m["page"], "located": bool(m["located"]),
             "kind": m["kind"] or "ner", "name_start": m["name_start"], "name_end": m["name_end"]})
         per_pair[(m["entity_id"], m["sha"])] += 1
+    for nid in lot_entities:
+        n, kept = g.nodes[nid], lot_kept.get(nid, [])
+        n["mentions"] = len(kept)
+        if n.get("source") == "feed+documents" and not kept:
+            n["source"] = "feed"
+        n["description"] = lot_object(n.get("number") or "", kept) if is_divided else None
     for (nid, sha), count in per_pair.items():
         if f"doc:{sha}" in g.nodes and nid in g.nodes:
             g.edge(nid, "EXTRACTED_FROM", f"doc:{sha}", mentions=count)

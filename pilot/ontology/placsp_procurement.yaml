@@ -30,9 +30,9 @@ entity_types:
       nif: {type: string, description: "NIF de la UTE si aparece."}
 
   - name: LOT
-    description: Lote del contrato, lo que realmente se licita y adjudica. Si el expediente no tiene lotes, usar un único lote llamado "Lote 1".
+    description: Un lote en que se divide el contrato, solo cuando el texto nombra el lote ("Lote 2", "lote nº 3", "LOTE 1. Suministro de…"). Si el contrato no se divide en lotes, no hay ningún LOT; tampoco lo es el objeto del contrato ni la frase que justifica no dividirlo.
     attributes:
-      number: {type: string, description: "Número o código del lote (\"1\" si no hay lotes)."}
+      number: {type: string, description: "Número o código del lote, como lo da el texto."}
       budget: {type: number, description: "Presupuesto base de licitación del lote en euros sin IVA."}
       cpv:    {type: string, description: "Código CPV del lote si aparece."}
 

@@ -156,7 +156,11 @@ def _entity_checks(r: Recorder, store: Store, cfg: PilotConfig, eid: str):
                       " (SELECT sha FROM docref WHERE exp_id=? AND status='fetched')", (eid,))
     linked = store.one("SELECT COUNT(*) n FROM entity_mention em JOIN mention m ON m.id=em.mention_id"
                        " WHERE em.exp_id=? AND m.kind='ner'", (eid,))["n"]
-    r.check("entities.mentions", linked == total["n"], "fail", total["n"], linked, "mentions placed on an entity")
+    # LOT mentions that name no lot (an undivided contract's "Lote 1") are dropped on purpose.
+    dropped = json.loads((res and store.one("SELECT merges FROM resolution WHERE exp_id=?", (eid,))["merges"]) or "{}") \
+        .get("lot_mentions_dropped", 0)
+    r.check("entities.mentions", linked + dropped == total["n"], "fail", total["n"], linked + dropped,
+            f"mentions placed on an entity{f' ({dropped} LOT mentions naming no lot dropped)' if dropped else ''}")
     co = store.one("SELECT status, links, error FROM coref_run WHERE exp_id=?", (eid,))
     r.check("entities.coref", bool(co and co["status"] in ("ok", "off")), "fail", "ok", co["status"] if co else "missing",
             f"{co['links']} references linked" if co else "")
