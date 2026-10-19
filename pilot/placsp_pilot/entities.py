@@ -842,6 +842,10 @@ def coref(cfg: PilotConfig, store: Store):
                           (e["id"], stats["status"], int((time.time() - t0) * 1000), stats["chunks"], stats["calls"],
                            stats["links"], stats.get("error")))
             st["items"] += 1
+            if stats["status"] == "failed":
+                # Every call failed: the service is down or lacks /coref/links, and so it will be for the rest.
+                raise SystemExit(f"coref {e['id']}: all {stats['calls']} /coref/links calls failed, last error: "
+                                 f"{stats.get('error')}. Update nlp_service, or set PILOT_COREF=0 to skip this stage.")
             log(f"coref {e['id']}: {stats['chunks']} passages with references, {stats['links']} references linked")
 
 
@@ -894,6 +898,8 @@ def _coref_expediente(cfg: PilotConfig, store: Store, svc: Services, eid: str) -
                                      link.get("evidence"), None, span[0] if span else None, span[1] if span else None,
                                      page, int(span is not None), "coref", span[0] if span else None, span[1] if span else None))
                 links.append((eid, mid, cand["id"]))
+    if errors and len(errors) == len(jobs):
+        return {"status": "failed", "chunks": len(jobs), "calls": len(jobs), "links": 0, "error": errors[-1][:300]}
     with store.tx() as c:
         c.execute("DELETE FROM mention WHERE kind='coref' AND id LIKE ?", (f"%:c:{eid}:%",))
         c.execute("DELETE FROM entity_mention WHERE exp_id=? AND mention_id LIKE ?", (eid, f"%:c:{eid}:%"))
@@ -904,8 +910,7 @@ def _coref_expediente(cfg: PilotConfig, store: Store, svc: Services, eid: str) -
         # Descriptions and the expediente summary read the mentions: what was written before these is stale.
         c.execute("DELETE FROM entity_description WHERE exp_id=? AND kind='entity'", (eid,))
         c.execute("DELETE FROM extraction WHERE exp_id=? AND kind='tender_description'", (eid,))
-    status = "failed" if errors and len(errors) == len(jobs) else "ok"
-    return {"status": status, "chunks": len(jobs), "calls": len(jobs), "links": len(links),
+    return {"status": "ok", "chunks": len(jobs), "calls": len(jobs), "links": len(links),
             "error": errors[0][:300] if errors else None}
 
 
