@@ -10,7 +10,7 @@
 # Vectorizer note:
 #   The BGE-M3 vectorizer is a pre-existing container (iarag project). It publishes its port on
 #   the host's loopback only, so containers reach it by name on its own network: the search-api
-#   joins that network (VECTORIZER_NETWORK, default vectorizer_default) and calls
+#   joins that network (VECTORIZER_NETWORK, default n8n-net) and calls
 #   SEARCH_VECTORIZER_URL (default http://vectorizer:8089). VECTORIZER_URL in .env is for
 #   processes on the host (ingester, pilot): http://localhost:8089.
 #   Find the network: docker inspect vectorizer --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
@@ -219,4 +219,4 @@ networks:
   # The vectorizer's own network (see the note at the top); it must exist before `up`.
   vectorizer:
     external: true
-    name: ${VECTORIZER_NETWORK:-vectorizer_default}
+    name: ${VECTORIZER_NETWORK:-n8n-net}
