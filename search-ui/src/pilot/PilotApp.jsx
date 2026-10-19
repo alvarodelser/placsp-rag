@@ -1,47 +1,66 @@
 // search-ui/src/pilot/PilotApp.jsx — viewer for the document pilot, separate from the search app.
 // Reads only /api/pilot (the pilot_* Qdrant collections and the :Pilot graph).
+// One search on top (contracts, companies, authorities or all) narrows the list on the left and
+// lights its hits on the pilot's graph in the middle; a tender, a company or a document opens in
+// the middle instead, with the list kept.
 import { useEffect, useState } from 'react'
-import { overview, listTenders, health } from './pilotApi.js'
-import { CHANNEL } from './labels.js'
+import { listTenders, search, health, corpusGraph } from './pilotApi.js'
+import { CHANNEL, roleEs } from './labels.js'
 import { money } from '../format.js'
-import { CircleNotch } from '../icons.js'
+import { CircleNotch, X } from '../icons.js'
 import TenderView from './TenderView.jsx'
 import CompanyView from './CompanyView.jsx'
-import AskView from './AskView.jsx'
 import DocView from './DocView.jsx'
-import ExploreView from './ExploreView.jsx'
+import ForceCanvas from './ForceCanvas.jsx'
+import NodePanel from './NodePanel.jsx'
 import { go, parse, useHash } from './route.js'
 import './pilot.css'
 
+const SCOPES = [['tenders', 'Contratos'], ['companies', 'Empresas'], ['authorities', 'Órganos'], ['all', 'Todo']]
+
 export default function PilotApp() {
   const route = parse(useHash())
+  const [query, setQuery] = useState({ q: route.params.q || '', scope: 'tenders' })
+  const [res, setRes] = useState({ status: 'loading' })
+  const [problems, setProblems] = useState([])
+
+  useEffect(() => {
+    health().then((h) => setProblems(['qdrant', 'neo4j', 'vectorizer'].filter((k) => String(h[k]).startsWith('error'))
+      .map((k) => [k, String(h[k]).replace(/^error: /, '')]))).catch(() => {})
+  }, [])
+  useEffect(() => {
+    let live = true
+    setRes({ status: 'loading' })
+    const q = query.q.trim()
+    const p = q ? search({ q, scope: query.scope })
+      : listTenders({ limit: 200 }).then((d) => ({ tenders: d.results, organizations: [], latest: true }))
+    p.then((d) => live && setRes({ status: 'done', d })).catch((e) => live && setRes({ status: 'error', e: e.message }))
+    return () => { live = false }
+  }, [query])
+
+  const home = !['t', 'c'].includes(route.kind)
+  const current = route.kind === 't' ? route.id : route.kind === 'c' ? route.id : null
   return (
     <div className="pilot">
       <header>
         <div className="wrap header-top">
           <div className="brand">
             <h1>Piloto documental · PLACSP</h1>
-            <div className="sub">Todos los documentos de cada expediente, unificados en un objeto, un grafo y fragmentos</div>
           </div>
-          <nav className="pnav">
-            <button type="button" className={route.kind === 'home' || route.kind === 't' ? 'on' : ''} onClick={() => go('')}>Expedientes</button>
-            <button type="button" className={route.kind === 'explore' ? 'on' : ''} onClick={() => go('/explore')}>Explorar</button>
-            <button type="button" className={route.kind === 'ask' ? 'on' : ''} onClick={() => go('/ask')}>Preguntar</button>
-            <a href="#/">← Búsqueda</a>
-          </nav>
+          <SearchBar query={query} onSearch={(q) => { setQuery(q); if (!home) go('') }} />
+          <a className="pback" href="#/">← Búsqueda</a>
         </div>
       </header>
       <main>
-        <div className={`wrap playout ${['ask', 'explore'].includes(route.kind) || route.doc ? 'full' : ''}`}>
-          {!['ask', 'explore'].includes(route.kind) && !route.doc && <TenderList current={route.kind === 't' ? route.id : null} />}
+        {problems.map(([k, v]) => <div key={k} className="wrap err"><b>{k}</b>: {v}</div>)}
+        <div className={`wrap playout ${route.doc ? 'full' : ''}`}>
+          {!route.doc && <ResultList res={res} current={current} onOrg={(id) => go(`/c/${encodeURIComponent(id)}`)} />}
           <section className="pmain">
-            {route.kind === 'home' && <Overview />}
+            {home && <Landing res={res} />}
             {route.kind === 't' && !route.doc && <TenderView key={route.id} id={route.id} />}
             {route.kind === 't' && route.doc && <DocView key={`${route.id}/${route.doc}`} tenderId={route.id} sha={route.doc}
               focusChunk={route.params.c} focusEntity={route.params.e} />}
-            {route.kind === 'explore' && <ExploreView />}
             {route.kind === 'c' && <CompanyView key={route.id} id={route.id} />}
-            {route.kind === 'ask' && <AskView key={route.params.q || ''} initial={route.params.q || ''} />}
           </section>
         </div>
       </main>
@@ -49,97 +68,86 @@ export default function PilotApp() {
   )
 }
 
-function TenderList({ current }) {
-  const [q, setQ] = useState('')
-  const [channel, setChannel] = useState('')
-  const [state, setState] = useState({ status: 'loading' })
+function SearchBar({ query, onSearch }) {
+  const [q, setQ] = useState(query.q)
+  useEffect(() => setQ(query.q), [query.q])
+  return (
+    <form className="psearch" onSubmit={(e) => { e.preventDefault(); onSearch({ ...query, q }) }}>
+      <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar"
+        placeholder="Buscar por significado: «servicio de limpieza», «solvencia volumen de negocios», una empresa…" />
+      {q && <button type="button" className="icon-btn" aria-label="Borrar" onClick={() => { setQ(''); onSearch({ ...query, q: '' }) }}><X size={15} /></button>}
+      <span className="pg-modes" role="group" aria-label="Buscar en">
+        {SCOPES.map(([k, label]) => (
+          <button key={k} type="button" className={query.scope === k ? 'on' : ''} onClick={() => onSearch({ q, scope: k })}>{label}</button>
+        ))}
+      </span>
+    </form>
+  )
+}
 
-  async function run(query = q, ch = channel) {
-    setState({ status: 'loading' })
-    try {
-      setState({ status: 'done', d: await listTenders({ q: query.trim(), channel: ch, limit: 100 }) })
-    } catch (e) {
-      setState({ status: 'error', e: e.message })
-    }
-  }
-  useEffect(() => { run() }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
+function ResultList({ res, current, onOrg }) {
+  if (res.status === 'loading') return <aside className="plist"><div className="loading-state"><CircleNotch size={22} className="spinner" /></div></aside>
+  if (res.status === 'error') return <aside className="plist"><div className="err">{res.e}</div></aside>
+  const { tenders, organizations, latest } = res.d
   return (
     <aside className="plist">
-      <form onSubmit={(e) => { e.preventDefault(); run() }}>
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por significado…" />
-      </form>
-      <div className="chips">
-        {['', ...Object.keys(CHANNEL)].map((c) => (
-          <button key={c || 'all'} type="button" className={`chip linkchip ${channel === c ? 'on' : ''}`}
-            onClick={() => { setChannel(c); run(q, c) }}>{c ? CHANNEL[c] : 'Todos'}</button>
-        ))}
+      <div className="plist-head muted small">
+        {latest ? `${tenders.length} expedientes, los últimos primero`
+          : `${tenders.length ? `${tenders.length} expedientes` : ''}${tenders.length && organizations.length ? ' · ' : ''}${organizations.length ? `${organizations.length} organizaciones` : ''}` || 'Sin resultados'}
       </div>
-      {state.status === 'loading' && <div className="loading-state"><CircleNotch size={22} className="spinner" /></div>}
-      {state.status === 'error' && <div className="err">{state.e}</div>}
-      {state.status === 'done' && (
-        <ul>
-          {state.d.results.map((t) => (
-            <li key={t.tender_id}>
-              <button type="button" className={`pitem ${current === t.tender_id ? 'on' : ''}`} onClick={() => go(`/t/${t.tender_id}`)}>
-                <span className="pitem-top"><span className="badge">{CHANNEL[t.channel] || t.channel}</span>
-                  <span className="muted">{t.published}</span>{t.score != null && <span className="score">{t.score}</span>}</span>
-                <span className="pitem-name">{t.name}</span>
-                <span className="muted small">{t.authority?.name}</span>
-                <span className="muted small">{t.counts?.documents ?? 0} docs · {t.counts?.lots ?? 0} lotes{t.value != null ? ` · ${money(t.value)}` : ''}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul>
+        {!latest && tenders.length > 0 && organizations.length > 0 && <li className="plist-sec">Expedientes</li>}
+        {tenders.map((t) => (
+          <li key={t.tender_id}>
+            <button type="button" className={`pitem ${current === t.tender_id ? 'on' : ''}`} onClick={() => go(`/t/${t.tender_id}`)}>
+              <span className="pitem-top"><span className="badge">{CHANNEL[t.channel] || t.channel}</span>
+                <span className="muted">{t.published}</span></span>
+              <span className="pitem-name">{t.name}</span>
+              <span className="muted small">{t.authority?.name}</span>
+              <span className="muted small">{t.counts?.documents ?? 0} docs · {t.counts?.lots ?? 0} lotes{t.value != null ? ` · ${money(t.value)}` : ''}</span>
+              {(t.passages || []).slice(0, 1).map((p, i) => (
+                <span key={i} className="pitem-hit"><b>{roleEs(p.doc_role)}{p.page_from ? ` · pág. ${p.page_from}` : ''}</b> {p.text.slice(0, 220)}…</span>
+              ))}
+            </button>
+          </li>
+        ))}
+        {tenders.length > 0 && organizations.length > 0 && <li className="plist-sec">Organizaciones</li>}
+        {organizations.map((o) => (
+          <li key={o.id}>
+            <button type="button" className={`pitem ${current === o.id ? 'on' : ''}`} onClick={() => onOrg(o.id)}>
+              <span className="pitem-top">
+                {o.kinds.map((k) => <span key={k} className={`badge ${k === 'authority' ? 'org-auth' : 'org-co'}`}>{k === 'authority' ? 'Órgano' : 'Empresa'}</span>)}
+                <span className="muted">{o.tender_ids.length} exp.</span>
+              </span>
+              <span className="pitem-name">{o.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </aside>
   )
 }
 
-function Overview() {
-  const [state, setState] = useState({ status: 'loading' })
-  const [h, setH] = useState(null)
-  useEffect(() => {
-    overview().then((d) => setState({ status: 'done', d })).catch((e) => setState({ status: 'error', e: e.message }))
-    health().then(setH).catch(() => {})
-  }, [])
-  const problems = h ? ['qdrant', 'neo4j', 'vectorizer'].filter((k) => String(h[k]).startsWith('error')) : []
-  if (state.status === 'loading') return <div className="loading-state"><CircleNotch size={28} className="spinner" /></div>
-  if (state.status === 'error') return <div className="err">{state.e}</div>
-  const d = state.d
+// The pilot as one graph: tenders, their authorities and their companies; documents on request.
+function Landing({ res }) {
+  const [graph, setGraph] = useState(null)
+  const [selected, setSelected] = useState(null)
+  useEffect(() => { corpusGraph({ documents: true }).then(setGraph).catch((e) => setGraph({ error: e.message })) }, [])
+  const hits = res.status === 'done' && !res.d.latest
+    ? [...res.d.tenders.map((t) => `tender:${t.tender_id}`), ...res.d.organizations.map((o) => o.id)] : null
+
+  function open(n) {
+    if (n.label === 'Tender') go(`/t/${n.id.replace(/^tender:/, '')}`)
+    else if (['Organization', 'Company', 'Authority'].includes(n.label)) go(`/c/${encodeURIComponent(n.id)}`)
+  }
+  if (!graph) return <div className="loading-state"><CircleNotch size={28} className="spinner" /></div>
+  if (graph.error) return <div className="err">{graph.error}</div>
   return (
-    <div className="tv">
-      {problems.map((k) => <div key={k} className="err"><b>{k}</b>: {String(h[k]).replace(/^error: /, '')}</div>)}
-      <div className="tv-head">
-        <h2>Qué contiene el piloto</h2>
-        <div className="tv-counts">
-          <span><b>{d.counts.tenders}</b> expedientes</span>
-          <span><b>{d.counts.documents}</b> documentos</span>
-          <span><b>{d.counts.chunks.toLocaleString('es-ES')}</b> fragmentos</span>
-          <span><b>{d.counts.entities.toLocaleString('es-ES')}</b> entidades</span>
-          <span><b>{d.analysable}</b> analizables</span>
-        </div>
-        <div className="chips">{Object.entries(d.channels).map(([c, n]) => <span key={c} className="chip">{CHANNEL[c] || c} · {n}</span>)}</div>
-      </div>
-      <div className="tv-grid">
-        <section className="tv-card">
-          <h3>Empresas en más expedientes</h3>
-          <ul className="plain">{d.top_companies.map((c) => <li key={c.id}><button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(c.id)}`)}>{c.name}<span className="muted"> · {c.tenders}</span></button></li>)}</ul>
-        </section>
-        <section className="tv-card">
-          <h3>Órganos con más expedientes</h3>
-          <ul className="plain">{d.top_authorities.map((c) => <li key={c.id}><button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(c.id)}`)}>{c.name}<span className="muted"> · {c.tenders}</span></button></li>)}</ul>
-        </section>
-        <section className="tv-card wide">
-          <h3>Cómo usarlo</h3>
-          <ul className="plain">
-            <li><b>Expediente:</b> el objeto unificado (lotes, criterios, solvencia, resultado), sus documentos en orden y su grafo.</li>
-            <li><b>Grafo:</b> qué viene del feed y qué se extrajo de cada documento; pulsa un nodo para ver su evidencia y los fragmentos que lo mencionan.</li>
-            <li><b>Empresa:</b> en qué expedientes aparece, con qué papel, contra quién compite y para qué órganos trabaja.</li>
-            <li><b>Preguntar:</b> los fragmentos y entidades más cercanos a una pregunta, con su contexto en el grafo.</li>
-          </ul>
-        </section>
-      </div>
-    </div>
+    <>
+      <ForceCanvas graph={graph} selected={selected} onSelect={setSelected} onOpen={open} highlight={hits}
+        initiallyHidden={['Document']} height="calc(100vh - 150px)"
+        toolbar={<span className="pg-note">clic: detalle · doble clic: abrir</span>} />
+      {selected && <NodePanel id={selected} onSelect={setSelected} onClose={() => setSelected(null)} />}
+    </>
   )
 }

@@ -166,3 +166,21 @@ button.mini:hover:not(:disabled) { background: var(--accent-soft); color: var(--
 .dv-side { position: sticky; top: 86px; max-height: calc(100vh - 110px); overflow-y: auto; background: #fff; border: 1.5px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
 .dv-side .linkish.on { font-weight: 700; }
 @media (max-width: 900px) { .dv-body { grid-template-columns: 1fr; } .dv-side { position: static; } }
+
+/* Landing: one search on top, results on the left, the pilot's graph in the middle. */
+.pilot .header-top { gap: 18px; }
+.psearch { flex: 1; max-width: 820px; display: flex; gap: 8px; align-items: center; margin: 0; }
+.psearch input[type=search] { flex: 1; min-width: 0; }
+.psearch .pg-modes { margin: 0; flex-shrink: 0; }
+.psearch .pg-modes button { padding: 7px 12px; font-size: 13px; }
+.pback { color: var(--muted); font-size: 13px; text-decoration: none; white-space: nowrap; }
+.plist-head { padding: 0 2px; }
+.pitem-hit { font-size: 12px; color: #44506a; line-height: 1.45; border-left: 2px solid #fde68a; padding-left: 7px; margin-top: 4px; }
+.pitem-hit b { color: var(--muted); font-weight: 600; }
+.badge.org-auth { background: #e0f0fa; color: #0369a1; }
+.badge.org-co { background: #e3f4f1; color: #0f8a7e; }
+@media (max-width: 900px) {
+  .pilot .header-top { flex-wrap: wrap; }
+  .psearch { order: 3; flex-basis: 100%; flex-wrap: wrap; }
+}
+.plist-sec { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 6px 2px 0; }

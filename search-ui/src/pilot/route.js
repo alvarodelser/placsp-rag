@@ -1,4 +1,4 @@
-// search-ui/src/pilot/route.js — hash routes of the pilot viewer: #/pilot, #/pilot/t/<id>, #/pilot/c/<org>, #/pilot/ask?q=
+// search-ui/src/pilot/route.js — hash routes of the pilot viewer: #/pilot[?q=], #/pilot/t/<id>[/d/<sha>], #/pilot/c/<org>
 import { useEffect, useState } from 'react'
 
 export const isPilot = (hash = window.location.hash) => hash.startsWith('#/pilot')

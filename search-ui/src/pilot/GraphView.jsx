@@ -4,7 +4,7 @@
 //    the structure reads at a glance; dashed blue edges are provenance (which document says it).
 // Filled nodes come from the feed, outlined ones only from documents, half-filled from both.
 import { useMemo, useState } from 'react'
-import { nodeInfo } from './labels.js'
+import { nodeInfo, NOT_DRAWN } from './labels.js'
 import ForceCanvas from './ForceCanvas.jsx'
 
 
@@ -24,7 +24,7 @@ export default function GraphView(props) {
 const LANES = [
   ['Documentos', ['Document']],
   ['Expediente', ['Tender', 'Lot', 'Notice', 'Guarantee', 'ExecutionCondition', 'Modification']],
-  ['Pliegos', ['AwardCriterion', 'Requirement', 'TechnicalRequirement', 'Qualification', 'TeamProfile', 'Deliverable', 'Penalty']],
+  ['Pliegos', ['AwardCriterion', 'TeamProfile', 'Deliverable', 'Penalty']],
   ['Resultado y empresas', ['Result', 'Bid', 'Contract', 'Organization', 'JointVenture']],
 ]
 const LANE_OF = Object.fromEntries(LANES.flatMap(([, labels], i) => labels.map((l) => [l, i])))
@@ -35,7 +35,8 @@ function fill(n) {
   return n.source === 'documents' ? '#fff' : n.source === 'feed+documents' ? `url(#half-${n.label})` : c
 }
 
-function LaneView({ graph, selected, onSelect, modes }) {
+function LaneView({ graph: all, selected, onSelect, modes }) {
+  const graph = useMemo(() => ({ nodes: all.nodes.filter((n) => !NOT_DRAWN.has(n.label)), edges: all.edges }), [all])
   const { pos, height, edges, labels } = useMemo(() => {
     const seqOf = {}
     graph.edges.forEach((e) => { if (e.rel === 'HAS_DOCUMENT') seqOf[e.dst] = e.seq })

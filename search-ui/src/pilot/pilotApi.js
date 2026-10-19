@@ -19,6 +19,7 @@ export const getNode = (id) => get('/node', { id })
 export const getCompany = (id) => get(`/companies/${encodeURIComponent(id)}`)
 export const ask = (params) => get('/ask', params)
 export const getDocument = (sha, tender, start = 0, limit = 40) => get(`/documents/${sha}`, { tender, start, limit })
-export const corpusGraph = () => get('/graph')
+export const corpusGraph = (params) => get('/graph', params)
+export const search = (params) => get('/search', params)
 export const health = () => get('/health')
 export const fileUrl = (sha, page) => `${BASE}/file/${sha}${page ? `#page=${page}` : ''}`

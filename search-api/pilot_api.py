@@ -13,6 +13,7 @@ the `:Pilot` nodes in Neo4j, and touches nothing the search above uses.
 import json
 import os
 import re
+import unicodedata
 import uuid
 import warnings
 from collections import Counter, defaultdict
@@ -36,6 +37,7 @@ VECTORIZER_URL = os.getenv("VECTORIZER_URL", "http://localhost:8089").rstrip("/"
 # Same namespace as pilot/placsp_pilot/index.py, so point ids can be computed instead of searched.
 NS = uuid.UUID("6f1c3a52-5b0e-4f37-9a1e-7d2b8c4e0a11")
 SHARED = ("org:", "jv:", "qualification:")          # nodes that span tenders
+MARGIN = 0.08                                      # /search keeps hits within this of the best
 CHUNK_RELS = ["HAS_CHUNK", "NEXT", "MENTIONS", "MENTIONED_IN"]
 JSON_PROPS = ("detail", "conflicts", "attributes")
 HEAVY = {"evidence", "descriptions", "documents", "file_path", "aliases", "text"}
@@ -258,12 +260,12 @@ def document(sha: str, tender: str, start: int = Query(0, ge=0), limit: int = Qu
 
 
 @router.get("/graph")
-def corpus_graph(cpv: bool = True, qualifications: bool = True):
-    """Everything the expedientes share: tenders, the authorities that publish them, the companies
-    that bid for and win them (roles from the unified tender object), the qualifications they ask
-    for and, optionally, CPV divisions as sectors. A tender's own subgraph is loaded on demand."""
-    tenders = [p.payload for p in scroll_all("tenders", fields=["tender_id", "name", "channel", "status", "value",
-                                                               "authority", "companies", "cpv", "counts"])]
+def corpus_graph(documents: bool = False):
+    """What the expedientes share: tenders, the authorities that publish them and the companies
+    that bid for and win them (roles from the unified tender object); with `documents`, each
+    tender's documents too. A tender's own subgraph is at /tenders/{id}/graph."""
+    fields = ["tender_id", "name", "channel", "status", "value", "authority", "companies", "counts"]
+    tenders = [p.payload for p in scroll_all("tenders", fields=fields + (["documents"] if documents else []))]
     nodes, edges = {}, []
     for t in tenders:
         tid = f"tender:{t['tender_id']}"
@@ -279,19 +281,72 @@ def corpus_graph(cpv: bool = True, qualifications: bool = True):
                 n["kinds"].append("Company")
             for role in c.get("roles") or []:
                 edges.append({"src": c["id"], "dst": tid, "rel": role.upper()})
-        if cpv:
-            for code in {(x or "")[:2] for x in t.get("cpv") or [] if x}:
-                sid = f"cpv:{code}"
-                nodes.setdefault(sid, {"id": sid, "label": "Sector", "name": f"CPV {code}"})
-                edges.append({"src": tid, "dst": sid, "rel": "IN_SECTOR"})
-    if qualifications:
-        with get_driver().session() as s:
-            for r in s.run(f"MATCH (t:`{LABEL}Tender`)-[:HAS_LOT]->()-[:REQUIRES]->()-[:ACCEPTS]->(q:`{LABEL}Qualification`) "
-                           "RETURN DISTINCT t.id AS t, q.id AS q, q.name AS name"):
-                if r["t"] in nodes:
-                    nodes.setdefault(r["q"], {"id": r["q"], "label": "Qualification", "name": r["name"]})
-                    edges.append({"src": r["t"], "dst": r["q"], "rel": "ASKS_FOR"})
+        for d in t.get("documents") or []:
+            if not d.get("sha256"):
+                continue
+            did = f"doc:{d['sha256']}"
+            nodes.setdefault(did, {"id": did, "label": "Document", "role": d.get("role"), "title": d.get("title") or d.get("filename")})
+            edges.append({"src": tid, "dst": did, "rel": "HAS_DOCUMENT", "seq": d.get("seq")})
     return {"nodes": list(nodes.values()), "edges": edges}
+
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", " ", s).strip()
+
+
+@router.get("/search")
+def search(q: str, scope: str = Query("tenders", pattern="^(all|tenders|companies|authorities)$"),
+           k: int = Query(30, ge=1, le=100)):
+    """One search for the landing page. Tenders match by their description or by any of their
+    chunks (with the best passages shown); companies and authorities by name, then by meaning.
+    Only what scores within MARGIN of the best hit is kept, so the list narrows to what fits."""
+    q = q.strip()
+    if not q:
+        raise HTTPException(400, "empty query")
+    vec = embed(q)
+    out = {"tenders": [], "organizations": []}
+    if scope in ("all", "tenders"):
+        best, passages = {}, defaultdict(list)
+        for p in qdrant().query_points(coll("tenders"), query=vec, using="description", limit=k).points:
+            best[p.payload["tender_id"]] = p.score
+        for p in qdrant().query_points(coll("chunks"), query=vec, using="text", limit=3 * k, with_payload=True).points:
+            t = p.payload["tender_id"]
+            best[t] = max(best.get(t, 0), p.score)
+            if len(passages[t]) < 2:
+                passages[t].append(chunk_json(p.payload, p.score) | {"text": (p.payload.get("text") or "")[:360]})
+        top = max(best.values(), default=0)
+        ids = sorted((t for t, sc in best.items() if sc >= top - MARGIN), key=lambda t: -best[t])[:k]
+        cards = {p.payload["tender_id"]: card(p.payload) for p in
+                 qdrant().retrieve(coll("tenders"), ids=[point_id("tender", t) for t in ids], with_payload=CARD)}
+        out["tenders"] = [cards[t] | {"score": round(best[t], 3), "passages": passages.get(t, [])} for t in ids if t in cards]
+    if scope != "tenders":
+        orgs = {}       # the organizations on the landing graph: authorities and companies of the tenders
+        for p in scroll_all("tenders", fields=["tender_id", "authority", "companies"]):
+            t = p.payload
+            if t.get("authority"):
+                o = orgs.setdefault(t["authority"]["id"], {"id": t["authority"]["id"], "name": t["authority"].get("name"),
+                                                            "kinds": set(), "tender_ids": set()})
+                o["kinds"].add("authority"); o["tender_ids"].add(t["tender_id"])
+            for c in t.get("companies") or []:
+                o = orgs.setdefault(c["id"], {"id": c["id"], "name": c.get("name"), "kinds": set(), "tender_ids": set()})
+                o["kinds"].add("company"); o["tender_ids"].add(t["tender_id"])
+        want = {"companies": {"company"}, "authorities": {"authority"}}.get(scope, {"company", "authority"})
+        orgs = {i: o for i, o in orgs.items() if o["kinds"] & want}
+        terms = _norm(q).split()
+        score = {i: 1.0 for i, o in orgs.items() if terms and all(w in _norm(o["name"]) for w in terms)}
+        from qdrant_client import models as m
+        hits = qdrant().query_points(coll("entities"), query=vec, using="description", limit=3 * k, with_payload=["node_id"],
+                                     query_filter=m.Filter(must=[m.FieldCondition(key="node_id", match=m.MatchAny(any=list(orgs)))])
+                                     if orgs else None).points
+        top = max((p.score for p in hits), default=0)
+        for p in hits:
+            if p.payload["node_id"] in orgs and p.score >= top - MARGIN:
+                score.setdefault(p.payload["node_id"], p.score)
+        ranked = sorted(score, key=lambda i: (-score[i], orgs[i]["name"] or ""))[:k]
+        out["organizations"] = [{"id": i, "name": orgs[i]["name"], "kinds": sorted(orgs[i]["kinds"]), "score": round(score[i], 3),
+                                 "tender_ids": sorted(orgs[i]["tender_ids"])} for i in ranked]
+    return out
 
 
 @router.get("/node")

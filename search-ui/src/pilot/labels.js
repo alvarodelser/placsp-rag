@@ -24,6 +24,9 @@ export const NODE = {
   Notice:              { es: 'Anuncio',              color: '#94a3b8' },
   Sector:              { es: 'Sector (CPV)',         color: '#a3a3a3' },
 }
+// Never drawn on a graph: they are read in the tender's lists, and on a map they only crowd it.
+export const NOT_DRAWN = new Set(['Requirement', 'TechnicalRequirement', 'Qualification', 'Sector'])
+
 export const nodeInfo = (label) => NODE[label] || { es: label, color: '#94a3b8' }
 
 export const ROLE = {

@@ -4,13 +4,15 @@
 //    is a short, stiff spring, so what belongs together sits together; incidental links (a company
 //    across tenders, a sector) are long and loose;
 //  - a bid is drawn as the link it is, company to lot, not as a node of its own;
-//  - a document hangs only from its tender: provenance is read in the document view, not drawn here;
+//  - a document hangs only from its tender, drawn as a page: provenance is read in the document view;
+//  - requirements, qualifications and sectors are never drawn (NOT_DRAWN): they belong in the lists;
 //  - size grows with the logarithm of the links a node has, the subject (pinned) is largest;
 //  - names are a budget, given first to what the pointer is on and what it reaches, then by links.
+// `highlight` (search hits) lights those nodes and their neighbours and frames them.
 // Drag a node to move it, drag the background to pan, wheel to zoom, click to select, double-click to open.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from 'd3-force'
-import { nodeInfo } from './labels.js'
+import { nodeInfo, NOT_DRAWN } from './labels.js'
 
 const BELONGS = new Set(['HAS_LOT', 'HAS_CRITERION', 'REQUIRES', 'INCLUDES', 'HAS_RESULT', 'HAS_NOTICE', 'HAS_CONDITION',
   'HAS_DOCUMENT', 'WINNER', 'RESULTED_IN', 'DETAILED_BY', 'ACCEPTS', 'PUBLISHED', 'HAS_CONTRACT', 'CONTRACT_FOR'])
@@ -19,6 +21,7 @@ const NAMES_PER_PX = 1 / 26000      // how many names a screen carries: one per 
 
 // Bids become company–lot links; provenance and sequence edges are left to the other views.
 export function prepare(graph) {
+  graph = { nodes: graph.nodes.filter((n) => !NOT_DRAWN.has(n.label)), edges: graph.edges }
   const byId = Object.fromEntries(graph.nodes.map((n) => [n.id, n]))
   const bids = new Set(graph.nodes.filter((n) => n.label === 'Bid').map((n) => n.id))
   const by = (rel, side) => {
@@ -48,29 +51,33 @@ export function prepare(graph) {
   return { nodes: shown, edges }
 }
 
-export default function ForceCanvas({ graph, selected, onSelect, onOpen, pinned, height = 620, toolbar }) {
+export default function ForceCanvas({ graph, selected, onSelect, onOpen, pinned, height = 620, toolbar, highlight, initiallyHidden = [] }) {
   const wrap = useRef(null), canvas = useRef(null)
   const st = useRef({ x: 0, y: 0, k: 1, hover: null, drag: null, pan: null, fitted: false, moved: false })
-  const [hidden, setHidden] = useState(new Set())
+  const [hidden, setHidden] = useState(() => new Set(initiallyHidden))
   const [, redraw] = useState(0)
   st.current.selected = selected      // read by draw(), which the simulation calls on every tick
   st.current.pinned = pinned
+  st.current.highlight = highlight?.length ? new Set(highlight) : null
 
   const { nodes, links, counts } = useMemo(() => {
     const g = prepare(graph)
     const keep = g.nodes.filter((n) => !hidden.has(n.label))
     const ids = new Set(keep.map((n) => n.id))
     const prev = Object.fromEntries((st.current.nodes || []).map((n) => [n.id, n]))
-    const nodes = keep.map((n) => Object.assign(prev[n.id] || {}, n, { deg: 0 }))
+    const all = keep.map((n) => Object.assign(prev[n.id] || {}, n, { deg: 0 }))
     const links = g.edges.filter((e) => ids.has(e.src) && ids.has(e.dst)).map((e) => ({ ...e, source: e.src, target: e.dst }))
-    const byId = Object.fromEntries(nodes.map((n) => [n.id, n]))
+    const byId = Object.fromEntries(all.map((n) => [n.id, n]))
     for (const l of links) { byId[l.src].deg++; byId[l.dst].deg++ }
+    // Linked to nothing drawn (a company a document only mentions): listed in the panels, not drawn.
+    const nodes = all.filter((n) => n.deg > 0 || n.label === 'Tender' || n.id === pinned)
+    const linked = new Set(g.edges.flatMap((e) => [e.src, e.dst]))
     const counts = {}
-    for (const n of g.nodes) counts[n.label] = (counts[n.label] || 0) + 1
+    for (const n of g.nodes) if (linked.has(n.id) || n.label === 'Tender') counts[n.label] = (counts[n.label] || 0) + 1
     return { nodes, links, counts }
-  }, [graph, hidden])
+  }, [graph, hidden, pinned])
 
-  const radius = (n) => (n.label === 'Document' ? 3.5 : 4.5 + 2 * Math.log2(1 + n.deg)) * (n.id === pinned ? 2.2 : 1)
+  const radius = (n) => (n.label === 'Document' ? 4.5 : 4.5 + 2 * Math.log2(1 + n.deg)) * (n.id === pinned ? 1.6 : 1)
 
   useEffect(() => {
     const s = st.current
@@ -90,21 +97,40 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, pinned,
       .force('x', forceX(0).strength(0.03)).force('y', forceY(0).strength(0.03))
       .alphaDecay(0.03)
       .on('tick', draw)
-      .on('end', () => { if (!s.touched) { fit(); draw() } })   // settle, then frame it, unless the reader moved the view
+      .on('end', () => { if (!s.touched) { fit(s.highlight ? lit(s) : null); draw() } })   // settle, then frame it, unless the reader moved the view
     s.sim = sim
     s.links = links
     return () => sim.stop()
   }, [nodes, links, pinned]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { draw() }, [selected]) // eslint-disable-line react-hooks/exhaustive-deps
+  // New search hits: frame them and what they touch (once the layout exists), else the whole graph.
+  useEffect(() => {
+    const s = st.current
+    if (!s.nodes) return
+    s.touched = false
+    fit(s.highlight ? lit(s) : null)
+    draw()
+  }, [highlight]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function fit() {
+  function lit(s) {
+    const out = new Set()
+    for (const id of s.highlight || []) {
+      if (!s.byId[id]) continue
+      out.add(id)
+      for (const m of s.adj[id] || []) if (s.byId[m].label !== 'Document') out.add(m)
+    }
+    return out
+  }
+
+  function fit(only) {
     const s = st.current, c = canvas.current
-    if (!c || !s.nodes?.length) return
-    const xs = s.nodes.map((n) => n.x), ys = s.nodes.map((n) => n.y)
+    const ns = only?.size ? s.nodes.filter((n) => only.has(n.id)) : s.nodes
+    if (!c || !ns?.length || ns.some((n) => n.x == null)) return
+    const xs = ns.map((n) => n.x), ys = ns.map((n) => n.y)
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
     const W = c.clientWidth, H = c.clientHeight
-    s.k = Math.min(2, 0.9 * Math.min(W / Math.max(40, x1 - x0), H / Math.max(40, y1 - y0)))
+    s.k = Math.min(1.3, 0.9 * Math.min(W / Math.max(40, x1 - x0), H / Math.max(40, y1 - y0)))
     s.x = W / 2 - s.k * (x0 + x1) / 2
     s.y = H / 2 - s.k * (y0 + y1) / 2
   }
@@ -114,16 +140,18 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, pinned,
     if (!c || !s.nodes) return
     const dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight
     if (c.width !== W * dpr) { c.width = W * dpr; c.height = H * dpr }
-    if (!s.fitted && s.sim && s.sim.alpha() < 0.35) { fit(); s.fitted = true }
+    if (!s.fitted && s.sim && s.sim.alpha() < 0.35) { fit(s.highlight ? lit(s) : null); s.fitted = true }
     const ctx = c.getContext('2d')
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, W, H)
     ctx.translate(s.x, s.y)
     ctx.scale(s.k, s.k)
     const focus = s.hover || (s.selected && s.byId[s.selected]) || null
-    const near = focus ? new Set([focus.id, ...(s.adj[focus.id] || [])]) : null
+    const hits = !focus && s.highlight ? new Set([...s.highlight].filter((id) => s.byId[id])) : null
+    const near = focus ? new Set([focus.id, ...(s.adj[focus.id] || [])]) : hits ? lit(s) : null
     for (const l of s.links) {
-      const on = near && (l.source.id === focus.id || l.target.id === focus.id)
+      const on = focus ? (l.source.id === focus.id || l.target.id === focus.id)
+        : hits ? (hits.has(l.source.id) || hits.has(l.target.id)) && near.has(l.source.id) && near.has(l.target.id) : false
       ctx.globalAlpha = on ? 0.9 : near ? 0.06 : BELONGS.has(l.rel) ? 0.35 : 0.16
       ctx.strokeStyle = on ? '#4f46e5' : l.rel === 'ADJUDICATARIA' ? '#1a7a4d' : '#8b95a7'
       ctx.lineWidth = (on ? 1.6 : l.rel === 'ADJUDICATARIA' ? 1.4 : 0.8) / Math.sqrt(s.k)
@@ -132,6 +160,10 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, pinned,
     for (const n of s.nodes) {
       const col = nodeInfo(n.label).color
       ctx.globalAlpha = near && !near.has(n.id) ? 0.15 : 1
+      if (hits?.has(n.id)) {                         // a search hit: a halo
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 5 / s.k, 0, Math.PI * 2); ctx.fillStyle = '#fde68a'; ctx.fill()
+      }
+      if (n.label === 'Document') { page(ctx, n, col, n.id === s.selected ? 2.4 / s.k : 1.2 / s.k); continue }
       ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
       ctx.fillStyle = n.source === 'documents' ? '#fff' : col
       ctx.fill()
@@ -145,7 +177,7 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, pinned,
     // Names: a budget, first what is in focus, then the most connected.
     const budget = Math.max(8, Math.round(W * H * NAMES_PER_PX))
     const order = [...s.nodes].sort((a, b) => rank(b) - rank(a))
-    function rank(n) { return (n.id === s.selected ? 1e7 : 0) + (near?.has(n.id) ? 1e6 : 0) + (n.id === s.pinned ? 1e5 : 0) + n.deg * 10 + n.r }
+    function rank(n) { return (n.id === s.selected ? 1e7 : 0) + (hits?.has(n.id) ? 2e6 : 0) + (near?.has(n.id) ? 1e6 : 0) + (n.id === s.pinned ? 1e5 : 0) + n.deg * 10 + n.r }
     ctx.globalAlpha = 1
     ctx.font = `${11 / s.k}px Inter, system-ui, sans-serif`
     ctx.textAlign = 'center'
@@ -231,8 +263,17 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, pinned,
   )
 }
 
+// A document is a page with a folded corner, not a dot.
+function page(ctx, n, col, lw) {
+  const w = n.r * 1.5, h = n.r * 2, f = w * 0.4, x = n.x - w / 2, y = n.y - h / 2
+  ctx.beginPath()
+  ctx.moveTo(x, y); ctx.lineTo(x + w - f, y); ctx.lineTo(x + w, y + f); ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h); ctx.closePath()
+  ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = col; ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(x + w - f, y); ctx.lineTo(x + w - f, y + f); ctx.lineTo(x + w, y + f); ctx.stroke()
+}
+
 function short(n) {
   if (n.label === 'Lot') return `Lote ${n.number || ''}`.trim()
-  const s = n.name || n.title || ''
+  const s = (n.name || n.title || '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
   return s.length > 30 ? `${s.slice(0, 28)}…` : s
 }
