@@ -162,7 +162,7 @@ def _feed_skeleton(g: Graph, eid: str, e, t: dict, tender_desc: str | None) -> t
                  contract_type=(tender.get("contract_type") or {}).get("label"),
                  subtype=(tender.get("subtype") or {}).get("label"),
                  procedure=(tender.get("procedure") or {}).get("label"), sara=tender.get("sara"),
-                 value=tender.get("value_estimated"), budget=tender.get("budget_tax_excl"),
+                 value=tender.get("value_estimated"), budget=tender.get("budget_tax_excl"), budget_total=tender.get("budget_total"),
                  cpv=tender.get("cpv"), nuts=(tender.get("location") or {}).get("nuts"),
                  duration=tender.get("duration"), extension=tender.get("extension"),
                  published=min([n["published"] for n in t.get("notices", []) if n.get("published")] or [None]),

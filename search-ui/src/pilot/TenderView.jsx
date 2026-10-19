@@ -45,12 +45,9 @@ export default function TenderView({ id }) {
         <div className="tv-dates">
           {t.status && <span className={`badge st ${statusClass(t.status)}`}>{t.status}</span>}
           {t.published && <span>Publicado <b>{t.published}</b></span>}
-          {t.deadline && <span>Fin de plazo <b>{typeof t.deadline === 'string' ? t.deadline : t.deadline.date}</b></span>}
+          {t.deadline && <Deadline date={typeof t.deadline === 'string' ? t.deadline : t.deadline.date} />}
         </div>
-        <div className="money">
-          {t.value != null && <span>Valor estimado <b>{money(t.value)}</b></span>}
-          {t.budget != null && <span>Presupuesto <b>{money(typeof t.budget === 'object' ? t.budget.amount_tax_excl : t.budget)}</b></span>}
-        </div>
+        <Money value={t.value} budget={typeof t.budget === 'object' ? t.budget?.amount_tax_excl : t.budget} total={t.budget_total} />
         {t.authority && (
           <div className="row">Órgano de contratación: <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(t.authority.id)}`)}>{t.authority.name}</button></div>
         )}
@@ -85,10 +82,10 @@ function Summary({ t }) {
           <p className="tv-desc">{t.description || 'Sin descripción consolidada.'}</p>
           <dl className="tv-facts">
             {(t.cpv || []).length > 0 && (
-              <div><dt>CPV</dt><dd>{t.cpv.map((c) => <div key={c}><span className="mono">{c}</span> {cpvLabel(c)}
+              <div><dt>CPV</dt><dd>{t.cpv.map((c) => <div key={c} title={c}>{cpvLabel(c) || c}
                 {cpvDivision(c) && <span className="muted"> · {cpvDivision(c)}</span>}</div>)}</dd></div>
             )}
-            {t.nuts && <div><dt>Lugar</dt><dd>{nutsLabel(t.nuts)} <span className="mono muted">{t.nuts}</span></dd></div>}
+            {t.nuts && <div><dt>Lugar</dt><dd title={t.nuts}>{nutsLabel(t.nuts)}</dd></div>}
             {t.duration && <div><dt>Duración</dt><dd>{fmtDuration(t.duration)}{t.extension && <div className="muted small">Prórrogas: {t.extension}</div>}</dd></div>}
           </dl>
           {t.analysable === false && <p className="row">No analizable: {t.skip_reason}</p>}
@@ -105,7 +102,7 @@ function Summary({ t }) {
         <section className="tv-card">
           <h3>Cronología</h3>
           <ol className="timeline">
-            {(t.timeline || []).map((e, i) => {
+            {timeline(t).map((e, i) => {
               const d = e.sha256 && docs[e.sha256]
               return (
                 <li key={i}><time>{e.date || '—'}</time>
@@ -147,6 +144,41 @@ function guaranteeName(name) {
   const n = name === 'Final' ? 'definitiva' : name || ''
   return /^garant/i.test(n) ? n : `Garantía ${n}`
 }
+
+// Valor estimado: everything the contract can reach (extensions, modifications, options), no VAT.
+// Presupuesto base: the most the authority pays for the base contract, no VAT; the bids' ceiling.
+// Without extensions or options they are the same figure, shown once.
+function Money({ value, budget, total, inline = false }) {
+  const same = value != null && budget != null && Math.abs(value - budget) < 0.5
+  const parts = []
+  if (same) parts.push(<span key="s" title="Sin prórrogas ni modificaciones previstas, el valor estimado y el presupuesto base coinciden">Presupuesto base y valor estimado <b>{money(budget)}</b></span>)
+  else {
+    if (budget != null) parts.push(<span key="b" title="Lo máximo que paga el órgano por el contrato base, sin IVA: el techo de las ofertas">Presupuesto base <b>{money(budget)}</b></span>)
+    if (value != null) parts.push(<span key="v" title="Todo lo que puede llegar a valer el contrato (prórrogas, modificaciones, opciones), sin IVA">Valor estimado <b>{money(value)}</b></span>)
+  }
+  if (total != null && budget != null && Math.abs(total - budget) >= 0.5) parts.push(<span key="t" className="muted">{money(total)} con IVA</span>)
+  return inline ? <span className="money-inline">{parts}</span> : <div className="money">{parts}</div>
+}
+
+function Deadline({ date }) {
+  const d = new Date(`${date}T23:59:59`)
+  const days = Math.ceil((d - new Date()) / 86400000)
+  const left = Number.isNaN(days) ? '' : days > 1 ? `quedan ${days} días` : days === 1 ? 'queda 1 día' : days === 0 ? 'último día' : 'cerrado'
+  return <span>Fin de plazo <b>{date}</b>{left && <span className={days >= 0 ? 'dl-open' : 'muted'}> ({left})</span>}</span>
+}
+
+// The same document can enter the timeline through several notices: each once, at its first date.
+function timeline(t) {
+  const seen = new Set()
+  return (t.timeline || []).filter((e) => {
+    const k = e.sha256 || `${e.date}|${e.event}`
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+}
+
+const placeName = (s) => s.replace(/\b([A-ZÁÉÍÓÚÑ'][A-ZÁÉÍÓÚÑ' ]+)\b/g, (w) => (w.length > 3 ? w.charAt(0) + w.slice(1).toLowerCase() : w))
 
 function cpvLabel(code) {
   return (cpvMap[String(code).slice(0, 8)] || '').replace(/\.$/, '')
@@ -198,13 +230,12 @@ function Lots({ t }) {
         <h3>{l.implicit || lots.length === 1 ? 'Lote único' : `Lote ${l.number}`}{l.name && !/^lote\s*\d*$/i.test(l.name.trim()) && <span className="muted"> · {l.name}</span>}</h3>
         {l.description && <p className="tv-desc">{l.description}</p>}
         <dl className="tv-facts">
-          {l.value != null && <div><dt>Valor estimado</dt><dd>{money(l.value)}</dd></div>}
-          {l.budget != null && <div><dt>Presupuesto</dt><dd>{money(l.budget)} sin IVA{l.budget_total != null && <span className="muted"> · {money(l.budget_total)} con IVA</span>}</dd></div>}
+          {(l.value != null || l.budget != null) && <div><dt>Importe</dt><dd><Money value={l.value} budget={l.budget} total={l.budget_total} inline /></dd></div>}
           {(l.cpv || []).length > 0 && (
-            <div><dt>CPV</dt><dd>{l.cpv.map((c) => <div key={c}><span className="mono">{c}</span> {cpvLabel(c)}
+            <div><dt>CPV</dt><dd>{l.cpv.map((c) => <div key={c} title={c}>{cpvLabel(c) || c}
               {cpvDivision(c) && <span className="muted"> · {cpvDivision(c)}</span>}</div>)}</dd></div>
           )}
-          {(l.place || l.nuts) && <div><dt>Lugar</dt><dd>{l.place || nutsLabel(l.nuts)}{l.nuts && <span className="mono muted"> {l.nuts}</span>}</dd></div>}
+          {(l.place || l.nuts) && <div><dt>Lugar</dt><dd title={l.nuts || ''}>{l.place ? placeName(l.place) : nutsLabel(l.nuts)}</dd></div>}
           {(l.awarded_to || []).length > 0 && <div><dt>Adjudicataria</dt><dd>{l.awarded_to.map((o) => (
             <button key={o.id} type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(o.id)}`)}>{o.name}</button>))}</dd></div>}
           {l.result?.bids_received != null && <div><dt>Ofertas recibidas</dt><dd>{l.result.bids_received}</dd></div>}
@@ -258,7 +289,7 @@ function Criteria({ lot }) {
         </div>
       )}
       <table className="ptable cr-table">
-        <thead><tr><th>Criterio</th><th>Tipo</th><th className="num">Puntos</th><th>Peso</th><th /></tr></thead>
+        <thead><tr><th>Criterio</th><th className="num">Puntos</th><th>Peso</th><th /></tr></thead>
         <tbody>
           {cs.map((c, k) => {
             const model = c.formula_model || guessModel([c.detail?.formula, c.formula].filter(Boolean).join('\n'))
@@ -267,14 +298,14 @@ function Criteria({ lot }) {
               <Fragment key={k}>
                 <tr>
                   <td>{c.id ? <SourceHover id={c.id}><span className="cr-name">{c.name}</span></SourceHover> : c.name}
+                    {CRIT_KIND[c.subtype] && <span className="cr-kind" style={{ color: CRIT_COLOR[c.subtype] }}> · {CRIT_KIND[c.subtype]}</span>}
                     {c.formula && !c.formula_model && <div className="muted small">{c.formula}</div>}
                     {c.conflicts && <div className="small warn-text">Discrepancia: {Object.entries(c.conflicts).map(([key, vs]) => `${key} ${vs.map((v) => v.value).join(' / ')}`).join('; ')}</div>}</td>
-                  <td>{CRIT_KIND[c.subtype] || c.subtype || '—'}</td>
                   <td className="num">{c.points != null ? fmtNum(c.points) : '—'}</td>
                   <td className="cr-w">{c.points ? <><span className="cr-wbar"><i style={{ width: `${pct(c.points)}%`, background: CRIT_COLOR[c.subtype] || '#94a3b8' }} /></span> {fmtNum(pct(c.points))} %</> : null}</td>
                   <td>{model && <button type="button" className="linkish small" onClick={() => setOpen(isOpen ? null : k)}>{isOpen ? 'Ocultar' : 'Ver fórmula'}</button>}</td>
                 </tr>
-                {isOpen && model && <tr className="cr-fx"><td colSpan={5}><FormulaView model={model} points={c.points} /></td></tr>}
+                {isOpen && model && <tr className="cr-fx"><td colSpan={4}><FormulaView model={model} points={c.points} /></td></tr>}
               </Fragment>
             )
           })}

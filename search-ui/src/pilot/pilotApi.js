@@ -42,7 +42,7 @@ export async function answer(params, onEvent, signal) {
   if (buf.trim()) onEvent(JSON.parse(buf))
 }
 export const getDocument = (sha, tender, start = 0, limit = 40, entity = '') => get(`/documents/${sha}`, { tender, start, limit, entity })
-export const docPreview = (sha, tender) => get(`/documents/${sha}/preview`, { tender })
+export const docPreview = (sha, tender) => get(`/documents/${sha}/preview`, { tender, spans: 0 })
 export const corpusGraph = (params) => get('/graph', params)
 export const search = (params) => get('/search', params)
 export const health = () => get('/health')

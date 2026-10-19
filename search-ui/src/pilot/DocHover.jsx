@@ -1,9 +1,9 @@
-// search-ui/src/pilot/DocHover.jsx — a document at a glance, on hover: its role, date and summary,
-// and the passages where the pipeline found what matters most in it (criteria, requirements,
-// guarantees first) with the found name marked. Wrap any trigger with it; clicking is the caller's.
+// search-ui/src/pilot/DocHover.jsx — a document at a glance, on hover: its role, date, pages and
+// summary. Wrap any trigger with it; clicking is the caller's. (Where an entity was found is
+// SourceHover's job: here nothing is marked.)
 import { useRef, useState } from 'react'
 import { docPreview } from './pilotApi.js'
-import { nodeInfo, roleEs } from './labels.js'
+import { roleEs } from './labels.js'
 import { CircleNotch } from '../icons.js'
 
 const cache = new Map()      // sha|tender -> promise: a preview is fetched once per page load
@@ -57,17 +57,6 @@ function Preview({ d }) {
       </div>
       <div className="dh-title">{doc.filename || doc.title}</div>
       {doc.summary && <p className="dh-sum">{doc.summary}</p>}
-      {d.spans.length > 0 && (
-        <div className="dh-spans">
-          <div className="np-rel">Qué se encontró <span>{d.mentions} menciones</span></div>
-          {d.spans.map((s) => (
-            <div key={s.entity_id} className="dh-span">
-              <span className="dh-kind" style={{ color: nodeInfo(s.label).color }}>{nodeInfo(s.label).es}{s.page ? ` · pág. ${s.page}` : ''}</span>
-              <p>…{s.before}<mark style={{ borderColor: nodeInfo(s.label).color }}>{s.mark}</mark>{s.after}…</p>
-            </div>
-          ))}
-        </div>
-      )}
       <div className="dh-foot">Clic para leerlo con sus anotaciones</div>
     </>
   )

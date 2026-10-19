@@ -44,6 +44,7 @@ function HtmlPane({ sha, target }) {
   useEffect(() => {
     const doc = frame.current?.contentDocument
     if (!doc?.body || !target?.quote) return
+    doc.querySelectorAll('mark[data-hl] > span').forEach((t) => t.remove())       // the old tag, then its frame
     doc.querySelectorAll('mark[data-hl]').forEach((m) => m.replaceWith(...m.childNodes))
     const words = norm(target.quote).split(' ').slice(0, 8).join(' ')
     const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
@@ -51,7 +52,13 @@ function HtmlPane({ sha, target }) {
       if (!norm(n.textContent).includes(words)) continue
       const m = doc.createElement('mark')
       m.dataset.hl = '1'
-      m.style.cssText = 'background:#fde68a;outline:1.5px solid #d97706'
+      m.style.cssText = 'position:relative;display:inline-block;background:#fffdf5;border:2px solid #d97706;border-radius:6px;padding:16px 6px 4px'
+      if (target.tag) {
+        const t = doc.createElement('span')
+        t.textContent = target.tag
+        t.style.cssText = 'position:absolute;top:0;left:0;background:#d97706;color:#fff;font:700 10.5px system-ui,sans-serif;padding:1px 7px 2px;border-radius:4px 0 6px 0'
+        m.appendChild(t)
+      }
       n.replaceWith(m); m.appendChild(n)
       m.scrollIntoView({ block: 'center' })
       break
@@ -122,7 +129,7 @@ function PdfPane({ sha, target, onPage }) {
         for (const p of [target.page, target.page + 1, target.page - 1]) {
           if (p < 1 || p > info.n) continue
           await render(p)
-          if (await mark(p, target.quote)) {
+          if (await mark(p, target.quote, target.tag)) {
             const hl = box.current.querySelector(`.op-page[data-page="${p}"] .op-hl`)
             if (hl) box.current.scrollTo({ top: hl.parentElement.offsetTop + hl.offsetTop - 120, behavior: 'smooth' })
             return
@@ -160,7 +167,7 @@ function PdfPane({ sha, target, onPage }) {
 
   // The quote's words found in the page's text items (spacing and accents aside); the items it
   // covers get a box. A long quote is matched by its first words.
-  async function mark(n, quote) {
+  async function mark(n, quote, tag) {
     const r = await st.current.rendered.get(n)
     if (!r) return false
     let flat = ''
@@ -177,17 +184,27 @@ function PdfPane({ sha, target, onPage }) {
       if (q.length < 4) continue
       const at = flat.indexOf(q)
       if (at < 0) continue
+      // One rectangle around everything the reference covers, its tag on the top left.
       const el = box.current.querySelector(`.op-page[data-page="${n}"]`)
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
       for (const [a, b, i] of spans) {
         if (b <= at || a >= at + q.length) continue
         const it = r.items[i]
         const tx = pdfjs.Util.transform(r.vp.transform, it.transform)
         const h = Math.hypot(tx[2], tx[3]), w = it.width * r.vp.scale
-        const d = document.createElement('div')
-        d.className = 'op-hl'
-        Object.assign(d.style, { left: `${tx[4]}px`, top: `${tx[5] - h}px`, width: `${w}px`, height: `${h * 1.2}px` })
-        el.appendChild(d)
+        x0 = Math.min(x0, tx[4]); x1 = Math.max(x1, tx[4] + w); y0 = Math.min(y0, tx[5] - h); y1 = Math.max(y1, tx[5] + h * 0.25)
       }
+      if (x0 === Infinity) return false
+      const d = document.createElement('div')
+      d.className = 'op-hl'
+      Object.assign(d.style, { left: `${x0 - 4}px`, top: `${y0 - 4}px`, width: `${x1 - x0 + 8}px`, height: `${y1 - y0 + 8}px` })
+      if (tag) {
+        const t = document.createElement('span')
+        t.className = 'ref-tag'
+        t.textContent = tag
+        d.appendChild(t)
+      }
+      el.appendChild(d)
       return true
     }
     return false

@@ -1,15 +1,16 @@
-// search-ui/src/pilot/DocView.jsx — a document as the pipeline read it, beside the original.
-//  - The text, chunk by chunk, with every mention marked where it was found: named mentions are
-//    filled, references that do not name the entity ("la empresa") underlined. Lines the PDF breaks
-//    mid-sentence are joined and the lines every page repeats (headers, footers, signatures) folded,
-//    without moving a character, so the pipeline's offsets still land on their words.
-//  - The original (pdf.js, or the notice as published) follows the text page by page; a mention
-//    clicked is marked in the original too.
-//  - An entity in focus (from a link, or clicked) gets a navigator over all its mentions here.
+// search-ui/src/pilot/DocView.jsx — a document as the pipeline read it.
+//  - The text, chunk by chunk, plain: lines a PDF broke mid-sentence joined, the lines every page
+//    repeats (headers, footers, signatures) folded, without moving a character so the pipeline's
+//    offsets still land on their words.
+//  - Provenance on demand: with an entity in focus (from a link, or picked from the list), each of
+//    its references in this document is framed, tagged with the document and page on its top left,
+//    the found name in bold; a navigator steps through all of them.
+//  - The original (pdf.js, or the notice as published) opens in a window over the text, at the
+//    reference clicked, framed and tagged the same way.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getDocument, fileUrl } from './pilotApi.js'
+import { getDocument } from './pilotApi.js'
 import { nodeInfo, roleEs } from './labels.js'
-import { CircleNotch } from '../icons.js'
+import { CircleNotch, X } from '../icons.js'
 import NodePanel from './NodePanel.jsx'
 import OriginalPane from './OriginalPane.jsx'
 import { reflow, lineKeyRanges } from './doctext.js'
@@ -17,21 +18,17 @@ import { go } from './route.js'
 
 const PAGE = /\[Página (\d+)\]/g
 const BATCH = 40
-const MODES = [['text', 'Texto'], ['split', 'Texto y original'], ['original', 'Original']]
 
 export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [entity, setEntity] = useState(focusEntity || null)
   const [panel, setPanel] = useState(null)
-  const [hidden, setHidden] = useState(new Set())
   const [loading, setLoading] = useState(false)
-  const [mode, setMode] = useState(() => { try { return localStorage.getItem('pilot.docmode') || 'split' } catch { return 'split' } })
-  const [target, setTarget] = useState(null)        // {page, quote} for the original
+  const [original, setOriginal] = useState(null)     // the window: null, or {page, quote, tag}
   const [nth, setNth] = useState(0)
-  const pending = useRef(null)                      // a mention to scroll to once its chunk is loaded
-  const arrived = useRef(false)                     // the link's own entity was taken to its mention
-  const synced = useRef({ page: null, until: 0 })   // the original follows the text, unless just aimed
+  const pending = useRef(null)                       // a reference to scroll to once its chunk is loaded
+  const arrived = useRef(false)                      // the link's own entity was taken to its reference
 
   async function load(start, keep = false) {
     setLoading(true)
@@ -47,58 +44,35 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   useEffect(() => {
     setData(null)
     arrived.current = false
-    pending.current = focusChunk != null ? { chunk_idx: Number(focusChunk), first: true } : null
+    pending.current = focusChunk != null ? { chunk_idx: Number(focusChunk) } : null
     load(Math.max(0, (Number(focusChunk) || 0) - 2))
   }, [sha, tenderId]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { try { localStorage.setItem('pilot.docmode', mode) } catch { /* private window */ } }, [mode])
 
-  // A new entity in focus: fetch where it is mentioned in the whole document, keep the text loaded.
+  // A new entity in focus: where it is referenced in the whole document.
   useEffect(() => {
     if (!data || !entity) return
     getDocument(sha, tenderId, data.start, 1, entity).then((d) => setData((cur) => cur && ({ ...cur, focus: d.focus, entities: { ...d.entities, ...cur.entities } })))
     setNth(0)
   }, [entity]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A link to an entity lands on its mention nearest to the linked chunk (a chunk may name it only
-  // through a reference the pipeline placed elsewhere).
+  // A link to an entity lands on its reference nearest to the linked chunk.
   useEffect(() => {
     if (!data || arrived.current || !entity || !(data.focus || []).length) return
     arrived.current = true
     const c = Number(focusChunk) || 0
-    const k = Math.max(0, data.focus.findIndex((f) => f.chunk_idx >= c))
-    goTo(k)
+    goTo(Math.max(0, data.focus.findIndex((f) => f.chunk_idx >= c)))
   }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The original follows the page at the top of the text.
-  useEffect(() => {
-    let t = null
-    const on = () => {
-      clearTimeout(t)
-      t = setTimeout(() => {
-        if (Date.now() < synced.current.until) return
-        const secs = [...document.querySelectorAll('.dv-chunk')]
-        const top = secs.find((el) => el.getBoundingClientRect().bottom > 180)
-        const page = Number(top?.dataset.page) || null
-        if (page && page !== synced.current.page) { synced.current.page = page; setTarget({ page, follow: true }) }
-      }, 150)
-    }
-    window.addEventListener('scroll', on, { passive: true })
-    return () => { window.removeEventListener('scroll', on); clearTimeout(t) }
-  }, [])
-
-  // Scroll to what is pending (a link's mention, or the navigator's) once it is in the page.
+  // Scroll to what is pending once it is in the page; a chunk opened from an answer flashes.
   useEffect(() => {
     if (!data || !pending.current) return
     const p = pending.current
-    const sel = p.at != null ? `mark[data-k="${p.chunk_idx}:${p.at}"]` : entity && p.first
-      ? `#chunk-${p.chunk_idx} mark[data-e="${CSS.escape(entity)}"]` : `#chunk-${p.chunk_idx}`
-    const el = document.querySelector(sel) || document.querySelector(`#chunk-${p.chunk_idx}`)
+    const el = (p.at != null && document.querySelector(`[data-k="${p.chunk_idx}:${p.at}"]`)) || document.querySelector(`#chunk-${p.chunk_idx}`)
     if (!el) return
     el.scrollIntoView({ block: 'center' })
     pending.current = null
-    if (el.tagName === 'SECTION') { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash') }  // a passage opened from an answer
-    if (el.tagName === 'MARK') el.click()
-  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (el.tagName === 'SECTION') { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash') }
+  }, [data])
 
   const counts = useMemo(() => {
     const c = {}
@@ -106,7 +80,6 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
     return Object.entries(c).map(([id, n]) => ({ id, n, ...(data.entities[id] || { name: id, label: '?' }) }))
       .sort((a, b) => b.n - a.n)
   }, [data])
-  const labels = useMemo(() => [...new Set(counts.map((c) => c.label))], [counts])
   const boiler = useMemo(() => new Set(data?.boilerplate || []), [data])
 
   if (error) return <div className="err">{error}</div>
@@ -115,40 +88,20 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   const first = data.chunks[0]?.chunk_idx || 0
   const next = data.start + data.chunks.length
   const focus = entity ? data.focus || [] : []
-  const canOriginal = d.stored
+  const tagOf = (page) => `${roleEs(d.role)}${d.seq != null ? ` · doc ${d.seq}` : ''}${page ? ` · pág. ${page}` : ''}`
 
   function goTo(k) {
-    const f = focus[k]
+    const f = (data.focus || [])[k]
     if (!f) return
     setNth(k)
-    const loaded = data.chunks.some((c) => c.chunk_idx === f.chunk_idx)
     pending.current = f
-    if (loaded) setData({ ...data })        // re-run the scroll effect
+    if (data.chunks.some((c) => c.chunk_idx === f.chunk_idx)) setData({ ...data })
     else load(Math.max(0, f.chunk_idx - 2))
   }
-  function pick(m, chunk) {
-    setEntity(m.entity_id)
-    const quote = chunk.text.slice(m.a, m.b)
-    synced.current.until = Date.now() + 1500
-    setTarget({ page: m.page || chunk.page_from, quote: quote.length >= 6 ? quote : chunk.text.slice(m.char_start ?? m.a, m.char_end ?? m.b) })
-    const k = focus.findIndex((f) => f.chunk_idx === chunk.chunk_idx && f.at === m.a)
-    if (k >= 0) setNth(k)
+  function openAt(ref, chunk) {
+    const page = ref.page || chunk.page_from
+    setOriginal({ page, quote: chunk.text.slice(ref.a, ref.b), tag: tagOf(page) })
   }
-
-  const text = (
-    <article className="dv-text">
-      {first > 0 && <button type="button" className="more" onClick={() => load(Math.max(0, first - BATCH))}>Fragmentos anteriores</button>}
-      {data.chunks.map((c) => (
-        <section key={c.chunk_idx} id={`chunk-${c.chunk_idx}`} data-page={c.page_from || ''} className={`dv-chunk ${c.ner !== 'ok' ? 'no-ner' : ''}`}>
-          <div className="dv-chunk-head" title={c.ner !== 'ok' ? 'Este fragmento no pasó por la extracción de entidades' : ''}>
-            {c.chunk_idx + 1}{c.ner !== 'ok' && <span> · sin extracción</span>}</div>
-          <Annotated chunk={c} entities={data.entities} hidden={hidden} entity={entity} boiler={boiler}
-            onPick={(m) => pick(m, c)} onPage={(p) => { synced.current.until = Date.now() + 1500; setTarget({ page: p }) }} />
-        </section>
-      ))}
-      {next < data.total_chunks && <button type="button" className="more" disabled={loading} onClick={() => load(next, true)}>{loading ? 'Cargando…' : 'Más fragmentos'}</button>}
-    </article>
-  )
 
   return (
     <div className="dv">
@@ -158,8 +111,7 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
           <span className="chip">Doc {d.seq} · {roleEs(d.role)}</span>
           <time>{d.effective_date || 'sin fecha'}</time>
           {d.pages ? <span className="muted">{d.pages} págs.</span> : null}
-          <span className="muted">{data.total_chunks} fragmentos</span>
-          {d.stored && <a href={fileUrl(sha)} target="_blank" rel="noreferrer">Archivo guardado</a>}
+          {d.stored && <button type="button" className="linkish" onClick={() => setOriginal({ page: data.chunks[0]?.page_from || 1 })}>Ver el original</button>}
           {d.url && <a href={d.url} target="_blank" rel="noreferrer">En PLACSP ↗</a>}
         </div>
         <h2>{d.filename || d.title}</h2>
@@ -167,35 +119,23 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
       </div>
 
       <div className="dv-bar">
-        {canOriginal && (
-          <span className="pg-modes">{MODES.map(([k, l]) => <button key={k} type="button" className={mode === k ? 'on' : ''} onClick={() => setMode(k)}>{l}</button>)}</span>
-        )}
-        {entity && (
+        {entity ? (
           <span className="dv-nav">
             <i style={{ background: nodeInfo(data.entities[entity]?.label).color }} />
             <b>{data.entities[entity]?.name || entity}</b>
-            {focus.length > 0 && <>
+            {focus.length > 0 ? <>
               <button type="button" className="icon-btn" aria-label="Anterior" disabled={nth <= 0} onClick={() => goTo(nth - 1)}>‹</button>
               <span>{nth + 1} de {focus.length}</span>
               <button type="button" className="icon-btn" aria-label="Siguiente" disabled={nth >= focus.length - 1} onClick={() => goTo(nth + 1)}>›</button>
-            </>}
+            </> : <span className="muted">sin referencias en este documento</span>}
             <button type="button" className="linkish small" onClick={() => setPanel(entity)}>Ficha</button>
-            <button type="button" className="icon-btn" aria-label="Quitar" onClick={() => { setEntity(null); setTarget(null) }}>×</button>
+            <button type="button" className="icon-btn" aria-label="Quitar" onClick={() => setEntity(null)}>×</button>
           </span>
-        )}
+        ) : <span className="muted small">Elige una entidad para ver dónde la cita este documento.</span>}
         <details className="dv-ents">
           <summary>Entidades en el texto cargado ({counts.length})</summary>
-          <div className="pg-legend dv-legend">
-            {labels.map((l) => (
-              <button key={l} type="button" className={`pg-key ${hidden.has(l) ? 'off' : ''}`}
-                onClick={() => setHidden((h) => { const n = new Set(h); n.has(l) ? n.delete(l) : n.add(l); return n })}>
-                <i style={{ background: nodeInfo(l).color }} />{nodeInfo(l).es}
-              </button>
-            ))}
-            <span className="pg-note">relleno = nombrada · subrayado = referencia («la empresa»…)</span>
-          </div>
           <ul className="np-list dv-entlist">
-            {counts.filter((c) => !hidden.has(c.label)).map((c) => (
+            {counts.map((c) => (
               <li key={c.id}><button type="button" className={`linkish ${entity === c.id ? 'on' : ''}`} onClick={() => setEntity(c.id)}>
                 <i style={{ background: nodeInfo(c.label).color }} />{c.name}<span className="muted"> · {c.n}</span></button></li>
             ))}
@@ -203,55 +143,85 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
         </details>
       </div>
 
-      <div className={`dv-body mode-${canOriginal ? mode : 'text'}`}>
-        {(mode !== 'original' || !canOriginal) && text}
-        {canOriginal && mode !== 'text' && (
-          <aside className="dv-orig"><OriginalPane sha={sha} ext={d.ext} target={target} /></aside>
-        )}
-      </div>
+      <article className="dv-text">
+        {first > 0 && <button type="button" className="more" onClick={() => load(Math.max(0, first - BATCH))}>Fragmentos anteriores</button>}
+        {data.chunks.map((c) => (
+          <section key={c.chunk_idx} id={`chunk-${c.chunk_idx}`} className={`dv-chunk ${c.ner !== 'ok' ? 'no-ner' : ''}`}>
+            <div className="dv-chunk-head" title={c.ner !== 'ok' ? 'Este fragmento no pasó por la extracción de entidades' : ''}>
+              {c.chunk_idx + 1}{c.ner !== 'ok' && <span> · sin extracción</span>}</div>
+            <Annotated chunk={c} entity={entity} boiler={boiler} tagOf={tagOf}
+              onOpen={d.stored ? (ref) => openAt(ref, c) : null} onPage={d.stored ? (p) => setOriginal({ page: p }) : null} />
+          </section>
+        ))}
+        {next < data.total_chunks && <button type="button" className="more" disabled={loading} onClick={() => load(next, true)}>{loading ? 'Cargando…' : 'Más fragmentos'}</button>}
+      </article>
+
+      {original && d.stored && (
+        <div className="dv-window" role="dialog" aria-label="Documento original" onClick={(e) => { if (e.target === e.currentTarget) setOriginal(null) }}>
+          <div className="dv-window-box">
+            <div className="dv-window-head">
+              <b>{d.filename || d.title}</b>
+              {original.tag && <span className="ref-tag static">{original.tag}</span>}
+              <button type="button" className="icon-btn" aria-label="Cerrar" onClick={() => setOriginal(null)}><X size={16} /></button>
+            </div>
+            <OriginalPane sha={sha} ext={d.ext} target={original} />
+          </div>
+        </div>
+      )}
       {panel && <NodePanel id={panel} onSelect={setPanel} onClose={() => setPanel(null)} />}
     </div>
   )
 }
 
-// The chunk cut at every boundary that matters (a mention, a repeated line, a page marker), each
-// piece drawn with what covers it. A mention is drawn on the name when the pipeline found it
-// inside the quote, else on the whole quote; overlapping mentions keep the first one.
-function Annotated({ chunk, entities, hidden, entity, boiler, onPick, onPage }) {
+// The chunk as plain text, with page dividers and folded repeated lines; the focused entity's
+// references framed (their quote, the name in bold) and tagged with document and page.
+function Annotated({ chunk, entity, boiler, tagOf, onOpen, onPage }) {
   const text = useMemo(() => reflow(chunk.text, boiler), [chunk.text, boiler])
-  const spans = (chunk.mentions || [])
-    .map((m) => ({ ...m, a: m.name_start ?? m.char_start, b: m.name_end ?? m.char_end, label: entities[m.entity_id]?.label }))
-    .filter((m) => m.a != null && m.b != null && m.b > m.a && !hidden.has(m.label))
-    .sort((x, y) => x.a - y.a || y.b - x.b)
-  const kept = []
-  for (const m of spans) if (!kept.length || m.a >= kept[kept.length - 1].b) kept.push(m)
+  const refs = []
+  for (const m of (chunk.mentions || []).filter((x) => x.entity_id === entity)
+    .map((x) => ({ ...x, a: x.char_start ?? x.name_start, b: x.char_end ?? x.name_end, key: x.name_start ?? x.char_start ?? 0 }))
+    .filter((x) => x.a != null && x.b > x.a).sort((x, y) => x.a - y.a)) {
+    if (!refs.length || m.a >= refs[refs.length - 1].b) refs.push(m)
+  }
   const boilers = lineKeyRanges(chunk.text, boiler)
   const pages = [...chunk.text.matchAll(PAGE)].map((p) => ({ a: p.index, b: p.index + p[0].length, page: Number(p[1]) }))
 
-  const cuts = new Set([0, text.length])
-  for (const r of [...kept, ...boilers, ...pages]) { cuts.add(r.a); cuts.add(r.b) }
-  const points = [...cuts].filter((x) => x >= 0 && x <= text.length).sort((x, y) => x - y)
-  const out = []
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i], b = points[i + 1]
-    const pg = pages.find((p) => p.a === a)
-    if (pg) {
-      out.push(<button key={`p${a}`} type="button" className="dv-page" onClick={() => onPage(pg.page)} title="Ver esta página en el original">Página {pg.page}</button>)
-      i = points.indexOf(pg.b) - 1
-      continue
+  // Plain text between references: page markers become dividers, repeated lines are folded.
+  function plain(from, to, key) {
+    const cuts = new Set([from, to])
+    for (const r of [...boilers, ...pages]) for (const x of [r.a, r.b]) if (x > from && x < to) cuts.add(x)
+    const pts = [...cuts].sort((x, y) => x - y)
+    const out = []
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1]
+      const pg = pages.find((p) => p.a === a)
+      if (pg) {
+        out.push(onPage
+          ? <button key={`${key}p${a}`} type="button" className="dv-page" onClick={() => onPage(pg.page)} title="Ver esta página en el original">Página {pg.page}</button>
+          : <span key={`${key}p${a}`} className="dv-page">Página {pg.page}</span>)
+        continue
+      }
+      if (pages.some((p) => a >= p.a && b <= p.b)) continue
+      const piece = text.slice(a, b)
+      out.push(boilers.some((x) => x.a <= a && b <= x.b) ? <span key={`${key}${a}`} className="dv-boiler">{piece}</span> : piece)
     }
-    const piece = text.slice(a, b)
-    const m = kept.find((x) => x.a <= a && b <= x.b)
-    const dim = boilers.some((x) => x.a <= a && b <= x.b)
-    if (!m) { out.push(dim ? <span key={a} className="dv-boiler">{piece}</span> : piece); continue }
-    const c = nodeInfo(m.label).color
-    const e = entities[m.entity_id] || {}
-    out.push(
-      <mark key={a} data-e={m.entity_id} data-k={m.a === a ? `${chunk.chunk_idx}:${m.a}` : undefined}
-        className={`${m.kind === 'coref' ? 'ref' : ''} ${entity === m.entity_id ? 'on' : ''} ${dim ? 'dv-boiler' : ''}`}
-        style={m.kind === 'coref' ? { borderBottomColor: c } : { background: `${c}${entity === m.entity_id ? '44' : '1f'}`, borderBottomColor: c }}
-        title={`${nodeInfo(m.label).es}: ${e.name || m.entity_id}${m.kind === 'coref' ? ' (referencia)' : ''}${m.page ? ` · pág. ${m.page}` : ''}`}
-        onClick={() => onPick(m)}>{piece}</mark>)
+    return out
   }
+
+  const out = []
+  let at = 0
+  refs.forEach((r, i) => {
+    if (r.a > at) out.push(...plain(at, r.a, `t${i}`))
+    const ns = Math.max(r.a, r.name_start ?? r.a), ne = Math.min(r.b, r.name_end ?? r.b)
+    out.push(
+      <mark key={`r${i}`} className={`ref-frame ${r.kind === 'coref' ? 'is-ref' : ''} ${onOpen ? 'can-open' : ''}`} data-k={`${chunk.chunk_idx}:${r.key}`}
+        data-tag={tagOf(r.page || chunk.page_from)}
+        title={`${r.kind === 'coref' ? 'Referencia sin nombre («la empresa»…)' : 'Referencia'}${onOpen ? ' · clic: verla en el original' : ''}`}
+        onClick={() => onOpen?.(r)}>
+        {text.slice(r.a, ns)}<b>{text.slice(ns, ne)}</b>{text.slice(ne, r.b)}
+      </mark>)
+    at = r.b
+  })
+  out.push(...plain(at, text.length, 'end'))
   return <p className="dv-p">{out}</p>
 }

@@ -61,9 +61,9 @@ function Sources({ d }) {
     <>
       <div className="np-rel">Dónde se encontró <span>{d.mention_count} menciones</span></div>
       {ms.map((m, i) => (
-        <div key={i} className="dh-span">
-          <span className="dh-kind muted">Doc {m.doc_seq ?? '?'} · {roleEs(m.doc_role)}{m.page ? ` · pág. ${m.page}` : ''}</span>
-          <p>{m.before && '…'}{flat(m.before).slice(-120)}<mark>{flat(m.quote)}</mark>{flat(m.after).slice(0, 140)}…</p>
+        <div key={i} className="ref-box">
+          <span className="ref-tag">{roleEs(m.doc_role)}{m.doc_seq != null ? ` · doc ${m.doc_seq}` : ''}{m.page ? ` · pág. ${m.page}` : ''}</span>
+          <p>{m.before && '…'}{flat(m.before).slice(-110)}<mark>{flat(m.quote)}</mark>{flat(m.after).slice(0, 130)}…</p>
         </div>
       ))}
       <div className="dh-foot">Clic para abrir el documento en esta mención</div>
