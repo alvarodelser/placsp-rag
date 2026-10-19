@@ -198,12 +198,12 @@ class Embedder:
 
 COLLECTIONS = {
     "tenders": ("description", {
-        "tender_id": "keyword", "channel": "keyword", "status": "keyword", "contract_type": "keyword",
+        "tender_id": "keyword", "channel": "keyword", "themes": "keyword", "status": "keyword", "contract_type": "keyword",
         "procedure": "keyword", "cpv": "keyword", "nuts": "keyword", "published_at": "datetime", "value": "float",
         "authority.nif": "keyword", "company_nifs": "keyword", "winner_nifs": "keyword", "analysable": "bool",
         "documents[].role": "keyword", "documents[].sha256": "keyword"}),
     "chunks": ("text", {
-        "tender_id": "keyword", "doc_sha256": "keyword", "doc_role": "keyword", "doc_seq": "integer",
+        "tender_id": "keyword", "themes": "keyword", "doc_sha256": "keyword", "doc_role": "keyword", "doc_seq": "integer",
         "channel": "keyword", "chunk_idx": "integer", "entity_ids": "keyword", "effective_date": "keyword"}),
     "entities": ("description", {
         "node_id": "keyword", "label": "keyword", "tender_ids": "keyword", "nif": "keyword"}),
@@ -383,6 +383,7 @@ def index(cfg: PilotConfig, store: Store):
                     pid = point_id("chunk", eid, d["sha256"], ch["idx"])
                     points.append((pid, ch["text"], {
                         "chunk_id": pid, "tender_id": eid, "folder_id": rec["folder_id"], "channel": rec["channel"],
+                        "themes": g.nodes[f"tender:{eid}"].get("themes"),
                         "doc_sha256": d["sha256"], "doc_seq": d["seq"], "doc_role": d.get("role"), "doc_title": d.get("title"),
                         "doc_url": d.get("url"), "effective_date": d.get("effective_date"), "chunk_idx": ch["idx"],
                         "page_from": ch["page_from"], "page_to": ch["page_to"], "words": ch["words"], "ner": ch["ner"],

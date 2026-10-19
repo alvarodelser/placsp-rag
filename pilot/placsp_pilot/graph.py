@@ -337,6 +337,9 @@ def build_expediente(g: Graph, store: Store, e) -> dict:
     tender_desc = json.loads(agg["result_json"]).get("description") if agg else None
     title = store.one("SELECT result_json FROM extraction WHERE exp_id=? AND kind='tender_title' AND status='ok'", (eid,))
     tid, sk = _feed_skeleton(g, eid, e, t, tender_desc)
+    if store.one("SELECT name FROM sqlite_master WHERE name='expediente_theme'"):
+        g.nodes[tid]["themes"] = [r["theme"] for r in store.q(
+            "SELECT theme FROM expediente_theme WHERE exp_id=? ORDER BY quota DESC, theme", (eid,))] or None
     if title:
         g.nodes[tid]["short_title"] = json.loads(title["result_json"]).get("title")
 

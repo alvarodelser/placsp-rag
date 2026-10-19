@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -76,6 +76,60 @@ def select(cfg: PilotConfig, store: Store, quotas: dict[str, int], max_pages: in
                 _insert_expediente(store, rec, raw_path, len(raw))
             st["items"] += len(picked)
             log(f"select {channel}: +{len(picked)} from {page} page(s)")
+
+
+def select_themes(cfg: PilotConfig, store: Store, quotas: dict[str, int], channels: list[str], max_pages: int = 200):
+    """Expedientes by theme (themes.py, CPV only), newest first, from the given channels' feeds:
+    page by page until every theme has its quota or the pages run out. An entry in two themes
+    counts for the first one that still needs it, and keeps both."""
+    from placsp_pilot.themes import THEMES, themes_of
+    parser = Parser(Codelists(cfg.codelist_dir))
+    http = _http(cfg)
+    with store.tx() as c:
+        c.execute("CREATE TABLE IF NOT EXISTS expediente_theme (exp_id TEXT NOT NULL, theme TEXT NOT NULL, quota INTEGER,"
+                  " PRIMARY KEY (exp_id, theme))")
+    have = Counter(r["theme"] for r in store.q("SELECT theme FROM expediente_theme WHERE quota=1"))
+    need = lambda: {k: q - have[k] for k, q in quotas.items() if q > have[k]}
+    unknown = set(quotas) - set(THEMES)
+    if unknown:
+        raise SystemExit(f"select: unknown themes {sorted(unknown)}; known: {sorted(THEMES)}")
+    with store.stage("select") as st:
+        for channel in channels:
+            url, page, scanned = f"{FEED_BASE}/{FEEDS[channel]}.atom", 0, 0
+            while url and page < max_pages and need():
+                page += 1
+                path = cfg.raw_dir / f"feed_{channel}_{page}.atom"
+                if not path.exists():
+                    r = http.get(url)
+                    r.raise_for_status()
+                    path.write_bytes(r.content)
+                entries, url = iter_entries(str(path))
+                for e in sorted(entries, key=lambda e: e.findtext("{http://www.w3.org/2005/Atom}updated") or "", reverse=True):
+                    scanned += 1
+                    rec = parser.parse_entry(e, channel)
+                    ths = themes_of(rec)
+                    if not ths or not rec.get("folder_id") or store.one("SELECT 1 FROM expediente WHERE id=?", (rec["id"],)):
+                        continue
+                    first = next((k for k in ths if k in need()), None)
+                    if first is None:
+                        continue
+                    raw_path = cfg.raw_dir / f"{rec['id']}.xml"
+                    raw = etree.tostring(e)
+                    raw_path.write_bytes(raw)
+                    _insert_expediente(store, rec, raw_path, len(raw))
+                    with store.tx() as c:
+                        c.executemany("INSERT OR IGNORE INTO expediente_theme VALUES (?,?,?)",
+                                      [(rec["id"], k, int(k == first)) for k in ths])
+                    have[first] += 1
+                    st["items"] += 1
+                    if not need():
+                        break
+                if page % 10 == 0:
+                    log(f"select {channel}: {page} pages, {scanned} entries; " + ", ".join(f"{k} {have[k]}/{q}" for k, q in quotas.items()))
+            log(f"select {channel}: {page} pages, {scanned} entries; " + ", ".join(f"{k} {have[k]}/{q}" for k, q in quotas.items()))
+        short = need()
+        if short:
+            log(f"select: themes short after {max_pages} pages per channel: {short} (raise --max-pages or add channels)")
 
 
 def _insert_expediente(store: Store, rec: dict, raw_path: Path, raw_bytes: int):

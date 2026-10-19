@@ -42,7 +42,7 @@ MARGIN = 0.08                                      # /search keeps hits within t
 CHUNK_RELS = ["HAS_CHUNK", "NEXT", "MENTIONS", "MENTIONED_IN"]
 JSON_PROPS = ("detail", "conflicts", "attributes", "formula_model")
 HEAVY = {"evidence", "descriptions", "documents", "file_path", "aliases", "text"}
-CARD = ["tender_id", "name", "short_title", "channel", "status", "authority", "value", "published", "counts", "analysable",
+CARD = ["tender_id", "name", "short_title", "themes", "channel", "status", "authority", "value", "published", "counts", "analysable",
         "skip_reason", "contract_type", "procedure", "cpv", "nuts", "description", "companies"]
 
 _client = None
@@ -173,9 +173,9 @@ def health():
 
 
 @router.get("/tenders")
-def tenders(q: str = "", channel: str = "", limit: int = Query(30, ge=1, le=200), offset: int = Query(0, ge=0)):
+def tenders(q: str = "", channel: str = "", theme: str = "", limit: int = Query(30, ge=1, le=200), offset: int = Query(0, ge=0)):
     """Semantic search over the tenders' descriptions, or the latest first without a query."""
-    flt = match(channel=channel)
+    flt = match(channel=channel, themes=theme)
     if q.strip():
         res = qdrant().query_points(coll("tenders"), query=embed(q.strip()), using="description", query_filter=flt,
                                     limit=limit, offset=offset, with_payload=CARD)
@@ -366,12 +366,12 @@ def corpus_graph(documents: bool = False):
     """What the expedientes share: tenders, the authorities that publish them and the companies
     that bid for and win them (roles from the unified tender object); with `documents`, each
     tender's documents too. A tender's own subgraph is at /tenders/{id}/graph."""
-    fields = ["tender_id", "name", "short_title", "channel", "status", "value", "authority", "companies", "counts"]
+    fields = ["tender_id", "name", "short_title", "themes", "channel", "status", "value", "authority", "companies", "counts"]
     tenders = [p.payload for p in scroll_all("tenders", fields=fields + (["documents"] if documents else []))]
     nodes, edges = {}, []
     for t in tenders:
         tid = f"tender:{t['tender_id']}"
-        nodes[tid] = {"id": tid, "label": "Tender", "name": t.get("name"), "short_title": t.get("short_title"), "channel": t.get("channel"),
+        nodes[tid] = {"id": tid, "label": "Tender", "name": t.get("name"), "short_title": t.get("short_title"), "themes": t.get("themes"), "channel": t.get("channel"),
                       "status": t.get("status"), "value": t.get("value"), "documents": (t.get("counts") or {}).get("documents")}
         a = t.get("authority")
         if a:
@@ -399,7 +399,7 @@ def _norm(s: str) -> str:
 
 @router.get("/search")
 def search(q: str, scope: str = Query("tenders", pattern="^(all|tenders|companies|authorities)$"),
-           k: int = Query(30, ge=1, le=100)):
+           k: int = Query(30, ge=1, le=100), theme: str = ""):
     """One search for the landing page. Tenders match by their description or by any of their
     chunks (with the best passages shown); companies and authorities by name, then by meaning.
     Only what scores within MARGIN of the best hit is kept, so the list narrows to what fits."""
@@ -410,9 +410,10 @@ def search(q: str, scope: str = Query("tenders", pattern="^(all|tenders|companie
     out = {"tenders": [], "organizations": []}
     if scope in ("all", "tenders"):
         best, passages = {}, defaultdict(list)
-        for p in qdrant().query_points(coll("tenders"), query=vec, using="description", limit=k).points:
+        flt = match(themes=theme)
+        for p in qdrant().query_points(coll("tenders"), query=vec, using="description", query_filter=flt, limit=k).points:
             best[p.payload["tender_id"]] = p.score
-        for p in qdrant().query_points(coll("chunks"), query=vec, using="text", limit=3 * k, with_payload=True).points:
+        for p in qdrant().query_points(coll("chunks"), query=vec, using="text", query_filter=flt, limit=3 * k, with_payload=True).points:
             t = p.payload["tender_id"]
             best[t] = max(best.get(t, 0), p.score)
             if len(passages[t]) < 2:

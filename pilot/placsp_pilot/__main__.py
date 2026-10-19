@@ -1,7 +1,9 @@
-"""CLI: python -m placsp_pilot <stage> [--run-dir DIR] [--quota channel=n,...]
+"""CLI: python -m placsp_pilot <stage> [--run-dir DIR] [--quota channel=n,... | --themes theme=n,...]
 
 Stages run in this order; `run` does them all. Each is resumable.
-  select       pick the latest expedientes per channel from the live feeds
+  select       pick the latest expedientes per channel from the live feeds, or with --themes the
+               latest whose CPVs fall in each theme (themes.py: urbanismo, sostenibilidad,
+               cartografia, participacion)
   discover     scrape detail pages (PLACSP and external platforms) for more documents
   fetch        download every referenced document
   text         extract text (OCR service for scanned PDFs), unpack zips
@@ -49,12 +51,21 @@ def _quotas(s: str | None) -> dict:
     return out
 
 
+def _themes(s: str) -> dict:
+    return {k: int(v) for k, v in (part.split("=") for part in s.split(","))}
+
+
 def main(argv=None):
     warnings.filterwarnings("ignore", message="Unverified HTTPS request")
     ap = argparse.ArgumentParser(prog="placsp_pilot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("stage", choices=ORDER + ["run"])
     ap.add_argument("--run-dir", help="output directory (default $PILOT_RUN_DIR or ./pilot_runs/default)")
     ap.add_argument("--quota", help="per-channel sample size, e.g. placsp_mayores=50,externos_mayores=20,placsp_menores=15,propios=15")
+    ap.add_argument("--themes", help="select by theme instead (CPV lists in themes.py), e.g. "
+                                     "urbanismo=30,sostenibilidad=30,cartografia=25,participacion=15")
+    ap.add_argument("--channels", default="placsp_mayores,externos_mayores",
+                    help="feeds --themes reads (default the two with pliegos)")
+    ap.add_argument("--max-pages", type=int, default=200, help="feed pages read per channel by --themes")
     ap.add_argument("--max-doc-chars", type=int, default=400_000,
                     help="characters of a document sent to /summarize (the service reduces it further)")
     ap.add_argument("--retry-failed", action="store_true", help="put failed downloads and service calls back to pending first")
@@ -68,7 +79,8 @@ def main(argv=None):
         print("retry: " + ", ".join(f"{k} {v}" for k, v in store.reset_failed().items() if v), flush=True)
 
     steps = {
-        "select": lambda: stages.select(cfg, store, _quotas(args.quota)),
+        "select": lambda: stages.select_themes(cfg, store, _themes(args.themes), args.channels.split(","), args.max_pages)
+        if args.themes else stages.select(cfg, store, _quotas(args.quota)),
         "discover": lambda: stages.discover(cfg, store),
         "fetch": lambda: stages.fetch(cfg, store),
         "text": lambda: stages.text(cfg, store),

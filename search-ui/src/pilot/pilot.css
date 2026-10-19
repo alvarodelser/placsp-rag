@@ -320,3 +320,10 @@ button.cite:hover:not(:disabled) { background: var(--accent); color: #fff; }
 .ask-info { border-top: 1px solid var(--line); padding-top: 6px; }
 .dv-chunk.flash { animation: dvflash 2.4s ease-out; }
 @keyframes dvflash { 0%, 40% { background: #fff7d1; } 100% { background: transparent; } }
+
+/* Themes */
+.plist-themes { gap: 4px; }
+.plist-themes .linkchip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.theme-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.linkchip.on .theme-dot { box-shadow: 0 0 0 1.5px #fff; }
+.badge.theme { background: #fff; border: 1px solid currentColor; }

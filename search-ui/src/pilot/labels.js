@@ -45,6 +45,14 @@ export const COMPANY_ROLE = {
   authority: 'órgano de contratación', mentioned: 'mencionada',
 }
 
+// The pilot's themes (pilot/placsp_pilot/themes.py: chosen by CPV).
+export const THEME = {
+  urbanismo: { es: 'Urbanismo', short: 'Urbanismo', color: '#b45309' },
+  sostenibilidad: { es: 'Sostenibilidad', short: 'Sostenib.', color: '#15803d' },
+  cartografia: { es: 'Cartografía', short: 'Cartografía', color: '#0369a1' },
+  participacion: { es: 'Participación', short: 'Participación', color: '#7c3aed' },
+}
+
 export const CHANNEL = {
   placsp_mayores: 'Mayores', externos_mayores: 'Externos', placsp_menores: 'Menores', propios: 'Encargos',
 }

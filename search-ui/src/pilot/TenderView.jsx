@@ -3,7 +3,7 @@
 // how long), guarantees, the timeline (each document previewed on hover) and the record's details.
 import { Fragment, useEffect, useState } from 'react'
 import { getTender, fileUrl } from './pilotApi.js'
-import { CHANNEL, roleEs, shortTitle } from './labels.js'
+import { CHANNEL, THEME, roleEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
 import { CircleNotch } from '../icons.js'
 import cpvMap from '../codelists/cpv.json'
@@ -38,6 +38,8 @@ export default function TenderView({ id }) {
     <div className="tv">
       <button type="button" className="linkish tv-back" onClick={() => go('')}>← Volver a la búsqueda</button>
       <div className="tv-head">
+        {(t.themes || []).length > 0 && <div className="chips">{t.themes.map((k) => THEME[k] &&
+          <span key={k} className="badge theme" style={{ color: THEME[k].color }}>{THEME[k].es}</span>)}</div>}
         <h2 title={t.name}>{shortTitle(t)}</h2>
         {shortTitle(t) !== t.name && <div className="tv-fullname">{t.name}</div>}
         <div className="tv-dates">
