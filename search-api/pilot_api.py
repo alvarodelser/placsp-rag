@@ -234,29 +234,74 @@ def tender_graph(tender_id: str, entities: bool = True):
 
 
 @router.get("/documents/{sha}")
-def document(sha: str, tender: str, start: int = Query(0, ge=0), limit: int = Query(40, ge=1, le=200)):
+def document(sha: str, tender: str, start: int = Query(0, ge=0), limit: int = Query(40, ge=1, le=200), entity: str = ""):
     """A document as the pipeline read it: its chunks in order, each with every mention placed in it
-    (named by NER or a reference such as "la empresa"), and the entities those mentions point at."""
+    (named by NER or a reference such as "la empresa"), and the entities those mentions point at.
+    Also the lines repeated on most pages (headers, footers, signatures) for the viewer to fold, the
+    file's type for the original's pane and, with `entity`, every place it is mentioned in the document."""
     if not re.fullmatch(r"[0-9a-f]{64}", sha):
         raise HTTPException(400, "bad sha256")
     from qdrant_client import models as m
-    flt = m.Filter(must=[m.FieldCondition(key="tender_id", match=m.MatchValue(value=tender)),
-                         m.FieldCondition(key="doc_sha256", match=m.MatchValue(value=sha)),
-                         m.FieldCondition(key="chunk_idx", range=m.Range(gte=start, lt=start + limit))])
+    base = [m.FieldCondition(key="tender_id", match=m.MatchValue(value=tender)),
+            m.FieldCondition(key="doc_sha256", match=m.MatchValue(value=sha))]
+    flt = m.Filter(must=base + [m.FieldCondition(key="chunk_idx", range=m.Range(gte=start, lt=start + limit))])
     pts = scroll_all("chunks", flt, ["chunk_idx", "page_from", "page_to", "text", "mentions", "ner"], limit=limit)
     chunks = sorted(({k: p.payload.get(k) for k in ("chunk_idx", "page_from", "page_to", "text", "mentions", "ner")} for p in pts),
                     key=lambda c: c["chunk_idx"])
-    total = qdrant().count(coll("chunks"), count_filter=m.Filter(must=flt.must[:2]), exact=True).count
-    ids = sorted({x["entity_id"] for c in chunks for x in c.get("mentions") or []})
+    total = qdrant().count(coll("chunks"), count_filter=m.Filter(must=base), exact=True).count
+    ids = sorted({x["entity_id"] for c in chunks for x in c.get("mentions") or []} | ({entity} if entity else set()))
     ents = {}
     if ids:
         for p in qdrant().retrieve(coll("entities"), ids=[point_id("entity", i) for i in ids],
                                    with_payload=["node_id", "label", "name", "subtype"]):
             ents[p.payload["node_id"]] = {k: p.payload.get(k) for k in ("label", "name", "subtype")}
+    focus = []
+    if entity:
+        hits = scroll_all("chunks", m.Filter(must=base + [m.FieldCondition(key="entity_ids", match=m.MatchAny(any=[entity]))]),
+                          ["chunk_idx", "mentions", "text"], limit=2000)
+        boiler = set(_boilerplate(tender, sha))
+        for p in hits:
+            text = p.payload.get("text") or ""
+            for x in p.payload.get("mentions") or []:
+                at = x.get("name_start") if x.get("name_start") is not None else x.get("char_start") or 0
+                line = text[text.rfind("\n", 0, at) + 1:(text.find("\n", at) + 1 or len(text) + 1) - 1]
+                if x["entity_id"] == entity and _line_key(line) not in boiler:     # a page footer is not a mention
+                    focus.append((p.payload["chunk_idx"], at))
+        focus.sort()
     t = qdrant().retrieve(coll("tenders"), ids=[point_id("tender", tender)], with_payload=["documents", "name"])
     doc = next((d for d in (t[0].payload.get("documents") or []) if d.get("sha256") == sha), {}) if t else {}
     doc = {k: v for k, v in doc.items() if k != "file_path"} | {"stored": bool(doc.get("file_path")), "tender_name": t[0].payload.get("name") if t else None}
-    return {"document": doc, "chunks": chunks, "total_chunks": total, "start": start, "entities": ents}
+    return {"document": doc, "chunks": chunks, "total_chunks": total, "start": start, "entities": ents,
+            "boilerplate": _boilerplate(tender, sha), "focus": [{"chunk_idx": c, "at": a} for c, a in focus]}
+
+
+_BOILER: dict[str, list[str]] = {}
+
+
+def _line_key(line: str) -> str:
+    """A line with its numbers and spacing taken out: "Página 3 de 23" and "Página 4 de 23" are one line."""
+    return re.sub(r"\s+", " ", re.sub(r"\d+", "#", line)).strip().lower()
+
+
+def _boilerplate(tender: str, sha: str) -> list[str]:
+    """Lines (as _line_key) found on at least 3 pages and on 40% of them: what every page repeats."""
+    if sha in _BOILER:
+        return _BOILER[sha]
+    from qdrant_client import models as m
+    pts = scroll_all("chunks", m.Filter(must=[m.FieldCondition(key="tender_id", match=m.MatchValue(value=tender)),
+                                             m.FieldCondition(key="doc_sha256", match=m.MatchValue(value=sha))]),
+                     ["chunk_idx", "text"], limit=3000)
+    text = "\n".join(p.payload.get("text") or "" for p in sorted(pts, key=lambda p: p.payload["chunk_idx"]))
+    pages = re.split(r"\[Página \d+\]", text)
+    seen = Counter()
+    for page in pages:
+        seen.update({k for k in map(_line_key, page.split("\n")) if len(k) >= 8})
+    n = len(pages)
+    out = sorted(k for k, c in seen.items() if n >= 4 and c >= 3 and c >= 0.4 * n) if n >= 4 else []
+    if len(_BOILER) > 500:
+        _BOILER.clear()
+    _BOILER[sha] = out
+    return out
 
 
 # What a preview shows first: what a bidder reads a document for.
@@ -546,4 +591,6 @@ def file(sha: str):
     found = sorted(Path(FILES_DIR, sha[:2]).glob(f"{sha}*"))
     if not found:
         raise HTTPException(404, "file not stored")
-    return FileResponse(found[0], filename=found[0].name, content_disposition_type="inline")
+    # Stored web pages are shown, never run: a sandbox without scripts or same-origin access.
+    headers = {"Content-Security-Policy": "sandbox"} if found[0].suffix.lower() in (".html", ".htm") else None
+    return FileResponse(found[0], filename=found[0].name, content_disposition_type="inline", headers=headers)

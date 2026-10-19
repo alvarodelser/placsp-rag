@@ -18,7 +18,7 @@ export const getTenderGraph = (id) => get(`/tenders/${encodeURIComponent(id)}/gr
 export const getNode = (id) => get('/node', { id })
 export const getCompany = (id) => get(`/companies/${encodeURIComponent(id)}`)
 export const ask = (params) => get('/ask', params)
-export const getDocument = (sha, tender, start = 0, limit = 40) => get(`/documents/${sha}`, { tender, start, limit })
+export const getDocument = (sha, tender, start = 0, limit = 40, entity = '') => get(`/documents/${sha}`, { tender, start, limit, entity })
 export const docPreview = (sha, tender) => get(`/documents/${sha}/preview`, { tender })
 export const corpusGraph = (params) => get('/graph', params)
 export const search = (params) => get('/search', params)

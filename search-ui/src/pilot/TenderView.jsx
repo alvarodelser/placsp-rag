@@ -1,14 +1,13 @@
-// search-ui/src/pilot/TenderView.jsx — the unified tender: summary, lots, documents in order, graph, questions.
+// search-ui/src/pilot/TenderView.jsx — the unified tender: summary, lots, documents in order, questions.
 // The head reads title, state and dates, money, authority; the summary the object (what, where,
 // how long), guarantees, the timeline (each document previewed on hover) and the record's details.
 import { Fragment, useEffect, useState } from 'react'
-import { getTender, getTenderGraph, fileUrl } from './pilotApi.js'
+import { getTender, fileUrl } from './pilotApi.js'
 import { CHANNEL, roleEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
 import { CircleNotch } from '../icons.js'
 import cpvMap from '../codelists/cpv.json'
 import nutsMap from '../codelists/nuts.json'
-import GraphView from './GraphView.jsx'
 import NodePanel from './NodePanel.jsx'
 import AskView from './AskView.jsx'
 import DocHover from './DocHover.jsx'
@@ -17,24 +16,19 @@ import FormulaView from './FormulaView.jsx'
 import { guessModel } from './formula.js'
 import { go } from './route.js'
 
-const TABS = [['resumen', 'Resumen'], ['lotes', 'Lotes'], ['documentos', 'Documentos'], ['grafo', 'Grafo'], ['preguntar', 'Preguntar']]
+const TABS = [['resumen', 'Resumen'], ['lotes', 'Lotes'], ['documentos', 'Documentos'], ['preguntar', 'Preguntar']]
 
 export default function TenderView({ id }) {
   const [state, setState] = useState({ status: 'loading' })
   const [tab, setTab] = useState('resumen')
-  const [graph, setGraph] = useState(null)
   const [selected, setSelected] = useState(null)
 
   useEffect(() => {
     let live = true
-    setState({ status: 'loading' }); setGraph(null); setSelected(null)
+    setState({ status: 'loading' }); setSelected(null)
     getTender(id).then((t) => live && setState({ status: 'done', t })).catch((e) => live && setState({ status: 'error', e: e.message }))
     return () => { live = false }
   }, [id])
-  useEffect(() => {
-    if (tab !== 'grafo' || graph) return
-    getTenderGraph(id).then(setGraph).catch((e) => setGraph({ error: e.message }))
-  }, [tab, id, graph])
 
   if (state.status === 'loading') return <div className="loading-state"><CircleNotch size={28} className="spinner" /></div>
   if (state.status === 'error') return <div className="err">{state.e}</div>
@@ -68,11 +62,6 @@ export default function TenderView({ id }) {
       {tab === 'resumen' && <Summary t={t} />}
       {tab === 'lotes' && <Lots t={t} />}
       {tab === 'documentos' && <Documents t={t} onOpen={(sha) => setSelected(`doc:${sha}`)} />}
-      {tab === 'grafo' && (
-        graph == null ? <div className="loading-state"><CircleNotch size={28} className="spinner" /></div>
-          : graph.error ? <div className="err">{graph.error}</div>
-            : <GraphView graph={graph} selected={selected} onSelect={setSelected} />
-      )}
       {tab === 'preguntar' && <AskView tenderId={t.tender_id} />}
       {selected && <NodePanel id={selected} onSelect={setSelected} onClose={() => setSelected(null)} />}
     </div>
