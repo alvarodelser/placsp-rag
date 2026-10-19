@@ -206,6 +206,7 @@ class Store:
             "chunk": "UPDATE chunk SET status='pending' WHERE status='failed'",
             "ner": "UPDATE blob SET ner_status='pending' WHERE ner_status IN ('failed','partial')",
             "resolve": "DELETE FROM resolution WHERE status!='ok'",
+            "coref": "DELETE FROM coref_run WHERE status!='ok'",
             "refine": "DELETE FROM refinement WHERE status!='ok'",
             "describe": "DELETE FROM entity_description WHERE status!='ok'",
             "summary": "DELETE FROM extraction WHERE status!='ok'",

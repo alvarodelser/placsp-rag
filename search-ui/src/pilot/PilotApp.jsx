@@ -1,13 +1,15 @@
 // search-ui/src/pilot/PilotApp.jsx — viewer for the document pilot, separate from the search app.
 // Reads only /api/pilot (the pilot_* Qdrant collections and the :Pilot graph).
 import { useEffect, useState } from 'react'
-import { overview, listTenders } from './pilotApi.js'
+import { overview, listTenders, health } from './pilotApi.js'
 import { CHANNEL } from './labels.js'
 import { money } from '../format.js'
 import { CircleNotch } from '../icons.js'
 import TenderView from './TenderView.jsx'
 import CompanyView from './CompanyView.jsx'
 import AskView from './AskView.jsx'
+import DocView from './DocView.jsx'
+import ExploreView from './ExploreView.jsx'
 import { go, parse, useHash } from './route.js'
 import './pilot.css'
 
@@ -23,17 +25,21 @@ export default function PilotApp() {
           </div>
           <nav className="pnav">
             <button type="button" className={route.kind === 'home' || route.kind === 't' ? 'on' : ''} onClick={() => go('')}>Expedientes</button>
+            <button type="button" className={route.kind === 'explore' ? 'on' : ''} onClick={() => go('/explore')}>Explorar</button>
             <button type="button" className={route.kind === 'ask' ? 'on' : ''} onClick={() => go('/ask')}>Preguntar</button>
             <a href="#/">← Búsqueda</a>
           </nav>
         </div>
       </header>
       <main>
-        <div className={`wrap playout ${route.kind === 'ask' ? 'full' : ''}`}>
-          {route.kind !== 'ask' && <TenderList current={route.kind === 't' ? route.id : null} />}
+        <div className={`wrap playout ${['ask', 'explore'].includes(route.kind) || route.doc ? 'full' : ''}`}>
+          {!['ask', 'explore'].includes(route.kind) && !route.doc && <TenderList current={route.kind === 't' ? route.id : null} />}
           <section className="pmain">
             {route.kind === 'home' && <Overview />}
-            {route.kind === 't' && <TenderView key={route.id} id={route.id} />}
+            {route.kind === 't' && !route.doc && <TenderView key={route.id} id={route.id} />}
+            {route.kind === 't' && route.doc && <DocView key={`${route.id}/${route.doc}`} tenderId={route.id} sha={route.doc}
+              focusChunk={route.params.c} focusEntity={route.params.e} />}
+            {route.kind === 'explore' && <ExploreView />}
             {route.kind === 'c' && <CompanyView key={route.id} id={route.id} />}
             {route.kind === 'ask' && <AskView key={route.params.q || ''} initial={route.params.q || ''} />}
           </section>
@@ -92,14 +98,18 @@ function TenderList({ current }) {
 
 function Overview() {
   const [state, setState] = useState({ status: 'loading' })
+  const [h, setH] = useState(null)
   useEffect(() => {
     overview().then((d) => setState({ status: 'done', d })).catch((e) => setState({ status: 'error', e: e.message }))
+    health().then(setH).catch(() => {})
   }, [])
+  const problems = h ? ['qdrant', 'neo4j', 'vectorizer'].filter((k) => String(h[k]).startsWith('error')) : []
   if (state.status === 'loading') return <div className="loading-state"><CircleNotch size={28} className="spinner" /></div>
   if (state.status === 'error') return <div className="err">{state.e}</div>
   const d = state.d
   return (
     <div className="tv">
+      {problems.map((k) => <div key={k} className="err"><b>{k}</b>: {String(h[k]).replace(/^error: /, '')}</div>)}
       <div className="tv-head">
         <h2>Qué contiene el piloto</h2>
         <div className="tv-counts">

@@ -37,6 +37,8 @@ ner          /ner on ~512-word chunks with ontology/placsp_procurement.yaml (eve
 mentions     every NER item becomes a mention, located in its chunk (offsets, page)
 resolve      per expediente: feed anchors, keys, near-identical names, then /resolve type by
              type over all documents -> one entity per real thing (see "Entities" below)
+coref        /coref/links on the passages that carry references ("la empresa", "la adjudicataria",
+             "dicha entidad"...): each becomes a mention of the entity it points at, with offsets
 refine       /ner with a narrow schema per requirement and award criterion: thresholds, units,
              periods, accreditation, points, formulas, sub-criteria
 describe     /summarize once per entity (requirement_desc, criterion_desc, else entity_desc)
@@ -76,7 +78,16 @@ PCAP"), the PCAP's requirements are linked to that line with `DETAILED_BY`. Valu
 disagree between sources (the feed says *fórmula*, the PCAP *juicio de valor*) are kept as
 `conflicts`, never silently overwritten; feed values win.
 
-**Provenance.** Every mention keeps its chunk, character offsets and page. In Neo4j:
+**References.** An entity is named a few times and referred to many more: "la empresa", "la
+adjudicataria", "dicha entidad", "el mismo". The `coref` stage sends the passages that contain
+such expressions, with the expediente's known organizations, lots and contracts, to
+`nlp_service`'s `/coref/links`, which quotes each reference and the entity it points at (generic
+uses, such as "el contratista" in a pliego, are left alone). Each reference becomes a mention of
+kind `coref`, located like any other, so it is evidence too: descriptions and the expediente
+summary read it. It costs one call per passage with references (39 of 61 in the smoke run).
+
+**Provenance.** Every mention keeps its chunk, character offsets of its quote and of the name
+inside it, and page. In Neo4j:
 `(entity)-[:MENTIONED_IN {quote, char_start, char_end, page}]->(Chunk)<-[:HAS_CHUNK]-(Document)`;
 in Qdrant, each chunk lists its mentions and each entity its provenance. Requirements and
 criteria are refined from their passages and described with `requirement_desc` /
@@ -243,12 +254,22 @@ They read only `/api/pilot` (`search-api/pilot_api.py`), which reads only the pi
 - **Expedientes:** semantic search over the tenders, then the unified tender: summary,
   lots with criteria (feed and document side by side), solvency, results, documents in
   lifecycle order with their summaries and files, and the tender's graph.
-- **Grafo:** filled nodes come from the feed, outlined ones were extracted from documents.
-  Clicking a node shows its description, evidence, neighbours and the chunks that mention it.
+- **Grafo:** a force-directed canvas after `Projects/company_dataset`'s (what a thing is part of is
+  a short, stiff spring; bids are company–lot links; documents hang only from their tender), or
+  lanes (documents | expediente | pliegos | result). Clicking a node shows its description,
+  refined fields, discrepancies and every mention with its passage.
+- **Documento:** a document as the pipeline read it, chunk by chunk, with every mention
+  highlighted (named: filled; reference such as "la empresa": underlined) and page links to the
+  stored PDF. Every mention in a panel opens here at its place.
+- **Explorar:** the whole pilot as one graph: tenders, authorities, companies (by role),
+  qualifications, CPV sectors. Double-click a tender to unfold its own graph in place.
 - **Empresa:** every tender a company or authority appears in, with its role, the companies
   it competes with and the authorities it works for.
 - **Preguntar:** GraphRAG retrieval without generation: the closest chunks, the closest
   entities, and each entity's neighbourhood in the graph.
+
+`/api/pilot/health` checks Qdrant, Neo4j and the vectorizer one by one; the home page shows any
+that fails (without the vectorizer there is no search by meaning and no Preguntar).
 
 On the server, `placsp-search-api` reads the pilot collections in `placsp-qdrant` with
 `QDRANT_API_KEY`. To serve the stored files as well, set `PILOT_FILES_DIR=<run dir>/files`

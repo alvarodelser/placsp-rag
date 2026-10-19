@@ -49,7 +49,8 @@ PCAP = ("PLIEGO. Órgano de contratación: Universidad de Almería. Lote 1. "
         "Solvencia económica: volumen anual de negocios de 30.000 euros en los tres últimos años. "
         "Requisitos ENI-03 y ENI-04 de interoperabilidad. Adjudicataria propuesta ACME SERVICIOS, S.L., NIF B-12345678.")
 ACTA = ("ACTA. Reunida la Mesa de Contratación. Oferta de ACME SERVICIOS al lote 1. "
-        "ACME SERVCIOS SL obtiene en Oferta Económica 0 puntos de penalización y en Memoria Tecnica 49 puntos.")
+        "ACME SERVCIOS SL obtiene en Oferta Económica 0 puntos de penalización y en Memoria Tecnica 49 puntos. "
+        "La adjudicataria deberá constituir la garantía definitiva.")
 
 
 def ent(name, typ, ev, subtype=None, **attrs):
@@ -140,3 +141,20 @@ def test_describe_uses_domain_profiles_and_passages(expediente):
     assert profiles[f"crit:{rec['id']}:feed0"] == "criterion_desc"
     passages = E.passages(store, cfg, rec["id"], f"crit:{rec['id']}:feed0")
     assert any(p.startswith("[PCAP") and "31 puntos" in p for p in passages)
+
+
+def test_coref_links_references_to_their_entity(expediente):
+    cfg, store, rec, docs = expediente
+    for stage in (E.mentions, E.resolve, E.coref):
+        stage(cfg, store)
+    refs = store.q("SELECT m.*, em.entity_id FROM mention m JOIN entity_mention em ON em.mention_id=m.id WHERE m.kind='coref'")
+    assert [(r["name"], r["entity_id"], r["sha"]) for r in refs] == [("La adjudicataria", "org:nif:B12345678", docs["BoardMinutes"])]
+    text = ACTA
+    assert text[refs[0]["char_start"]:refs[0]["char_end"]] == "La adjudicataria"
+    # A reference is evidence like any other: it is in the company's passages.
+    assert any("La adjudicataria deberá constituir" in p for p in E.passages(store, cfg, rec["id"], "org:nif:B12345678"))
+    # Re-resolving drops the references with the entities they pointed at.
+    with store.tx() as c:
+        c.execute("DELETE FROM resolution")
+    E.resolve(cfg, store)
+    assert store.one("SELECT COUNT(*) n FROM mention WHERE kind='coref'")["n"] == 0

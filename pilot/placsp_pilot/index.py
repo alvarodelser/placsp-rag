@@ -374,7 +374,8 @@ def index(cfg: PilotConfig, store: Store):
                         "doc_url": d.get("url"), "effective_date": d.get("effective_date"), "chunk_idx": ch["idx"],
                         "page_from": ch["page_from"], "page_to": ch["page_to"], "words": ch["words"], "ner": ch["ner"],
                         "entity_ids": ch["entity_ids"], "text": ch["text"],
-                        "mentions": [{k: m[k] for k in ("entity_id", "char_start", "char_end", "page")} for m in ch["mentions"]]}))
+                        "mentions": [{k: m[k] for k in ("entity_id", "char_start", "char_end", "name_start", "name_end", "page", "kind")}
+                                     for m in ch["mentions"]]}))
                     cid = f"chunk:{d['sha256']}:{ch['idx']}"
                     chunk_nodes.append({"id": cid, "label": "Chunk", "idx": ch["idx"], "doc_sha256": d["sha256"],
                                         "page_from": ch["page_from"], "page_to": ch["page_to"], "words": ch["words"],
@@ -385,7 +386,8 @@ def index(cfg: PilotConfig, store: Store):
                     for m in ch["mentions"]:
                         chunk_edges.append({"src": m["entity_id"], "rel": "MENTIONED_IN", "dst": cid, "key": f"{eid}:{m['mention_id']}",
                                             "tender": eid, "quote": m["quote"], "surface": m["surface"], "page": m["page"],
-                                            "char_start": m["char_start"], "char_end": m["char_end"], "located": m["located"]})
+                                            "char_start": m["char_start"], "char_end": m["char_end"], "located": m["located"],
+                                            "kind": m["kind"], "name_start": m["name_start"], "name_end": m["name_end"]})
                         provenance[m["entity_id"]].append({
                             "tender_id": eid, "doc_sha256": d["sha256"], "doc_seq": d["seq"], "doc_role": d.get("role"),
                             "chunk_idx": ch["idx"], "chunk_id": pid, "page": m["page"], "quote": m["quote"][:300]})

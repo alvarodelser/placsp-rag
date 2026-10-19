@@ -56,6 +56,15 @@ def resolve(body: dict) -> dict:
     return {"entities": ents, "relations": rels}
 
 
+def coref_links(body: dict) -> list:
+    """Links every "la empresa" / "la adjudicataria" to the first company among the candidates."""
+    companies = [i for i, c in enumerate(body["candidates"]) if c.get("type") == "COMPANY"]
+    if not companies:
+        return []
+    return [{"mention": m.group(0), "candidate": companies[0], "evidence": body["text"][max(0, m.start() - 40):m.end() + 40]}
+            for m in re.finditer(r"\b(la empresa|la adjudicataria|dicha empresa)\b", body["text"], re.I)]
+
+
 def summarize(body: dict) -> dict:
     f = body["fields"]
     if body["profile"] == "article":
@@ -87,6 +96,8 @@ class Handler(BaseHTTPRequestHandler):
             out = ner(body["text"])
         elif self.path == "/resolve":
             out = resolve(body)
+        elif self.path == "/coref/links":
+            out = {"links": coref_links(body)}
         elif self.path == "/summarize":
             out = summarize(body)
         elif self.path == "/embed":

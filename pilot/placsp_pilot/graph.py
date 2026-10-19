@@ -293,7 +293,8 @@ def _entities(g: Graph, store: Store, eid: str, sk: dict) -> tuple[Counter, Coun
                      " WHERE em.exp_id=?", (eid,)):
         g.mentions.setdefault((eid, m["sha"]), {}).setdefault(m["idx"], []).append({
             "entity_id": m["entity_id"], "mention_id": m["id"], "surface": m["name"], "quote": (m["evidence"] or "")[:400],
-            "char_start": m["char_start"], "char_end": m["char_end"], "page": m["page"], "located": bool(m["located"])})
+            "char_start": m["char_start"], "char_end": m["char_end"], "page": m["page"], "located": bool(m["located"]),
+            "kind": m["kind"] or "ner", "name_start": m["name_start"], "name_end": m["name_end"]})
         per_pair[(m["entity_id"], m["sha"])] += 1
     for (nid, sha), count in per_pair.items():
         if f"doc:{sha}" in g.nodes and nid in g.nodes:

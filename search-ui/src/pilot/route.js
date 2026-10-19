@@ -11,6 +11,10 @@ export function parse(hash) {
   const [path, qs] = hash.replace(/^#\/pilot/, '').split('?')
   const params = Object.fromEntries(new URLSearchParams(qs || ''))
   const [, kind, ...rest] = path.split('/')
+  // #/pilot/t/<tender>/d/<sha>: a document of a tender, read with its annotations.
+  if (kind === 't' && rest.length >= 3 && rest[1] === 'd') {
+    return { kind, id: decodeURIComponent(rest[0]), doc: rest[2], params }
+  }
   return { kind: kind || 'home', id: rest.length ? decodeURIComponent(rest.join('/')) : null, params }
 }
 

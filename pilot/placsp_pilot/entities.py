@@ -9,6 +9,9 @@
               3. merge near-identical names (typos, plurals, legal forms)
               4. what is left goes to nlp_service /resolve, type by type, with the mentions of
                  every document of the expediente (the model decides the doubtful merges)
+  coref     nlp_service /coref/links on the passages that carry references ("la empresa", "la
+            adjudicataria", "dicha entidad", "el órgano de contratación"...): each one becomes a
+            mention of the entity it points at, with its own offsets, so it is evidence too
   refine    /ner again on each requirement's and award criterion's passages, with a narrow
             schema that pulls out thresholds, units, periods, accreditation, points, formulas
   describe  /summarize once per entity (requirement_desc / criterion_desc / entity_desc) from
@@ -38,7 +41,9 @@ CREATE TABLE IF NOT EXISTS mention (
     type        TEXT, subtype TEXT, name TEXT, surface TEXT, attributes TEXT,
     evidence    TEXT, confidence REAL,
     char_start  INTEGER, char_end INTEGER,   -- of the evidence quote, within the chunk text
-    page        INTEGER, located INTEGER
+    page        INTEGER, located INTEGER,
+    kind        TEXT DEFAULT 'ner',          -- ner | coref (a reference that does not name the entity)
+    name_start  INTEGER, name_end INTEGER    -- the name itself, within the quote: what a reader sees highlighted
 );
 CREATE INDEX IF NOT EXISTS mention_sha ON mention(sha);
 CREATE TABLE IF NOT EXISTS mrelation (
@@ -63,6 +68,9 @@ CREATE TABLE IF NOT EXISTS entity_relation (
 CREATE TABLE IF NOT EXISTS resolution (
     exp_id TEXT PRIMARY KEY, status TEXT, ms INTEGER, mentions INTEGER, entities INTEGER,
     merges TEXT, llm_calls INTEGER, error TEXT
+);
+CREATE TABLE IF NOT EXISTS coref_run (
+    exp_id TEXT PRIMARY KEY, status TEXT, ms INTEGER, chunks INTEGER, calls INTEGER, links INTEGER, error TEXT
 );
 CREATE TABLE IF NOT EXISTS refinement (
     exp_id TEXT NOT NULL, entity_id TEXT NOT NULL, status TEXT, ms INTEGER, result_json TEXT,
@@ -99,6 +107,12 @@ _GROUP_SUBTYPES = {"financial": {"TURNOVER", "INSURANCE"},
 def schema(store: Store):
     with store.tx() as c:
         c.executescript(SCHEMA)
+        cols = {r[1] for r in c.execute("PRAGMA table_info(mention)")}
+        if "kind" not in cols:          # pilot.db from before coref
+            c.execute("ALTER TABLE mention ADD COLUMN kind TEXT DEFAULT 'ner'")
+        if "name_start" not in cols:
+            c.execute("ALTER TABLE mention ADD COLUMN name_start INTEGER")
+            c.execute("ALTER TABLE mention ADD COLUMN name_end INTEGER")
 
 
 # ── text helpers ──────────────────────────────────────────────────────────
@@ -145,6 +159,18 @@ def locate(chunk: str, quote: str) -> tuple[int, int] | None:
         start = max(0, m.a - m.b)
         end = min(len(norm), start + len(q))
         return imap[start], imap[end - 1] + 1
+    return None
+
+
+def _name_span(chunk: str, quote: tuple[int, int], *names: str) -> tuple[int, int] | None:
+    """Where the entity is named inside its quote (the quote is the sentence around it)."""
+    seg, imap = _norm_map(chunk[quote[0]:quote[1]])
+    for n in names:
+        q, _ = _norm_map(n.strip().strip("“”\"'"))
+        if len(q) >= 2:
+            i = seg.find(q)
+            if i >= 0:
+                return quote[0] + imap[i], quote[0] + imap[i + len(q) - 1] + 1
     return None
 
 
@@ -236,10 +262,12 @@ def mentions(cfg: PilotConfig, store: Store):
             ids.append(mid)
             span = locate(chunk, e.get("evidence_text") or "") or locate(chunk, e.get("mention_text") or e.get("name") or "")
             page = page_at(chunk, span[0], pages[sha][r["idx"]][0]) if span else pages[sha][r["idx"]][0]
+            name = _name_span(chunk, span, e.get("mention_text") or "", e.get("name") or "") if span else None
             rows.append((mid, sha, r["idx"], k, e.get("type"), e.get("subtype"), (e.get("name") or "").strip(),
                          e.get("mention_text"), json.dumps(e.get("attributes") or {}, ensure_ascii=False),
                          e.get("evidence_text"), e.get("confidence"), span[0] if span else None,
-                         span[1] if span else None, page, int(span is not None)))
+                         span[1] if span else None, page, int(span is not None),
+                         name[0] if name else None, name[1] if name else None))
         for k, rel in enumerate(out.get("relations", [])):
             if 0 <= rel.get("head", -1) < len(ids) and 0 <= rel.get("tail", -1) < len(ids):
                 rels.append((f"{sha}:{r['idx']}:r{k}", sha, r["idx"], ids[rel["head"]], ids[rel["tail"]], rel["type"],
@@ -248,10 +276,13 @@ def mentions(cfg: PilotConfig, store: Store):
     with store.stage("mentions") as st, store.tx() as c:
         c.execute("DELETE FROM mention")
         c.execute("DELETE FROM mrelation")
-        c.executemany("INSERT INTO mention VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        c.execute("DELETE FROM coref_run")
+        c.executemany("INSERT INTO mention (id, sha, idx, k, type, subtype, name, surface, attributes, evidence, confidence,"
+                      " char_start, char_end, page, located, name_start, name_end, kind)"
+                      " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'ner')", rows)
         c.executemany("INSERT INTO mrelation VALUES (?,?,?,?,?,?,?,?,?,?)", rels)
         st["items"] = len(rows)
-    located = sum(r[-1] for r in rows)
+    located = sum(r[14] for r in rows)
     log(f"mentions: {len(rows)} mentions ({located} located in their chunk), {len(rels)} relations")
 
 
@@ -318,8 +349,8 @@ def resolve(cfg: PilotConfig, store: Store):
     exps = store.q("SELECT * FROM expediente ORDER BY id")
     with store.stage("resolve") as st:
         for e in exps:
-            ms = store.q("SELECT m.* FROM mention m WHERE m.sha IN (SELECT sha FROM docref WHERE exp_id=? AND status='fetched')"
-                         " ORDER BY m.id", (e["id"],))
+            ms = store.q("SELECT m.* FROM mention m WHERE m.kind='ner' AND m.sha IN"
+                         " (SELECT sha FROM docref WHERE exp_id=? AND status='fetched') ORDER BY m.id", (e["id"],))
             if done.get(e["id"]) == len(ms):
                 continue
             t0 = time.time()
@@ -711,8 +742,10 @@ def _write(store, eid, e, t, ms, by_id, uf, fg, sk, lots) -> int:
         # members may have changed. Shared entities are described again from all expedientes.
         shared = [r[1] for r in rows if r[2] == "global"]
         c.executemany("DELETE FROM entity_description WHERE exp_id='*' AND kind='entity' AND item_id=?", [(x,) for x in shared])
-        for table in ("entity", "entity_mention", "entity_relation", "refinement", "entity_description"):
+        for table in ("entity", "entity_mention", "entity_relation", "refinement", "entity_description", "coref_run"):
             c.execute(f"DELETE FROM {table} WHERE exp_id=?", (eid,))
+        c.execute("DELETE FROM mention WHERE kind='coref' AND id LIKE ?", (f"%:c:{eid}:%",))
+        c.execute("DELETE FROM extraction WHERE exp_id=? AND kind='tender_description'", (eid,))
         c.executemany("INSERT OR REPLACE INTO entity VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
         c.executemany("INSERT OR REPLACE INTO entity_mention VALUES (?,?,?)", links)
         c.executemany("INSERT OR REPLACE INTO entity_relation VALUES (?,?,?,?,?,?,?,?,?)", rel_rows)
@@ -753,25 +786,145 @@ def passages(store: Store, cfg: PilotConfig, exp_id: str, entity_id: str, window
     rows = store.q(
         "SELECT m.*, (SELECT MIN(role) FROM docref WHERE sha=m.sha) role, b.text_path FROM entity_mention em"
         " JOIN mention m ON m.id=em.mention_id JOIN blob b ON b.sha=m.sha"
-        " WHERE em.exp_id=? AND em.entity_id=? ORDER BY m.located DESC, m.confidence DESC", (exp_id, entity_id))
-    out, seen, texts = [], set(), {}
+        " WHERE em.exp_id=? AND em.entity_id=? ORDER BY m.kind='ner' DESC, m.located DESC, m.confidence DESC", (exp_id, entity_id))
+    out, seen, texts = [], {}, {}
     for m in rows:
         if m["sha"] not in texts:
             texts[m["sha"]] = split_words(Path(m["text_path"]).read_text(encoding="utf-8"), cfg.chunk_words)
         chunk = texts[m["sha"]][m["idx"]]
         if m["located"]:
+            # A mention already inside a passage taken for this entity adds nothing new.
+            if any(x <= m["char_start"] and m["char_end"] <= y for x, y in seen.get((m["sha"], m["idx"]), [])):
+                continue
             a, b = max(0, m["char_start"] - window), min(len(chunk), m["char_end"] + window)
             body = chunk[a:b]
+            seen.setdefault((m["sha"], m["idx"]), []).append((a, b))
         else:
             body = m["evidence"] or ""
-        key = (m["sha"], m["idx"], (m["char_start"] or 0) // max(1, window))
-        if key in seen or not body.strip():
+        if not body.strip():
             continue
-        seen.add(key)
-        out.append(f"[{m['role'] or 'Documento'} · pág. {m['page'] or '?'}] {body.strip()}")
+        ref = f" · referencia «{m['name']}»" if m["kind"] == "coref" else ""
+        out.append(f"[{m['role'] or 'Documento'} · pág. {m['page'] or '?'}{ref}] {body.strip()}")
         if len(out) >= limit:
             break
     return out
+
+
+# ── coref ─────────────────────────────────────────────────────────────────
+
+# What a passage needs for a reference to be worth asking about: a definite description of a
+# party, a demonstrative, or an anaphoric "el mismo / la misma".
+CUE = re.compile(
+    r"\b(la|dicha|esta|la citada|la referida|la mencionada|la indicada)\s+(empresa|entidad|mercantil|sociedad|licitadora|"
+    r"adjudicataria|contratista|uni[oó]n temporal)\b"
+    r"|\b(el|dicho|el citado|el referido|el mencionado)\s+(adjudicatario|licitador propuesto|licitador seleccionado)\b"
+    r"|\b(dicho|este|el citado|el referido|el mencionado|esta|dicha|la citada|la referida)\s+"
+    r"(contratista|ayuntamiento|lote|contrato|organismo|corporaci[oó]n|alcald[ií]a|administraci[oó]n|mesa|"
+    r"diputaci[oó]n|consejer[ií]a|[oó]rgano)\b"
+    r"|\b(la misma|el mismo|las mismas|los mismos)\b", re.I)
+COREF_TYPES = ("CONTRACTING_AUTHORITY", "COMPANY", "JOINT_VENTURE", "OTHER_ORGANIZATION", "LOT", "CONTRACT")
+COREF_CANDIDATES = 15
+
+
+def coref(cfg: PilotConfig, store: Store):
+    schema(store)
+    svc = Services(cfg, store)
+    done = {r["exp_id"] for r in store.q("SELECT exp_id FROM coref_run WHERE status='ok'")}
+    with store.stage("coref") as st:
+        for e in store.q("SELECT e.* FROM expediente e JOIN resolution r ON r.exp_id=e.id WHERE r.status IN ('ok','partial')"):
+            if e["id"] in done:
+                continue
+            t0 = time.time()
+            stats = _coref_expediente(cfg, store, svc, e["id"])
+            with store.tx() as c:
+                c.execute("INSERT OR REPLACE INTO coref_run VALUES (?,?,?,?,?,?,?)",
+                          (e["id"], stats["status"], int((time.time() - t0) * 1000), stats["chunks"], stats["calls"],
+                           stats["links"], stats.get("error")))
+            st["items"] += 1
+            log(f"coref {e['id']}: {stats['chunks']} passages with references, {stats['links']} references linked")
+
+
+def _coref_expediente(cfg: PilotConfig, store: Store, svc: Services, eid: str) -> dict:
+    cands = store.q("SELECT id, type, name, attributes FROM entity WHERE exp_id=? AND type IN (%s) ORDER BY mentions DESC"
+                    % ",".join("?" * len(COREF_TYPES)), (eid, *COREF_TYPES))[:COREF_CANDIDATES]
+    if not cands:
+        return {"status": "ok", "chunks": 0, "calls": 0, "links": 0}
+    listing = [{"name": c["name"], "type": c["type"]} for c in cands]
+    rows = store.q("SELECT c.sha, c.idx, b.text_path, (SELECT MIN(role) FROM docref WHERE sha=c.sha AND exp_id=?) role,"
+                   " (SELECT MIN(label) FROM docref WHERE sha=c.sha AND exp_id=?) label FROM chunk c JOIN blob b ON b.sha=c.sha"
+                   " WHERE c.status='ok' AND c.sha IN (SELECT sha FROM docref WHERE exp_id=? AND status='fetched')"
+                   " ORDER BY c.sha, c.idx", (eid, eid, eid))
+    texts, pages, jobs = {}, {}, []
+    for r in rows:
+        if r["sha"] not in texts:
+            texts[r["sha"]] = split_words(Path(r["text_path"]).read_text(encoding="utf-8"), cfg.chunk_words)
+            pages[r["sha"]] = page_ranges(texts[r["sha"]])
+        chunk = texts[r["sha"]][r["idx"]] if r["idx"] < len(texts[r["sha"]]) else ""
+        if CUE.search(chunk):
+            jobs.append((r, chunk))
+    # What NER already placed, so a reference is not annotated twice.
+    named = defaultdict(list)
+    for m in store.q("SELECT m.sha, m.idx, m.char_start, m.char_end FROM entity_mention em JOIN mention m ON m.id=em.mention_id"
+                     " WHERE em.exp_id=? AND m.located=1", (eid,)):
+        named[(m["sha"], m["idx"])].append((m["char_start"], m["char_end"]))
+
+    def one(job):
+        r, chunk = job
+        try:
+            return job, svc.coref_links(chunk, listing, f"{r['role'] or 'Documento'}: {r['label'] or ''}", exp_id=eid, sha=r["sha"]), None
+        except ServiceError as exc:
+            return job, [], str(exc)
+
+    new_mentions, links, errors, k = [], [], [], 0
+    with _pool(cfg.nlp_workers) as pool:
+        for (r, chunk), found, err in pool.map(one, jobs):
+            if err:
+                errors.append(err)
+            taken = list(named[(r["sha"], r["idx"])])
+            for link in found:
+                span = _locate_reference(chunk, link["mention"], link.get("evidence") or "", taken)
+                cand = cands[link["candidate"]]
+                k += 1
+                mid = f"{r['sha']}:{r['idx']}:c:{eid}:{k}"
+                if span:
+                    taken.append(span)
+                page = page_at(chunk, span[0], pages[r["sha"]][r["idx"]][0]) if span else pages[r["sha"]][r["idx"]][0]
+                new_mentions.append((mid, r["sha"], r["idx"], k, cand["type"], None, link["mention"], link["mention"], "{}",
+                                     link.get("evidence"), None, span[0] if span else None, span[1] if span else None,
+                                     page, int(span is not None), "coref", span[0] if span else None, span[1] if span else None))
+                links.append((eid, mid, cand["id"]))
+    with store.tx() as c:
+        c.execute("DELETE FROM mention WHERE kind='coref' AND id LIKE ?", (f"%:c:{eid}:%",))
+        c.execute("DELETE FROM entity_mention WHERE exp_id=? AND mention_id LIKE ?", (eid, f"%:c:{eid}:%"))
+        c.executemany("INSERT INTO mention (id, sha, idx, k, type, subtype, name, surface, attributes, evidence, confidence,"
+                      " char_start, char_end, page, located, kind, name_start, name_end)"
+                      " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", new_mentions)
+        c.executemany("INSERT OR REPLACE INTO entity_mention VALUES (?,?,?)", links)
+        # Descriptions and the expediente summary read the mentions: what was written before these is stale.
+        c.execute("DELETE FROM entity_description WHERE exp_id=? AND kind='entity'", (eid,))
+        c.execute("DELETE FROM extraction WHERE exp_id=? AND kind='tender_description'", (eid,))
+    status = "failed" if errors and len(errors) == len(jobs) else "ok"
+    return {"status": status, "chunks": len(jobs), "calls": len(jobs), "links": len(links),
+            "error": errors[0][:300] if errors else None}
+
+
+def _locate_reference(chunk: str, mention: str, evidence: str, taken: list) -> tuple[int, int] | None:
+    """The reference inside its sentence, else its first free occurrence in the chunk."""
+    def free(a, b):
+        return all(b <= x or a >= y for x, y in taken)
+    ev = locate(chunk, evidence) if evidence else None
+    if ev:
+        seg = chunk[ev[0]:ev[1]]
+        i = fold(seg).find(fold(mention))
+        if i >= 0 and free(ev[0] + i, ev[0] + i + len(mention)):
+            return ev[0] + i, ev[0] + i + len(mention)
+    f, m = fold(chunk), fold(mention)
+    i = f.find(m)
+    while i >= 0:
+        if free(i, i + len(mention)):
+            return i, i + len(mention)
+        i = f.find(m, i + 1)
+    return None
 
 
 # ── refine ────────────────────────────────────────────────────────────────

@@ -11,6 +11,8 @@ Stages run in this order; `run` does them all. Each is resumable.
   mentions     every NER item as a mention, located in its chunk (offsets, page)
   resolve      per expediente: feed anchors, keys, near-identical names, then nlp_service /resolve
                type by type over every document -> one entity per real thing
+  coref        nlp_service /coref/links: references that do not name the entity ("la empresa",
+               "la adjudicataria", "dicha entidad") become mentions of it, with offsets
   refine       nlp_service /ner with a narrow schema per requirement and award criterion
   describe     nlp_service /summarize once per entity (requirement_desc, criterion_desc,
                entity_desc) and per relation
@@ -29,7 +31,7 @@ from placsp_pilot import entities, graph, index, nlpstages, report, stages, vali
 from placsp_pilot.config import DEFAULT_QUOTAS, load_config
 from placsp_pilot.store import Store
 
-ORDER = ["select", "discover", "fetch", "text", "classify", "summarize", "ner", "mentions", "resolve", "refine",
+ORDER = ["select", "discover", "fetch", "text", "classify", "summarize", "ner", "mentions", "resolve", "coref", "refine",
          "describe", "summary", "graph", "index", "validate", "report"]
 
 
@@ -73,6 +75,7 @@ def main(argv=None):
         "ner": lambda: nlpstages.ner(cfg, store),
         "mentions": lambda: entities.mentions(cfg, store),
         "resolve": lambda: entities.resolve(cfg, store),
+        "coref": lambda: entities.coref(cfg, store),
         "refine": lambda: entities.refine(cfg, store),
         "describe": lambda: entities.describe(cfg, store),
         "summary": lambda: nlpstages.summary(cfg, store),

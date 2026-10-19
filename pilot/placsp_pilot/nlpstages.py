@@ -253,6 +253,9 @@ def ner(cfg: PilotConfig, store: Store):
 
 ROLE_ORDER = {r: i for i, r in enumerate(C.ROLES)}
 MAX_AGG_DESCRIPTIONS = 30
+MAX_AGG_ENTITIES = 20
+SUMMARY_TYPES = ("COMPANY", "JOINT_VENTURE", "AWARD_CRITERION", "REQUIREMENT", "GUARANTEE", "PENALTY", "CONTRACT",
+                 "MODIFICATION", "TEAM_PROFILE")
 
 
 def facts_brief(t: dict) -> str:
@@ -302,6 +305,12 @@ def summary(cfg: PilotConfig, store: Store):
                 s = json.loads(d["summary_json"])
                 descriptions.append(f"[Documento {d['seq']} · {d['role']} · {d['effective_date'] or 'sin fecha'}] "
                                     f"{s.get('headline', '')}: {s.get('summary', '')}")
+        # And what is known about its entities, gathered from every mention in every document.
+        for x in store.q(
+                "SELECT e.type, e.name, d.text FROM entity e JOIN entity_description d ON d.item_id=e.id AND d.kind='entity'"
+                " AND d.exp_id IN (e.exp_id, '*') AND d.status='ok' WHERE e.exp_id=? AND e.type IN (%s)"
+                " ORDER BY e.mentions DESC" % ",".join("?" * len(SUMMARY_TYPES)), (e["id"], *SUMMARY_TYPES))[:MAX_AGG_ENTITIES]:
+            descriptions.append(f"[Entidad · {x['type']}] {x['name']}: {x['text']}")
         evidence = [l for l in facts_brief(tender).split("\n") if l.split(":", 1)[-1].strip()]
         jobs.append((e["id"], {"name": e["title"] or e["id"], "type": "Expediente de contratación pública",
                                "descriptions": descriptions or ["(sin documentos)"], "evidence": evidence}))

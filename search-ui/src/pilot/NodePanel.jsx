@@ -39,6 +39,8 @@ export default function NodePanel({ id, onSelect, onClose }) {
 
 function Body({ d, onSelect }) {
   const n = d.node
+  // A reference ("la empresa") is evidence too: counted apart so the reader sees both.
+  const refs = d.mentions.filter((m) => m.kind === 'coref').length
   const props = Object.entries(n).filter(([k, v]) => !SKIP.has(k) && v != null && v !== '' && typeof v !== 'object')
   const isOrg = n.label === 'Organization' || n.label === 'JointVenture'
   const evidence = Array.isArray(n.evidence) ? n.evidence : []
@@ -47,7 +49,7 @@ function Body({ d, onSelect }) {
       <h3>{n.label === 'Document' ? (n.title || n.filename) : (n.name || n.id)}</h3>
       <div className="chips">
         <span className="chip">{SOURCE[n.source] || n.id.split(':')[0]}</span>
-        {d.mention_count > 0 && <span className="chip">{d.mention_count} menciones</span>}
+        {d.mention_count > 0 && <span className="chip">{d.mention_count} menciones{refs ? ` (${refs} referencias)` : ''}</span>}
         {n.role && <span className="chip">{roleEs(n.role)}</span>}
         {isOrg && <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(n.id)}`)}>Ver en todos los expedientes →</button>}
       </div>
@@ -77,7 +79,7 @@ function Body({ d, onSelect }) {
       {d.mentions.length > 0 && (
         <div className="np-sec">
           <div className="np-rel">Dónde aparece {d.mention_count > d.mentions.length && <span>{d.mentions.length} de {d.mention_count}</span>}</div>
-          {d.mentions.map((m, i) => <Mention key={i} m={m} />)}
+          {d.mentions.map((m, i) => <Mention key={i} m={m} entity={n.id} />)}
         </div>
       )}
       {evidence.length > 0 && d.mentions.length === 0 && (
@@ -108,13 +110,16 @@ function Body({ d, onSelect }) {
   )
 }
 
-function Mention({ m }) {
+function Mention({ m, entity }) {
   return (
-    <div className="mention">
+    <div className={`mention ${m.kind === 'coref' ? 'is-ref' : ''}`}>
       <div className="chunk-meta">
         <span>Doc {m.doc_seq ?? '?'} · {roleEs(m.doc_role)}</span>
         {m.page && <span>pág. {m.page}</span>}
+        {m.kind === 'coref' && <span className="chip" title="Expresión que se refiere a la entidad sin nombrarla">referencia «{m.surface}»</span>}
         {!m.located && <span title="La cita no se encontró literal en el texto">cita aproximada</span>}
+        {m.doc_sha256 && <button type="button" className="linkish small" onClick={() =>
+          go(`/t/${m.tender_id}/d/${m.doc_sha256}?c=${m.chunk_idx}&e=${encodeURIComponent(entity)}`)}>ver en el documento →</button>}
       </div>
       <p>{m.before && '…'}{m.before}<mark>{m.quote}</mark>{m.after}{m.after && '…'}</p>
     </div>

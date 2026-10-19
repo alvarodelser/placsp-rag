@@ -232,6 +232,7 @@ function Documents({ t, onOpen }) {
             <div className="doc-title">{d.title || d.filename}</div>
             {d.summary && <p className="doc-sum">{d.summary}</p>}
             <div className="doc-links">
+              <button type="button" className="linkish" onClick={() => go(`/t/${t.tender_id}/d/${d.sha256}`)}>Leer con anotaciones</button>
               <button type="button" className="linkish" onClick={() => onOpen(d.sha256)}>Entidades y relaciones</button>
               {d.stored && <a href={fileUrl(d.sha256)} target="_blank" rel="noreferrer">Archivo guardado</a>}
               {d.url && <a href={d.url} target="_blank" rel="noreferrer">Original ↗</a>}

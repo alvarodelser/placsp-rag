@@ -128,7 +128,8 @@ def compute(cfg: PilotConfig, store: Store) -> dict:
     for r in q("SELECT merges FROM resolution"):
         merges.update(json.loads(r["merges"] or "{}"))
     ent = {
-        "mentions": q("SELECT COUNT(*) n FROM mention")[0]["n"],
+        "mentions": q("SELECT COUNT(*) n FROM mention WHERE kind='ner'")[0]["n"],
+        "coref": q("SELECT COUNT(*) n FROM mention WHERE kind='coref'")[0]["n"],
         "located": q("SELECT COALESCE(SUM(located), 0) n FROM mention")[0]["n"],
         "entities": q("SELECT COUNT(*) n FROM entity")[0]["n"],
         "shared": q("SELECT COUNT(DISTINCT id) n FROM entity WHERE scope='global'")[0]["n"],
@@ -247,7 +248,7 @@ def render(m: dict) -> str:
 
     w("## Wall time per stage\n\n| Stage | Wall time | Items |\n|---|---:|---:|")
     total = 0
-    for s in ("select", "discover", "fetch", "text", "classify", "summarize", "ner", "mentions", "resolve", "refine",
+    for s in ("select", "discover", "fetch", "text", "classify", "summarize", "ner", "mentions", "resolve", "coref", "refine",
               "describe", "summary", "graph", "index", "validate"):
         if s in m["stages"]:
             st = m["stages"][s]
@@ -286,7 +287,8 @@ def render(m: dict) -> str:
     w(f"### Entities\n\n{en['mentions']:,} mentions ({en['located']:,} located in their chunk) resolved into "
       f"{en['entities']:,} entities ({en['anchored']:,} of them the feed's own node, {en['shared']:,} shared across "
       f"expedientes). Merges: " + ", ".join(f"{k} {v}" for k, v in en["merges"].items())
-      + f"; {en['llm_calls']} /resolve calls. {en['refined']:,} requirements and criteria refined; "
+      + f"; {en['llm_calls']} /resolve calls. {en['coref']:,} references that do not name their entity "
+      f"(\"la empresa\", \"la adjudicataria\"...) linked to it. {en['refined']:,} requirements and criteria refined; "
       f"{en['conflicts']} entities with values that disagree between sources.\n")
     w("| Type | Mentions | Entities |\n|---|---:|---:|")
     for k, (mm, ee) in en["by_type"].items():

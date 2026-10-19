@@ -152,10 +152,14 @@ def _entity_checks(r: Recorder, store: Store, cfg: PilotConfig, eid: str):
     res = store.one("SELECT status, error FROM resolution WHERE exp_id=?", (eid,))
     r.check("entities.resolved", bool(res and res["status"] == "ok"), "fail" if not res or res["status"] == "failed" else "warn",
             "ok", res["status"] if res else "missing", (res["error"] or "") if res else "")
-    total = store.one("SELECT COUNT(*) n, SUM(located) loc FROM mention WHERE sha IN"
+    total = store.one("SELECT COUNT(*) n, SUM(located) loc FROM mention WHERE kind='ner' AND sha IN"
                       " (SELECT sha FROM docref WHERE exp_id=? AND status='fetched')", (eid,))
-    linked = store.one("SELECT COUNT(*) n FROM entity_mention WHERE exp_id=?", (eid,))["n"]
+    linked = store.one("SELECT COUNT(*) n FROM entity_mention em JOIN mention m ON m.id=em.mention_id"
+                       " WHERE em.exp_id=? AND m.kind='ner'", (eid,))["n"]
     r.check("entities.mentions", linked == total["n"], "fail", total["n"], linked, "mentions placed on an entity")
+    co = store.one("SELECT status, links, error FROM coref_run WHERE exp_id=?", (eid,))
+    r.check("entities.coref", bool(co and co["status"] == "ok"), "fail", "ok", co["status"] if co else "missing",
+            f"{co['links']} references linked" if co else "")
     loc = (total["loc"] or 0) / total["n"] if total["n"] else 1.0
     r.check("entities.located", loc >= 0.9, "warn", ">=90% quotes found in their chunk", f"{loc:.0%}")
     ents = store.q("SELECT * FROM entity WHERE exp_id=?", (eid,))

@@ -3,6 +3,8 @@
 export const NODE = {
   Tender:              { es: 'Expediente',           color: '#4f46e5' },
   Organization:        { es: 'Organización',         color: '#0f8a7e' },
+  Company:             { es: 'Empresa',              color: '#0f8a7e' },
+  Authority:           { es: 'Órgano de contratación', color: '#0369a1' },
   JointVenture:        { es: 'UTE',                  color: '#0f8a7e' },
   Lot:                 { es: 'Lote',                 color: '#c47d0e' },
   AwardCriterion:      { es: 'Criterio',             color: '#8b5cf6' },
@@ -20,6 +22,7 @@ export const NODE = {
   TechnicalRequirement:{ es: 'Requisito técnico',    color: '#64748b' },
   Document:            { es: 'Documento',            color: '#3b6ea8' },
   Notice:              { es: 'Anuncio',              color: '#94a3b8' },
+  Sector:              { es: 'Sector (CPV)',         color: '#a3a3a3' },
 }
 export const nodeInfo = (label) => NODE[label] || { es: label, color: '#94a3b8' }
 

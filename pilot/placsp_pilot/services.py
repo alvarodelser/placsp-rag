@@ -71,6 +71,11 @@ class Services:
         return self._post("nlp", f"{self.cfg.nlp_url}/resolve", {"entities": entities, "relations": relations},
                           task="resolve", input_chars=size, **kw)
 
+    def coref_links(self, text: str, candidates: list[dict], context: str | None = None, **kw) -> list[dict]:
+        out = self._post("nlp", f"{self.cfg.nlp_url}/coref/links", {"text": text, "candidates": candidates, "context": context},
+                         task="coref", input_chars=len(text), **kw)
+        return out["links"]
+
     def embed(self, texts: list[str], **kw) -> list[list[float]]:
         out = self._post("vectorizer", f"{self.cfg.vectorizer_url}/embed", {"texts": texts, "normalize": True},
                          task="embed", input_chars=sum(map(len, texts)), **kw)

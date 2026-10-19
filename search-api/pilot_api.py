@@ -67,7 +67,8 @@ def embed(text: str) -> list[float]:
         r = httpx.post(f"{VECTORIZER_URL}/embed", json={"texts": [text], "normalize": True}, timeout=60)
         r.raise_for_status()
     except httpx.HTTPError as e:
-        raise HTTPException(503, f"vectorizer unavailable: {e}")
+        raise HTTPException(503, f"El vectorizador no responde en {VECTORIZER_URL} ({type(e).__name__}: {e}). "
+                                 "Sin él no hay búsqueda por significado ni Preguntar.")
     return r.json()["embeddings"][0]
 
 
@@ -147,6 +148,26 @@ def overview():
     }
 
 
+@router.get("/health")
+def health():
+    """What the viewer depends on, each checked on its own, so a broken one is named."""
+    out = {"vectorizer_url": VECTORIZER_URL, "qdrant_url": QDRANT_URL, "prefix": PREFIX, "label": LABEL}
+    try:
+        out["qdrant"] = {s: qdrant().count(coll(s), exact=True).count for s in ("tenders", "chunks", "entities")}
+    except Exception as e:  # noqa: BLE001
+        out["qdrant"] = f"error: {e}"
+    try:
+        with get_driver().session() as s:
+            out["neo4j"] = s.run(f"MATCH (n:`{LABEL}`) RETURN count(n) AS n").single()["n"]
+    except Exception as e:  # noqa: BLE001
+        out["neo4j"] = f"error: {getattr(e, 'detail', e)}"
+    try:
+        out["vectorizer"] = f"ok ({len(embed('prueba'))} dims)"
+    except HTTPException as e:
+        out["vectorizer"] = f"error: {e.detail}"
+    return out
+
+
 @router.get("/tenders")
 def tenders(q: str = "", channel: str = "", limit: int = Query(30, ge=1, le=200), offset: int = Query(0, ge=0)):
     """Semantic search over the tenders' descriptions, or the latest first without a query."""
@@ -210,6 +231,69 @@ def tender_graph(tender_id: str, entities: bool = True):
     return {"nodes": list(nodes.values()), "edges": edges}
 
 
+@router.get("/documents/{sha}")
+def document(sha: str, tender: str, start: int = Query(0, ge=0), limit: int = Query(40, ge=1, le=200)):
+    """A document as the pipeline read it: its chunks in order, each with every mention placed in it
+    (named by NER or a reference such as "la empresa"), and the entities those mentions point at."""
+    if not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise HTTPException(400, "bad sha256")
+    from qdrant_client import models as m
+    flt = m.Filter(must=[m.FieldCondition(key="tender_id", match=m.MatchValue(value=tender)),
+                         m.FieldCondition(key="doc_sha256", match=m.MatchValue(value=sha)),
+                         m.FieldCondition(key="chunk_idx", range=m.Range(gte=start, lt=start + limit))])
+    pts = scroll_all("chunks", flt, ["chunk_idx", "page_from", "page_to", "text", "mentions", "ner"], limit=limit)
+    chunks = sorted(({k: p.payload.get(k) for k in ("chunk_idx", "page_from", "page_to", "text", "mentions", "ner")} for p in pts),
+                    key=lambda c: c["chunk_idx"])
+    total = qdrant().count(coll("chunks"), count_filter=m.Filter(must=flt.must[:2]), exact=True).count
+    ids = sorted({x["entity_id"] for c in chunks for x in c.get("mentions") or []})
+    ents = {}
+    if ids:
+        for p in qdrant().retrieve(coll("entities"), ids=[point_id("entity", i) for i in ids],
+                                   with_payload=["node_id", "label", "name", "subtype"]):
+            ents[p.payload["node_id"]] = {k: p.payload.get(k) for k in ("label", "name", "subtype")}
+    t = qdrant().retrieve(coll("tenders"), ids=[point_id("tender", tender)], with_payload=["documents", "name"])
+    doc = next((d for d in (t[0].payload.get("documents") or []) if d.get("sha256") == sha), {}) if t else {}
+    doc = {k: v for k, v in doc.items() if k != "file_path"} | {"stored": bool(doc.get("file_path")), "tender_name": t[0].payload.get("name") if t else None}
+    return {"document": doc, "chunks": chunks, "total_chunks": total, "start": start, "entities": ents}
+
+
+@router.get("/graph")
+def corpus_graph(cpv: bool = True, qualifications: bool = True):
+    """Everything the expedientes share: tenders, the authorities that publish them, the companies
+    that bid for and win them (roles from the unified tender object), the qualifications they ask
+    for and, optionally, CPV divisions as sectors. A tender's own subgraph is loaded on demand."""
+    tenders = [p.payload for p in scroll_all("tenders", fields=["tender_id", "name", "channel", "status", "value",
+                                                               "authority", "companies", "cpv", "counts"])]
+    nodes, edges = {}, []
+    for t in tenders:
+        tid = f"tender:{t['tender_id']}"
+        nodes[tid] = {"id": tid, "label": "Tender", "name": t.get("name"), "channel": t.get("channel"),
+                      "status": t.get("status"), "value": t.get("value"), "documents": (t.get("counts") or {}).get("documents")}
+        a = t.get("authority")
+        if a:
+            nodes.setdefault(a["id"], {"id": a["id"], "label": "Organization", "name": a.get("name"), "kinds": ["ContractingAuthority"]})
+            edges.append({"src": a["id"], "dst": tid, "rel": "PUBLISHED"})
+        for c in t.get("companies") or []:
+            n = nodes.setdefault(c["id"], {"id": c["id"], "label": "Organization", "name": c.get("name"), "kinds": ["Company"]})
+            if "Company" not in n["kinds"]:
+                n["kinds"].append("Company")
+            for role in c.get("roles") or []:
+                edges.append({"src": c["id"], "dst": tid, "rel": role.upper()})
+        if cpv:
+            for code in {(x or "")[:2] for x in t.get("cpv") or [] if x}:
+                sid = f"cpv:{code}"
+                nodes.setdefault(sid, {"id": sid, "label": "Sector", "name": f"CPV {code}"})
+                edges.append({"src": tid, "dst": sid, "rel": "IN_SECTOR"})
+    if qualifications:
+        with get_driver().session() as s:
+            for r in s.run(f"MATCH (t:`{LABEL}Tender`)-[:HAS_LOT]->()-[:REQUIRES]->()-[:ACCEPTS]->(q:`{LABEL}Qualification`) "
+                           "RETURN DISTINCT t.id AS t, q.id AS q, q.name AS name"):
+                if r["t"] in nodes:
+                    nodes.setdefault(r["q"], {"id": r["q"], "label": "Qualification", "name": r["name"]})
+                    edges.append({"src": r["t"], "dst": r["q"], "rel": "ASKS_FOR"})
+    return {"nodes": list(nodes.values()), "edges": edges}
+
+
 @router.get("/node")
 def node(id: str, chunks: int = Query(6, ge=0, le=30)):
     """One graph node: its properties, its neighbours by relation, the chunks that mention it and
@@ -253,7 +337,8 @@ def _mentions(rows, limit: int) -> list[dict]:
             before, quote, after = "", e.get("quote") or "", ""
         out.append({"tender_id": r["tender"], "doc_seq": r["seq"], "doc_role": r["role"], "doc_title": r["title"],
                     "doc_sha256": r["sha"], "chunk_idx": r["idx"], "page": e.get("page"), "surface": e.get("surface"),
-                    "located": e.get("located"), "before": before, "quote": quote, "after": after})
+                    "located": e.get("located"), "kind": e.get("kind") or "ner", "char_start": a,
+                    "before": before, "quote": quote, "after": after})
     return out
 
 
