@@ -829,13 +829,14 @@ COREF_CANDIDATES = 15
 def coref(cfg: PilotConfig, store: Store):
     schema(store)
     svc = Services(cfg, store)
-    done = {r["exp_id"] for r in store.q("SELECT exp_id FROM coref_run WHERE status='ok'")}
+    done = {r["exp_id"] for r in store.q("SELECT exp_id FROM coref_run WHERE status=?", ("ok" if cfg.coref else "off",))}
     with store.stage("coref") as st:
         for e in store.q("SELECT e.* FROM expediente e JOIN resolution r ON r.exp_id=e.id WHERE r.status IN ('ok','partial')"):
             if e["id"] in done:
                 continue
             t0 = time.time()
-            stats = _coref_expediente(cfg, store, svc, e["id"])
+            stats = _coref_expediente(cfg, store, svc, e["id"]) if cfg.coref else \
+                {"status": "off", "chunks": 0, "calls": 0, "links": 0}
             with store.tx() as c:
                 c.execute("INSERT OR REPLACE INTO coref_run VALUES (?,?,?,?,?,?,?)",
                           (e["id"], stats["status"], int((time.time() - t0) * 1000), stats["chunks"], stats["calls"],

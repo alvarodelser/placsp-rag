@@ -158,7 +158,7 @@ def _entity_checks(r: Recorder, store: Store, cfg: PilotConfig, eid: str):
                        " WHERE em.exp_id=? AND m.kind='ner'", (eid,))["n"]
     r.check("entities.mentions", linked == total["n"], "fail", total["n"], linked, "mentions placed on an entity")
     co = store.one("SELECT status, links, error FROM coref_run WHERE exp_id=?", (eid,))
-    r.check("entities.coref", bool(co and co["status"] == "ok"), "fail", "ok", co["status"] if co else "missing",
+    r.check("entities.coref", bool(co and co["status"] in ("ok", "off")), "fail", "ok", co["status"] if co else "missing",
             f"{co['links']} references linked" if co else "")
     loc = (total["loc"] or 0) / total["n"] if total["n"] else 1.0
     r.check("entities.located", loc >= 0.9, "warn", ">=90% quotes found in their chunk", f"{loc:.0%}")

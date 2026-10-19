@@ -219,6 +219,7 @@ Tuning (environment):
 | `PILOT_NER_SKIP_ROLES` | (none) | Roles to leave out of NER, e.g. `Annex,ProjectDocument,TechnicalAnnex`. |
 | `PILOT_NER_PREFLIGHT_S` | 60 | The `ner` stage stops if its first two calls each take longer (Ollama on the CPU, thinking on). |
 | `PILOT_DESCRIBE_RELATIONS` | 1 | Describe relations as well as entities. |
+| `PILOT_COREF` | 1 | Link references ("la empresa", "la adjudicataria") to their entities: one call per NER'd passage that has them. |
 | `PILOT_NLP_WORKERS` | 2 | Concurrent calls to nlp_service. |
 | `PILOT_FETCH_WORKERS` | 4 | Concurrent downloads and text extraction. |
 | `PILOT_MAX_FILE_MB` | 200 | Larger files are recorded but not downloaded. |

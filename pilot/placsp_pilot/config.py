@@ -51,6 +51,7 @@ class PilotConfig:
     ner_skip_roles: str     # comma-separated document roles to leave out of NER (default: none)
     # Seconds one /ner call may take before the stage stops: catches Ollama running on the CPU.
     ner_preflight_s: float
+    coref: bool             # link references ("la empresa"...) to their entities; one call per passage with them
     ocr_min_chars_per_page: int
     quotas: dict = field(default_factory=lambda: dict(DEFAULT_QUOTAS))
 
@@ -100,6 +101,7 @@ def load_config(run_dir: str | None = None) -> PilotConfig:
         describe_relations=_env("PILOT_DESCRIBE_RELATIONS", "1") not in ("0", "false", "no"),
         ner_skip_roles=_env("PILOT_NER_SKIP_ROLES", ""),
         ner_preflight_s=float(_env("PILOT_NER_PREFLIGHT_S", "60")),
+        coref=_env("PILOT_COREF", "1") not in ("0", "false", "no"),
         ocr_min_chars_per_page=int(_env("PILOT_OCR_MIN_CHARS_PER_PAGE", "80")),
     )
     for d in (cfg.run_dir, cfg.files_dir, cfg.text_dir, cfg.raw_dir, cfg.out_dir):
