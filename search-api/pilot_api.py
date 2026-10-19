@@ -41,7 +41,7 @@ MARGIN = 0.08                                      # /search keeps hits within t
 CHUNK_RELS = ["HAS_CHUNK", "NEXT", "MENTIONS", "MENTIONED_IN"]
 JSON_PROPS = ("detail", "conflicts", "attributes")
 HEAVY = {"evidence", "descriptions", "documents", "file_path", "aliases", "text"}
-CARD = ["tender_id", "name", "channel", "status", "authority", "value", "published", "counts", "analysable",
+CARD = ["tender_id", "name", "short_title", "channel", "status", "authority", "value", "published", "counts", "analysable",
         "skip_reason", "contract_type", "procedure", "cpv", "nuts", "description", "companies"]
 
 _client = None
@@ -259,17 +259,72 @@ def document(sha: str, tender: str, start: int = Query(0, ge=0), limit: int = Qu
     return {"document": doc, "chunks": chunks, "total_chunks": total, "start": start, "entities": ents}
 
 
+# What a preview shows first: what a bidder reads a document for.
+PREVIEW_ORDER = {"AwardCriterion": 0, "Requirement": 1, "TechnicalRequirement": 2, "Guarantee": 3, "Penalty": 4,
+                 "TeamProfile": 5, "Deliverable": 6, "Lot": 7, "Organization": 8, "JointVenture": 8}
+
+
+def _flat(s: str) -> str:
+    return re.sub(r"\s+", " ", s)
+
+
+@router.get("/documents/{sha}/preview")
+def document_preview(sha: str, tender: str, spans: int = Query(5, ge=0, le=12)):
+    """A document at a glance: its place in the tender, its summary and a few passages where the
+    pipeline found what matters most in it (criteria and requirements first), the found name marked."""
+    if not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise HTTPException(400, "bad sha256")
+    from qdrant_client import models as m
+    t = qdrant().retrieve(coll("tenders"), ids=[point_id("tender", tender)], with_payload=["documents"])
+    doc = next((d for d in (t[0].payload.get("documents") or []) if d.get("sha256") == sha), None) if t else None
+    if doc is None:
+        raise HTTPException(404, "document not in this tender")
+    keep = ("sha256", "seq", "role", "title", "filename", "summary", "effective_date", "pages", "chars", "entities", "stage")
+    out = {"document": {k: doc.get(k) for k in keep}, "spans": [], "mentions": 0}
+    if not spans:
+        return out
+    flt = m.Filter(must=[m.FieldCondition(key="tender_id", match=m.MatchValue(value=tender)),
+                         m.FieldCondition(key="doc_sha256", match=m.MatchValue(value=sha))],
+                   must_not=[m.IsEmptyCondition(is_empty=m.PayloadField(key="entity_ids"))])
+    chunks = scroll_all("chunks", flt, ["chunk_idx", "page_from", "text", "mentions"], limit=400)
+    found = [(p.payload, x) for p in chunks for x in p.payload.get("mentions") or []
+             if x.get("kind", "ner") == "ner" and x.get("char_start") is not None]
+    out["mentions"] = len(found)
+    labels = {}
+    ids = list({x["entity_id"] for _, x in found})
+    for i in range(0, len(ids), 200):
+        for p in qdrant().retrieve(coll("entities"), ids=[point_id("entity", e) for e in ids[i:i + 200]],
+                                   with_payload=["node_id", "label", "name"]):
+            labels[p.payload["node_id"]] = (p.payload.get("label"), p.payload.get("name"))
+    found.sort(key=lambda f: (PREVIEW_ORDER.get(labels.get(f[1]["entity_id"], ("",))[0], 9), f[0]["chunk_idx"], f[1]["char_start"]))
+    seen = set()
+    for c, x in found:
+        if x["entity_id"] in seen or x["entity_id"] not in labels:
+            continue
+        seen.add(x["entity_id"])
+        text, a, b = c.get("text") or "", x["char_start"], min(x["char_end"], x["char_start"] + 320)
+        ns, ne = x.get("name_start"), x.get("name_end")
+        mark = (ns, ne) if ns is not None and ne is not None and a <= ns < ne <= b else (a, b)
+        out["spans"].append({"entity_id": x["entity_id"], "label": labels[x["entity_id"]][0], "name": labels[x["entity_id"]][1],
+                             "chunk_idx": c["chunk_idx"], "page": x.get("page") or c.get("page_from"),
+                             "before": _flat(text[max(0, a - 60):a] + text[a:mark[0]])[-160:], "mark": _flat(text[mark[0]:mark[1]]),
+                             "after": _flat(text[mark[1]:b] + text[b:b + 60])[:160]})
+        if len(out["spans"]) >= spans:
+            break
+    return out
+
+
 @router.get("/graph")
 def corpus_graph(documents: bool = False):
     """What the expedientes share: tenders, the authorities that publish them and the companies
     that bid for and win them (roles from the unified tender object); with `documents`, each
     tender's documents too. A tender's own subgraph is at /tenders/{id}/graph."""
-    fields = ["tender_id", "name", "channel", "status", "value", "authority", "companies", "counts"]
+    fields = ["tender_id", "name", "short_title", "channel", "status", "value", "authority", "companies", "counts"]
     tenders = [p.payload for p in scroll_all("tenders", fields=fields + (["documents"] if documents else []))]
     nodes, edges = {}, []
     for t in tenders:
         tid = f"tender:{t['tender_id']}"
-        nodes[tid] = {"id": tid, "label": "Tender", "name": t.get("name"), "channel": t.get("channel"),
+        nodes[tid] = {"id": tid, "label": "Tender", "name": t.get("name"), "short_title": t.get("short_title"), "channel": t.get("channel"),
                       "status": t.get("status"), "value": t.get("value"), "documents": (t.get("counts") or {}).get("documents")}
         a = t.get("authority")
         if a:

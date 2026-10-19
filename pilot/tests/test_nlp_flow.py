@@ -87,6 +87,7 @@ def test_nlp_stages_build_the_graph(run):
     assert doc["summary"] and doc["ner_chunks"] > doc["ner_chunks_processed"]
     tender = g.nodes[f"tender:{rec['id']}"]
     assert tender["description"].endswith("descripción de prueba.")
+    assert tender["short_title"] and len(tender["short_title"].split()) <= nlpstages.TITLE_WORDS + 1
     out = json.loads((cfg.out_dir / "expedientes" / f"{rec['id']}.json").read_text())
     assert out["documents"][0]["role"] == "PCAP"
     path = report.write(cfg, store)

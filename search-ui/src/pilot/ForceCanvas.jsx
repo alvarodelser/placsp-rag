@@ -12,7 +12,7 @@
 // Drag a node to move it, drag the background to pan, wheel to zoom, click to select, double-click to open.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from 'd3-force'
-import { nodeInfo, NOT_DRAWN } from './labels.js'
+import { nodeInfo, NOT_DRAWN, shortTitle } from './labels.js'
 
 const BELONGS = new Set(['HAS_LOT', 'HAS_CRITERION', 'REQUIRES', 'INCLUDES', 'HAS_RESULT', 'HAS_NOTICE', 'HAS_CONDITION',
   'HAS_DOCUMENT', 'WINNER', 'RESULTED_IN', 'DETAILED_BY', 'ACCEPTS', 'PUBLISHED', 'HAS_CONTRACT', 'CONTRACT_FOR'])
@@ -274,6 +274,6 @@ function page(ctx, n, col, lw) {
 
 function short(n) {
   if (n.label === 'Lot') return `Lote ${n.number || ''}`.trim()
-  const s = (n.name || n.title || '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+  const s = (n.label === 'Tender' ? shortTitle(n) : n.name || n.title || '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
   return s.length > 30 ? `${s.slice(0, 28)}…` : s
 }

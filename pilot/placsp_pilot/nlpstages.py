@@ -331,3 +331,51 @@ def summary(cfg: PilotConfig, store: Store):
                           (exp_id, "tender_description", "-", status, json.dumps(out, ensure_ascii=False), ms))
             st["items"] += 1
         log(f"summary: {st['items']} expediente descriptions")
+    titles(cfg, store, svc)
+
+
+TITLE_WORDS = 14     # a name longer than this gets a short title written for it
+
+
+def short_name(name: str) -> str:
+    """The name without its translation: "Obra X / Obra X" (Valencian, Catalan, Galician, Basque) keeps the first."""
+    parts = [p.strip() for p in re.split(r"\s+/\s+", name or "") if p.strip()]
+    return parts[0] if len(parts) == 2 else (name or "").strip()
+
+
+def titles(cfg: PilotConfig, store: Store, svc: "Services"):
+    """A short title per expediente (the article profile's 8-15 word headline) when its name is long;
+    otherwise the name itself, without a call."""
+    done = {r["exp_id"] for r in store.q("SELECT exp_id FROM extraction WHERE kind='tender_title' AND status='ok'")}
+    jobs = []
+    with store.tx() as c:
+        for e in store.q("SELECT id, title, tender_json FROM expediente"):
+            if e["id"] in done:
+                continue
+            name = (json.loads(e["tender_json"]).get("tender") or {}).get("name") or e["title"] or ""
+            short = short_name(name)
+            if len(short.split()) <= TITLE_WORDS:
+                c.execute("INSERT OR REPLACE INTO extraction (exp_id, kind, sha, status, result_json, ms) VALUES (?,?,?,?,?,?)",
+                          (e["id"], "tender_title", "-", "ok", json.dumps({"title": short, "how": "name"}, ensure_ascii=False), 0))
+            else:
+                desc = store.one("SELECT result_json FROM extraction WHERE exp_id=? AND kind='tender_description' AND status='ok'", (e["id"],))
+                jobs.append((e["id"], short, json.loads(desc["result_json"]).get("description") if desc else ""))
+
+    def one(job):
+        exp_id, name, desc = job
+        t0 = time.time()
+        try:
+            out = svc.summarize("article", {"title": name, "text": f"{name}\n\n{desc or ''}"}, exp_id=exp_id)
+            return exp_id, "ok", {"title": out.get("headline") or name, "how": "llm"}, int((time.time() - t0) * 1000)
+        except ServiceError as err:
+            return exp_id, "failed", {"error": str(err)}, int((time.time() - t0) * 1000)
+
+    with store.stage("titles") as st, _pool(cfg.nlp_workers) as pool:
+        for f in as_completed([pool.submit(one, j) for j in jobs]):
+            exp_id, status, out, ms = f.result()
+            with store.tx() as c:
+                c.execute("INSERT OR REPLACE INTO extraction (exp_id, kind, sha, status, result_json, ms) VALUES (?,?,?,?,?,?)",
+                          (exp_id, "tender_title", "-", status, json.dumps(out, ensure_ascii=False), ms))
+            st["items"] += 1
+    if jobs:
+        log(f"summary: {len(jobs)} short titles for long names")

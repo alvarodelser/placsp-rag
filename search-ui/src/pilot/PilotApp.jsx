@@ -1,11 +1,11 @@
 // search-ui/src/pilot/PilotApp.jsx — viewer for the document pilot, separate from the search app.
 // Reads only /api/pilot (the pilot_* Qdrant collections and the :Pilot graph).
 // One search on top (contracts, companies, authorities or all) narrows the list on the left and
-// lights its hits on the pilot's graph in the middle; a tender, a company or a document opens in
-// the middle instead, with the list kept.
+// lights its hits on the pilot's graph in the middle. A tender, a company or a document opens on
+// its own page; "Volver a la búsqueda" comes back to the list and graph as they were left.
 import { useEffect, useState } from 'react'
 import { listTenders, search, health, corpusGraph } from './pilotApi.js'
-import { CHANNEL, roleEs } from './labels.js'
+import { CHANNEL, roleEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
 import { CircleNotch, X } from '../icons.js'
 import TenderView from './TenderView.jsx'
@@ -53,8 +53,8 @@ export default function PilotApp() {
       </header>
       <main>
         {problems.map(([k, v]) => <div key={k} className="wrap err"><b>{k}</b>: {v}</div>)}
-        <div className={`wrap playout ${route.doc ? 'full' : ''}`}>
-          {!route.doc && <ResultList res={res} current={current} onOrg={(id) => go(`/c/${encodeURIComponent(id)}`)} />}
+        <div className={`wrap playout ${home ? '' : 'full'}`}>
+          {home && <ResultList res={res} current={current} onOrg={(id) => go(`/c/${encodeURIComponent(id)}`)} />}
           <section className="pmain">
             {home && <Landing res={res} />}
             {route.kind === 't' && !route.doc && <TenderView key={route.id} id={route.id} />}
@@ -102,7 +102,7 @@ function ResultList({ res, current, onOrg }) {
             <button type="button" className={`pitem ${current === t.tender_id ? 'on' : ''}`} onClick={() => go(`/t/${t.tender_id}`)}>
               <span className="pitem-top"><span className="badge">{CHANNEL[t.channel] || t.channel}</span>
                 <span className="muted">{t.published}</span></span>
-              <span className="pitem-name">{t.name}</span>
+              <span className="pitem-name" title={t.name}>{shortTitle(t)}</span>
               <span className="muted small">{t.authority?.name}</span>
               <span className="muted small">{t.counts?.documents ?? 0} docs · {t.counts?.lots ?? 0} lotes{t.value != null ? ` · ${money(t.value)}` : ''}</span>
               {(t.passages || []).slice(0, 1).map((p, i) => (

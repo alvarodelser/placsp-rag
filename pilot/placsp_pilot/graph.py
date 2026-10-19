@@ -310,7 +310,10 @@ def build_expediente(g: Graph, store: Store, e) -> dict:
     eid = e["id"]
     agg = store.one("SELECT result_json FROM extraction WHERE exp_id=? AND kind='tender_description' AND status='ok'", (eid,))
     tender_desc = json.loads(agg["result_json"]).get("description") if agg else None
+    title = store.one("SELECT result_json FROM extraction WHERE exp_id=? AND kind='tender_title' AND status='ok'", (eid,))
     tid, sk = _feed_skeleton(g, eid, e, t, tender_desc)
+    if title:
+        g.nodes[tid]["short_title"] = json.loads(title["result_json"]).get("title")
 
     rows = store.q("SELECT d.sha, d.role, d.label, d.source, d.published, d.notice_type, d.url, b.bytes, b.ext, b.pages,"
                    " b.text_chars, b.text_status, b.summary_json, b.ner_chunks_total, b.ner_chunks_selected, b.path"

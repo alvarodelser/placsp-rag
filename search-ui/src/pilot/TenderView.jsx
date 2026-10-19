@@ -1,12 +1,17 @@
 // search-ui/src/pilot/TenderView.jsx — the unified tender: summary, lots, documents in order, graph, questions.
+// The head reads title, state and dates, money, authority; the summary the object (what, where,
+// how long), guarantees, the timeline (each document previewed on hover) and the record's details.
 import { useEffect, useState } from 'react'
 import { getTender, getTenderGraph, fileUrl } from './pilotApi.js'
-import { CHANNEL, COMPANY_ROLE, roleEs } from './labels.js'
+import { CHANNEL, roleEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
 import { CircleNotch } from '../icons.js'
+import cpvMap from '../codelists/cpv.json'
+import nutsMap from '../codelists/nuts.json'
 import GraphView from './GraphView.jsx'
 import NodePanel from './NodePanel.jsx'
 import AskView from './AskView.jsx'
+import DocHover from './DocHover.jsx'
 import { go } from './route.js'
 
 const TABS = [['resumen', 'Resumen'], ['lotes', 'Lotes'], ['documentos', 'Documentos'], ['grafo', 'Grafo'], ['preguntar', 'Preguntar']]
@@ -34,28 +39,22 @@ export default function TenderView({ id }) {
 
   return (
     <div className="tv">
+      <button type="button" className="linkish tv-back" onClick={() => go('')}>← Volver a la búsqueda</button>
       <div className="tv-head">
-        <div className="badges">
-          <span className="badge">{CHANNEL[t.channel] || t.channel}</span>
-          {t.status && <span className="badge estado">{t.status}</span>}
-          {t.contract_type && <span className="badge">{t.contract_type}</span>}
-          {t.procedure && <span className="badge">{t.procedure}</span>}
-          {t.analysable === false && <span className="badge warn" title={t.skip_reason}>no analizable</span>}
-        </div>
-        <h2>{t.name}</h2>
-        <div className="row">
-          {t.authority && <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(t.authority.id)}`)}>{t.authority.name}</button>}
-          {t.expediente && <> · Exp. <b>{t.expediente}</b></>} · ID <b>{t.tender_id}</b>
+        <h2 title={t.name}>{shortTitle(t)}</h2>
+        {shortTitle(t) !== t.name && <div className="tv-fullname">{t.name}</div>}
+        <div className="tv-dates">
+          {t.status && <span className={`badge st ${statusClass(t.status)}`}>{t.status}</span>}
+          {t.published && <span>Publicado <b>{t.published}</b></span>}
+          {t.deadline && <span>Fin de plazo <b>{typeof t.deadline === 'string' ? t.deadline : t.deadline.date}</b></span>}
         </div>
         <div className="money">
           {t.value != null && <span>Valor estimado <b>{money(t.value)}</b></span>}
           {t.budget != null && <span>Presupuesto <b>{money(typeof t.budget === 'object' ? t.budget.amount_tax_excl : t.budget)}</b></span>}
-          {t.published && <span>Publicado <b>{t.published}</b></span>}
-          {t.deadline && <span>Fin de plazo <b>{typeof t.deadline === 'string' ? t.deadline : t.deadline.date}</b></span>}
         </div>
-        <div className="tv-counts">
-          {Object.entries(t.counts || {}).map(([k, v]) => <span key={k}><b>{v}</b> {COUNT[k] || k}</span>)}
-        </div>
+        {t.authority && (
+          <div className="row">Órgano de contratación: <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(t.authority.id)}`)}>{t.authority.name}</button></div>
+        )}
       </div>
 
       <nav className="tv-tabs">
@@ -80,57 +79,108 @@ export default function TenderView({ id }) {
 const STAGE = ['preparación', 'anuncio previo', 'anuncio de licitación', 'pliegos', 'aclaraciones',
   'evaluación', 'propuesta', 'adjudicación', 'formalización', 'ejecución']
 const UNIT = { MON: 'meses', ANN: 'años', DAY: 'días', WEE: 'semanas' }
-const COUNT = { lots: 'lotes', documents: 'documentos', notices: 'anuncios', chunks: 'fragmentos', entities: 'entidades', relations: 'relaciones' }
+const UNIT1 = { MON: 'mes', ANN: 'año', DAY: 'día', WEE: 'semana' }
 
 function Summary({ t }) {
+  const docs = Object.fromEntries((t.documents || []).map((d) => [d.sha256, d]))
   return (
-    <div className="tv-grid">
-      <section className="tv-card wide">
-        <h3>Descripción del expediente</h3>
-        <p className="tv-desc">{t.description || 'Sin descripción consolidada.'}</p>
-        <div className="chips">
-          {(t.cpv || []).map((c) => <span key={c} className="chip">CPV {c}</span>)}
-          {t.nuts && <span className="chip">NUTS {t.nuts}</span>}
-          {t.duration && <span className="chip">Duración {fmtDuration(t.duration)}</span>}
-        </div>
-        {t.analysable === false && <p className="row">No analizable: {t.skip_reason}</p>}
-      </section>
-      <section className="tv-card">
-        <h3>Empresas</h3>
-        {(t.companies || []).length === 0 ? <p className="row">Ninguna identificada.</p> : (
+    <div className="tv-sum">
+      <div className="tv-sum-main">
+        <section className="tv-card">
+          <h3>Objeto</h3>
+          <p className="tv-desc">{t.description || 'Sin descripción consolidada.'}</p>
+          <dl className="tv-facts">
+            {(t.cpv || []).length > 0 && (
+              <div><dt>CPV</dt><dd>{t.cpv.map((c) => <div key={c}><span className="mono">{c}</span> {cpvLabel(c)}
+                {cpvDivision(c) && <span className="muted"> · {cpvDivision(c)}</span>}</div>)}</dd></div>
+            )}
+            {t.nuts && <div><dt>Lugar</dt><dd>{nutsLabel(t.nuts)} <span className="mono muted">{t.nuts}</span></dd></div>}
+            {t.duration && <div><dt>Duración</dt><dd>{fmtDuration(t.duration)}{t.extension && <div className="muted small">Prórrogas: {t.extension}</div>}</dd></div>}
+          </dl>
+          {t.analysable === false && <p className="row">No analizable: {t.skip_reason}</p>}
+        </section>
+        <section className="tv-card">
+          <h3>Garantías y condiciones</h3>
           <ul className="plain">
-            {t.companies.map((c) => (
-              <li key={c.id}>
-                <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(c.id)}`)}>{c.name}</button>
-                {c.nif && <span className="muted"> · {c.nif}</span>}
-                <div className="chips">{c.roles.map((r) => <span key={r} className={`chip role-${r}`}>{COMPANY_ROLE[r] || r}</span>)}</div>
-              </li>
-            ))}
+            {(t.guarantees || []).map((g, i) => <li key={i}>{guaranteeName(g.name)}{g.pct != null && ` · ${g.pct}%`}{g.amount != null && ` · ${money(g.amount)}`}</li>)}
+            {(t.execution_conditions || []).map((c, i) => <li key={`c${i}`}>{c.name || c.text}{c.text && c.text !== c.name && <div className="muted small">{c.text}</div>}</li>)}
+            {(t.modifications || []).map((m, i) => <li key={`m${i}`}>Modificación {m.name || ''} {m.amount != null && money(m.amount)}</li>)}
+            {!(t.guarantees || []).length && !(t.execution_conditions || []).length && !(t.modifications || []).length && <li className="muted">Ninguna publicada.</li>}
           </ul>
-        )}
-      </section>
-      <section className="tv-card">
-        <h3>Garantías y condiciones</h3>
-        <ul className="plain">
-          {(t.guarantees || []).map((g, i) => <li key={i}>Garantía {g.name}{g.pct != null && ` · ${g.pct}%`}{g.amount != null && ` · ${money(g.amount)}`}</li>)}
-          {(t.execution_conditions || []).map((c, i) => <li key={`c${i}`}>{c.name || c.text}</li>)}
-          {(t.modifications || []).map((m, i) => <li key={`m${i}`}>Modificación {m.name || ''} {m.amount != null && money(m.amount)}</li>)}
-          {!(t.guarantees || []).length && !(t.execution_conditions || []).length && !(t.modifications || []).length && <li className="muted">Ninguna publicada.</li>}
-        </ul>
-      </section>
-      <section className="tv-card wide">
-        <h3>Cronología</h3>
-        <ol className="timeline">
-          {(t.timeline || []).map((e, i) => <li key={i}><time>{e.date || '—'}</time><span>{e.event}</span></li>)}
-        </ol>
-      </section>
+        </section>
+        <section className="tv-card">
+          <h3>Cronología</h3>
+          <ol className="timeline">
+            {(t.timeline || []).map((e, i) => {
+              const d = e.sha256 && docs[e.sha256]
+              return (
+                <li key={i}><time>{e.date || '—'}</time>
+                  {d ? (
+                    <DocHover tenderId={t.tender_id} sha={d.sha256}>
+                      <button type="button" className="linkish tl-doc" onClick={() => go(`/t/${t.tender_id}/d/${d.sha256}`)}>
+                        <span className="chip">{roleEs(d.role)}</span> {d.filename || d.title}
+                      </button>
+                    </DocHover>
+                  ) : <span>{e.event}</span>}
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+      </div>
+      <aside className="tv-card tv-ficha">
+        <h3>Ficha</h3>
+        <dl className="tv-facts">
+          {[
+            ['ID', t.tender_id], ['Expediente', t.expediente || t.folder_id], ['Canal', CHANNEL[t.channel] || t.channel],
+            ['Tipo de contrato', t.contract_type], ['Subtipo', t.subtype], ['Procedimiento', t.procedure],
+            ['Regulación armonizada', t.sara == null ? null : t.sara ? 'Sí' : 'No'],
+            ['Legislación', t.terms?.national_legislation?.label], ['Financiación', t.terms?.funding?.label],
+            ['Variantes', t.terms?.variants_allowed == null ? null : t.terms.variants_allowed ? 'Admitidas' : 'No admitidas'],
+            ['Subcontratación', t.subcontracting?.rate_pct != null ? `hasta ${t.subcontracting.rate_pct}%` : t.subcontracting?.text ? 'Ver condiciones' : null],
+            ['Lotes', t.counts?.lots], ['Documentos', t.counts?.documents], ['Anuncios', t.counts?.notices],
+            ['Fragmentos', t.counts?.chunks?.toLocaleString('es-ES')], ['Entidades', t.counts?.entities],
+          ].filter(([, v]) => v != null && v !== '').map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+        </dl>
+        {t.source_url && <a className="small" href={t.source_url} target="_blank" rel="noreferrer">Ver en PLACSP ↗</a>}
+      </aside>
     </div>
   )
 }
 
+// The feed calls the definitive guarantee "Final"; documents already say "Garantía …".
+function guaranteeName(name) {
+  const n = name === 'Final' ? 'definitiva' : name || ''
+  return /^garant/i.test(n) ? n : `Garantía ${n}`
+}
+
+function cpvLabel(code) {
+  return (cpvMap[String(code).slice(0, 8)] || '').replace(/\.$/, '')
+}
+// The division (first two digits) names the sector in words.
+function cpvDivision(code) {
+  const div = String(code).slice(0, 2).padEnd(8, '0')
+  return div !== String(code).slice(0, 8) ? (cpvMap[div] || '').replace(/\.$/, '') : ''
+}
+function nutsLabel(code) {
+  const parent = code.length > 4 && nutsMap[code.slice(0, 4)]          // a province: say its region too
+  return [nutsMap[code] || code, parent].filter(Boolean).join(', ')
+}
+// Open, pending, resolved, void: the colour says where the tender stands.
+function statusClass(s) {
+  const x = s.toUpperCase()
+  if (x.includes('PLAZO') || x.includes('PUBLICAD')) return 'st-open'
+  if (x.includes('PENDIENTE') || x.includes('EVALUACI')) return 'st-pending'
+  if (x.includes('ANULAD') || x.includes('DESIERT') || x.includes('DESIST') || x.includes('RENUNCIA')) return 'st-void'
+  return 'st-done'
+}
+
 function fmtDuration(d) {
   if (typeof d !== 'object') return String(d)
-  return [d.amount ?? d.value, UNIT[d.unit] || d.unit_label || d.unit].filter(Boolean).join(' ')
+  const n = d.amount ?? d.value
+  const unit = (n === 1 ? UNIT1 : UNIT)[d.unit] || d.unit_label || d.unit
+  const span = [d.start, d.end].filter(Boolean).join(' → ')
+  return [n != null ? Number(n).toLocaleString('es-ES') : null, unit].filter((x) => x != null && x !== '').join(' ') + (span ? ` (${span})` : '')
 }
 
 function Lots({ t }) {
@@ -229,7 +279,9 @@ function Documents({ t, onOpen }) {
               {d.ner_chunks ? <span className="muted">{d.ner_chunks} fragmentos</span> : null}
               {d.entities ? <span className="muted">{d.entities} entidades</span> : null}
             </div>
-            <div className="doc-title">{d.title || d.filename}</div>
+            <DocHover tenderId={t.tender_id} sha={d.sha256} className="doc-title">
+              <button type="button" className="linkish" onClick={() => go(`/t/${t.tender_id}/d/${d.sha256}`)}>{d.filename || d.title}</button>
+            </DocHover>
             {d.summary && <p className="doc-sum">{d.summary}</p>}
             <div className="doc-links">
               <button type="button" className="linkish" onClick={() => go(`/t/${t.tender_id}/d/${d.sha256}`)}>Leer con anotaciones</button>

@@ -48,3 +48,12 @@ export const COMPANY_ROLE = {
 export const CHANNEL = {
   placsp_mayores: 'Mayores', externos_mayores: 'Externos', placsp_menores: 'Menores', propios: 'Encargos',
 }
+
+// The short title the pipeline wrote for a long name; before it, the name without its translation
+// ("Obra X / Obra X" in Valencian, Catalan, Galician or Basque keeps the first half).
+export function shortTitle(t) {
+  if (t.short_title) return t.short_title
+  const name = (t.name || '').trim()
+  const parts = name.split(/\s+\/\s+/).filter(Boolean)
+  return parts.length === 2 ? parts[0] : name
+}
