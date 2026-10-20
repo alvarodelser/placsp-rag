@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { getPliegos, getSavedAnalysis, triggerPliegosAnalysis } from '../api.js'
+import { Check, X } from '../icons.js'
 
 export default function PliegosModal({ syndicationId, itemId, title, onClose }) {
   const [data, setData] = useState(null)
@@ -110,7 +111,7 @@ export default function PliegosModal({ syndicationId, itemId, title, onClose }) 
                             {analysis.requisitos_evaluados.map((req, i) => (
                               <li key={i} className={req.cumple ? 'req-pass' : 'req-fail'}>
                                 <div className="req-header">
-                                  <strong>{req.cumple ? '✅' : '❌'} {req.requisito}</strong>
+                                  <strong>{req.cumple ? <Check size={15} className="ico ico-ok" aria-label="Cumple" /> : <X size={15} className="ico ico-no" aria-label="No cumple" />} {req.requisito}</strong>
                                 </div>
                                 <div className="req-reason">{req.razon}</div>
                               </li>

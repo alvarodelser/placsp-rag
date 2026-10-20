@@ -6,7 +6,7 @@
  */
 import { useState } from 'react'
 import FacetCard from './FacetCard.jsx'
-import { CaretDown } from '../icons.js'
+import { ChevronDown } from '../icons.js'
 import { groupActive, groupCount, toggleGroup, toggleCode } from '../facetGroups.js'
 
 function fmt(n) {
@@ -42,7 +42,7 @@ export default function GroupCard({ group, value = [], counts = {}, onChange }) 
             aria-expanded={open}
             onClick={() => setOpen((o) => !o)}
           >
-            <CaretDown size={14} weight="bold" />
+            <ChevronDown size={14} strokeWidth={2.5} />
           </button>
         )}
       </div>

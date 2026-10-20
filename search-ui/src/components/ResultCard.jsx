@@ -1,7 +1,7 @@
 import { money } from '../format.js'
 import cpvMap from '../codelists/cpv.json'
 import nutsMap from '../codelists/nuts.json'
-import { BookmarkSimple } from '../icons.js'
+import { Bookmark } from '../icons.js'
 
 export default function ResultCard({ r, saved = false, onToggleSave = () => {} }) {
   const title = r.title || r.expediente || r.syndication_id || 'Sin título'
@@ -50,7 +50,7 @@ export default function ResultCard({ r, saved = false, onToggleSave = () => {} }
         aria-pressed={saved}
         title={saved ? 'Guardado en Mi Espacio' : 'Guardar en Mi Espacio'}
       >
-        <BookmarkSimple size={20} weight={saved ? 'fill' : 'regular'} />
+        <Bookmark size={20} fill={saved ? 'currentColor' : 'none'} />
         <span>{saved ? 'Guardado' : 'Guardar'}</span>
       </button>
     </div>

@@ -3,6 +3,7 @@ import { geoMercator, geoPath, geoCentroid } from 'd3-geo'
 import nuts2 from '../geo/spain-nuts2.json'
 import nuts3 from '../geo/spain-nuts3.json'
 import { aggregateByLevel } from '../geo/nuts.js'
+import { X } from '../icons.js'
 
 const W = 460, H = 360
 
@@ -84,7 +85,7 @@ export default function SpainMap({ value, counts, onChange }) {
           const f = fc.features.find((x) => x.id === id)
           return (
             <span className="chip" key={id}>{f ? f.properties.name : id}
-              <button type="button" aria-label="Quitar" onClick={() => toggle(id)}>✕</button>
+              <button type="button" aria-label="Quitar" onClick={() => toggle(id)}><X size={12} /></button>
             </span>
           )
         })}

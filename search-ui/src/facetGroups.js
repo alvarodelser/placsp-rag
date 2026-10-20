@@ -6,9 +6,9 @@
  * ActiveFilters (to collapse chips to one-per-group).
  */
 import {
-  Trophy, XCircle, Prohibit,
-  Wrench, FileText, Package, Scales,
-  ArrowsLeftRight, ListChecks, Gavel, Stack, Archive,
+  Trophy, CircleX, Ban,
+  Wrench, FileText, Package, Scale,
+  ArrowLeftRight, ListChecks, Gavel, Layers, Archive,
 } from './icons.js'
 import resultMap from './codelists/result.json'
 import typeMap from './codelists/contract_type.json'
@@ -26,8 +26,8 @@ function withOptions(groups, map) {
 // Resultado — 3 outcome cards (was 11 codes)
 export const RESULT_GROUPS = withOptions([
   { key: 'adj', label: 'Adjudicado', Icon: Trophy,   color: 'green', codes: ['1', '2', '8', '9', '10', '11'] },
-  { key: 'des', label: 'Desierto',   Icon: XCircle,  color: 'gray',  codes: ['3', '6', '7'] },
-  { key: 'can', label: 'Cancelado',  Icon: Prohibit, color: 'red',   codes: ['4', '5'] },
+  { key: 'des', label: 'Desierto',   Icon: CircleX,  color: 'gray',  codes: ['3', '6', '7'] },
+  { key: 'can', label: 'Cancelado',  Icon: Ban, color: 'red',   codes: ['4', '5'] },
 ], resultMap)
 
 // Tipo — 4 object-family cards (was 11 codes); concessions folded into parent
@@ -35,16 +35,16 @@ export const TYPE_GROUPS = withOptions([
   { key: 'obras', label: 'Obras',       Icon: Wrench,   codes: ['3', '31', '32'] },
   { key: 'serv',  label: 'Servicios',   Icon: FileText, codes: ['2', '21', '22'] },
   { key: 'sum',   label: 'Suministros', Icon: Package,  codes: ['1'] },
-  { key: 'otros', label: 'Otros',       Icon: Scales,   codes: ['40', '50', '7', '8'] },
+  { key: 'otros', label: 'Otros',       Icon: Scale,   codes: ['40', '50', '7', '8'] },
 ], typeMap)
 
 // Procedimiento — 6 cards on a concurrence axis + Otros off-axis (was 15 codes)
 export const PROC_GROUPS = withOptions([
-  { key: 'abierto',   label: 'Abierto',              Icon: ArrowsLeftRight, codes: ['1'] },
-  { key: 'abierto_s', label: 'Abierto simplificado', Icon: ArrowsLeftRight, codes: ['9'] },
+  { key: 'abierto',   label: 'Abierto',              Icon: ArrowLeftRight, codes: ['1'] },
+  { key: 'abierto_s', label: 'Abierto simplificado', Icon: ArrowLeftRight, codes: ['9'] },
   { key: 'restr',     label: 'Restringido',          Icon: ListChecks,      codes: ['2'] },
   { key: 'negoc',     label: 'Negociado',            Icon: Gavel,           codes: ['3', '4', '5', '10', '11', '13'] },
-  { key: 'deriv',     label: 'Derivados',            Icon: Stack,           codes: ['7', '12'] },
+  { key: 'deriv',     label: 'Derivados',            Icon: Layers,           codes: ['7', '12'] },
   { key: 'menor',     label: 'Contrato menor',       Icon: FileText,        codes: ['6'] },
   { key: 'otros',     label: 'Otros',                Icon: Archive,         codes: ['8', '100', '999'], axis: false },
 ], procMap)

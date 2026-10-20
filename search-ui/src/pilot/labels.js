@@ -1,11 +1,11 @@
 // search-ui/src/pilot/labels.js — names and colours for the pilot graph's node types and roles
 
 export const NODE = {
-  Tender:              { es: 'Expediente',           color: '#4f46e5' },
-  Organization:        { es: 'Organización',         color: '#0f8a7e' },
-  Company:             { es: 'Empresa',              color: '#0f8a7e' },
-  Authority:           { es: 'Órgano de contratación', color: '#0369a1' },
-  JointVenture:        { es: 'UTE',                  color: '#0f8a7e' },
+  Tender:              { es: 'Expediente',           color: '#374151' },
+  Organization:        { es: 'Organización',         color: '#16a34a' },
+  Company:             { es: 'Empresa',              color: '#16a34a' },
+  Authority:           { es: 'Órgano de contratación', color: '#2563eb' },
+  JointVenture:        { es: 'UTE',                  color: '#16a34a' },
   Lot:                 { es: 'Lote',                 color: '#c47d0e' },
   AwardCriterion:      { es: 'Criterio',             color: '#8b5cf6' },
   Requirement:         { es: 'Requisito',            color: '#d14d72' },
@@ -20,7 +20,7 @@ export const NODE = {
   Deliverable:         { es: 'Entregable',           color: '#64748b' },
   TeamProfile:         { es: 'Perfil equipo',        color: '#64748b' },
   TechnicalRequirement:{ es: 'Requisito técnico',    color: '#64748b' },
-  Document:            { es: 'Documento',            color: '#3b6ea8' },
+  Document:            { es: 'Documento',            color: '#475569' },
   Notice:              { es: 'Anuncio',              color: '#94a3b8' },
   Sector:              { es: 'Sector (CPV)',         color: '#a3a3a3' },
 }
@@ -45,6 +45,20 @@ export const COMPANY_ROLE = {
   authority: 'órgano de contratación', mentioned: 'mencionada',
 }
 
+// Where a tender stands, from its feed status and its deadline: open (offers can still be sent),
+// in evaluation, closed (awarded, resolved…) or void. `cls` is the badge's class.
+export function tenderState(t) {
+  const x = (t?.status || '').toUpperCase()
+  const deadline = typeof t?.deadline === 'string' ? t.deadline : t?.deadline?.date
+  const past = deadline ? new Date(`${deadline.slice(0, 10)}T23:59:59`) < new Date() : false
+  if (/ANULAD|DESIERT|DESIST|RENUNCIA/.test(x)) return { key: 'void', cls: 'st-void', es: x.includes('DESIERT') ? 'Desierto' : 'Anulado' }
+  if (/PLAZO|PUBLICAD/.test(x)) return past ? { key: 'pending', cls: 'st-pending', es: 'Plazo cerrado' } : { key: 'open', cls: 'st-open', es: 'Abierto' }
+  if (/PENDIENTE|EVALUACI/.test(x)) return { key: 'pending', cls: 'st-pending', es: 'En evaluación' }
+  if (x.includes('ADJUDIC')) return { key: 'done', cls: 'st-done', es: 'Adjudicado' }
+  if (x.includes('RESUEL')) return { key: 'done', cls: 'st-done', es: 'Resuelto' }
+  return x ? { key: 'done', cls: 'st-done', es: x.charAt(0) + x.slice(1).toLowerCase() } : null
+}
+
 export const CHANNEL = {
   placsp_mayores: 'Mayores', externos_mayores: 'Externos', placsp_menores: 'Menores', propios: 'Encargos',
 }
@@ -56,4 +70,44 @@ export function shortTitle(t) {
   const name = (t.name || '').trim()
   const parts = name.split(/\s+\/\s+/).filter(Boolean)
   return parts.length === 2 ? parts[0] : name
+}
+
+// An organization's name as the graph shows it: without the body inside it that signs the contract
+// ("Alcaldía del Ayuntamiento de Coaña" is Coaña's council), without the kind of entity or the legal
+// form, and with the usual abbreviations. The full name stays in the panels.
+const ORGAN = /^(alcald[ií]a|presidencia|pleno|junta de gobierno( local)?|mesa de contrataci[oó]n|[oó]rgano de contrataci[oó]n|gerencia)\s+(del?|de la)\s+/i
+const KIND = /^(organismo aut[oó]nomo( local)?|entidad p[uú]blica empresarial|sociedad mercantil( local| estatal)?|empresa municipal)\s+(de\s+)?/i
+const ABBR = [
+  [/^(excmo\.?|excelent[ií]simo|ilmo\.?|ilustr[ií]simo)\s+/i, ''],
+  [/^ayuntamiento\s+(de\s+)?/i, 'Ayto. '],
+  [/^diputaci[oó]n provincial\s+(de\s+)?/i, 'Dip. '],
+  [/^diputaci[oó]n\s+(de\s+)?/i, 'Dip. '],
+  [/^mancomunidad\s+(de\s+)?/i, 'Manc. '],
+  [/^universidad\s+(de\s+)?/i, 'Univ. '],
+  [/^consejer[ií]a\s+de\s+/i, 'Cons. '],
+  [/^ministerio\s+de\s+/i, 'Min. '],
+]
+const LEGAL = /[\s,]+(s\.?\s?a\.?\s?u\.?|s\.?\s?l\.?\s?u\.?|s\.?\s?l\.?\s?p\.?|s\.?\s?a\.?|s\.?\s?l\.?|s\.?\s?coop\.?( and\.?)?|sociedad (an[oó]nima|limitada|cooperativa)( unipersonal| laboral)?|sociedad unipersonal)\.?$/i
+const LOWER = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'para', 'en', 'a', 'con', 'por'])
+
+export function shortOrg(name, max = 30) {
+  let s = (name || '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+  for (let i = 0; i < 4; i++) {                    // a legal form can be written twice ("S.A., Sociedad Unipersonal")
+    const t = s.replace(LEGAL, '').replace(/[\s,.]+$/, '')
+    if (t === s || !t) break
+    s = t
+  }
+  s = s.replace(ORGAN, '').replace(KIND, '')
+  for (const [re, to] of ABBR) s = s.replace(re, to)
+  // Shouting is not a name: ESPUBLICO SERVICIOS → Espublico Servicios; short words (UTE, TIC) stay.
+  if (s === s.toUpperCase() && /[A-ZÁÉÍÓÚÑ]{4}.*\s.*[A-ZÁÉÍÓÚÑ]{4}/.test(s)) {
+    s = s.toLowerCase().split(' ').map((w, i) => (i && LOWER.has(w) ? w
+      : w.length <= 3 && !LOWER.has(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1))).join(' ')
+  }
+  if (s.length <= max) return s
+  let cut = s.slice(0, max - 1)
+  if (cut.lastIndexOf(' ') > max / 2) cut = cut.slice(0, cut.lastIndexOf(' '))
+  const words = cut.split(' ')
+  while (words.length > 1 && LOWER.has(words[words.length - 1].toLowerCase())) words.pop()   // not "Servicios para la…"
+  return `${words.join(' ').replace(/[\s,.]+$/, '')}…`
 }

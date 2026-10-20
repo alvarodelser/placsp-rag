@@ -4,6 +4,7 @@ import { GROUPS_BY_FIELD } from '../facetGroups.js'
 import cpvMap from '../codelists/cpv.json'
 import nutsMap from '../codelists/nuts.json'
 import statusMap from '../codelists/status.json'
+import { X } from '../icons.js'
 
 // Grouped facets (result, contract_type, procedure) are labelled by their
 // group, not by per-code codelists — see facetGroups.js.
@@ -40,7 +41,7 @@ function CategoryGroup({ label, items, onRemove }) {
         {visible.map((e) => (
           <span className="af-chip" key={`${e.field}:${e.value}`}>
             {labelFor(e)}
-            <button type="button" aria-label="Quitar" onClick={() => onRemove(e.field, e.value)}>✕</button>
+            <button type="button" aria-label="Quitar" onClick={() => onRemove(e.field, e.value)}><X size={12} /></button>
           </span>
         ))}
         {!expanded && extra > 0 && (

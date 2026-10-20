@@ -9,7 +9,7 @@ import UserMenu from './components/UserMenu.jsx'
 import SavedSpace from './components/SavedSpace.jsx'
 import UserProfile from './components/UserProfile.jsx'
 import { useAuth } from './AuthContext.jsx'
-import { SlidersHorizontal, CircleNotch } from './icons.js'
+import { SlidersHorizontal, LoaderCircle } from './icons.js'
 import statusMap from './codelists/status.json'
 import PilotApp from './pilot/PilotApp.jsx'
 import { isPilot, useHash } from './pilot/route.js'
@@ -90,7 +90,7 @@ const [filtersOpen, setFiltersOpen] = useState(false)
     return (
       <div className="auth-page">
         <div style={{ margin: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <CircleNotch size={24} className="spinner" /> Cargando…
+          <LoaderCircle size={24} className="spinner" /> Cargando…
         </div>
       </div>
     )
@@ -134,7 +134,7 @@ const [filtersOpen, setFiltersOpen] = useState(false)
 
             {state.status === 'loading' && (
               <div className="loading-state">
-                <CircleNotch size={32} className="spinner" />
+                <LoaderCircle size={32} className="spinner" />
                 <span>Buscando…</span>
               </div>
             )}

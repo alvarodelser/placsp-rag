@@ -44,3 +44,22 @@ describe('guessModel', () => {
     expect(guessModel('Se valorará la rebaja del precio de licitación propuesto.')).toBeNull()
   })
 })
+
+describe('ranges and tiers', () => {
+  it('takes the range from the model, else from the tier edges', async () => {
+    const { rangeOf } = await import('./formula.js')
+    const f = parse('P = if(A >= 3, 20, if(A >= 1, 7, 0))')
+    expect(rangeOf({ symbol: 'A', min: 0, max: 5 }, f.ast)).toEqual([0, 5])
+    expect(rangeOf({ symbol: 'A' }, f.ast)).toEqual([0, 4.5])
+    expect(rangeOf({ symbol: 'X', unit: '%' }, f.ast)).toEqual([0, 100])
+  })
+
+  it('reads a step function of one symbol as tiers, and nothing else', async () => {
+    const { stepTiers } = await import('./formula.js')
+    expect(stepTiers(parse('P = if(A < 1, 0, 7)'))).toEqual({ symbol: 'A', rows: [{ op: '<', threshold: 1, value: 0 }], otherwise: 7 })
+    expect(stepTiers(parse('P = if(1 > A, 0, Pmax)'), { Pmax: 7 }).rows[0]).toEqual({ op: '<', threshold: 1, value: 0 })
+    expect(stepTiers(parse('P = if(A >= 3, 20 * A, 0)'))).toBeNull()
+    expect(stepTiers(parse('P = if(A >= 3, 20, if(B >= 1, 7, 0))'))).toBeNull()
+    expect(stepTiers(parse('P = Pmax * Of_min / Of'))).toBeNull()
+  })
+})

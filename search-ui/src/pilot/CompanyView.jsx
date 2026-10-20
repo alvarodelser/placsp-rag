@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { getCompany } from './pilotApi.js'
 import { CHANNEL, COMPANY_ROLE } from './labels.js'
 import { money } from '../format.js'
-import { CircleNotch } from '../icons.js'
+import { LoaderCircle } from '../icons.js'
 import { go } from './route.js'
 
 export default function CompanyView({ id }) {
@@ -14,7 +14,7 @@ export default function CompanyView({ id }) {
     getCompany(id).then((d) => live && setState({ status: 'done', d })).catch((e) => live && setState({ status: 'error', e: e.message }))
     return () => { live = false }
   }, [id])
-  if (state.status === 'loading') return <div className="loading-state"><CircleNotch size={28} className="spinner" /></div>
+  if (state.status === 'loading') return <div className="loading-state"><LoaderCircle size={28} className="spinner" /></div>
   if (state.status === 'error') return <div className="err">{state.e}</div>
   const { node, tenders, rivals, authorities } = state.d
   const roles = {}

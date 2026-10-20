@@ -11,10 +11,10 @@
     "geo:build": "node scripts/build-spain-geo.mjs"
   },
   "dependencies": {
-    "@phosphor-icons/react": "^2.1.10",
     "d3-force": "^3.0.0",
     "d3-geo": "^3.1.1",
     "katex": "^0.16.11",
+    "lucide-react": "^1.60.0",
     "pdfjs-dist": "^4.4.168",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { listSaved } from '../api.js'
-import { X, BookmarkSimple, CircleNotch } from '../icons.js'
+import { X, Bookmark, LoaderCircle, Sparkles } from '../icons.js'
 import PliegosModal from './PliegosModal.jsx'
 
 export default function SavedSpace({ onClose, onRemove }) {
@@ -34,7 +34,7 @@ export default function SavedSpace({ onClose, onRemove }) {
       <div className="saved-panel">
         <div className="saved-head">
           <div className="saved-head-title">
-            <BookmarkSimple size={20} weight="fill" />
+            <Bookmark size={20} fill="currentColor" />
             <span>Mi Espacio</span>
             {!loading && <span className="saved-count">{total}</span>}
           </div>
@@ -46,7 +46,7 @@ export default function SavedSpace({ onClose, onRemove }) {
         <div className="saved-list">
           {loading && (
             <div className="saved-loading">
-              <CircleNotch size={28} className="spinner" />
+              <LoaderCircle size={28} className="spinner" />
               <span>Cargando…</span>
             </div>
           )}
@@ -55,7 +55,7 @@ export default function SavedSpace({ onClose, onRemove }) {
 
           {!loading && !error && items.length === 0 && (
             <div className="saved-empty">
-              <BookmarkSimple size={40} weight="light" />
+              <Bookmark size={40} strokeWidth={1.5} />
               <p>No tienes licitaciones guardadas aún</p>
               <span>Pulsa «Guardar» en cualquier resultado para añadirlo aquí</span>
             </div>
@@ -90,7 +90,7 @@ export default function SavedSpace({ onClose, onRemove }) {
                   style={{ background: '#ebf8ff', color: '#2b6cb0', border: '1px solid #bee3f8', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
                   title="Análisis Inteligente (AI)"
                 >
-                  ✨ AI
+                  <Sparkles size={12} className="ico" /> AI
                 </button>
                 <button
                   type="button"

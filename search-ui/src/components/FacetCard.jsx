@@ -21,7 +21,7 @@ export default function FacetCard({ label, Icon, active, partial, count, color, 
     >
       {Icon && (
         <span className="mci-icon">
-          <Icon size={18} weight={active ? 'fill' : 'regular'} />
+          <Icon size={18} strokeWidth={active ? 2.5 : 2} />
         </span>
       )}
       <span className="mci-label">{label}</span>

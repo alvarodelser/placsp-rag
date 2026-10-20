@@ -2,12 +2,12 @@
 // Reads only /api/pilot (the pilot_* Qdrant collections and the :Pilot graph).
 // One search on top (contracts, companies, authorities or all) narrows the list on the left and
 // lights its hits on the pilot's graph in the middle. A tender, a company or a document opens on
-// its own page; "Volver a la búsqueda" comes back to the list and graph as they were left.
-import { useEffect, useState } from 'react'
+// its own page; going back returns to the list and graph as they were left.
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { listTenders, search, health, corpusGraph } from './pilotApi.js'
-import { CHANNEL, roleEs, shortTitle } from './labels.js'
+import { CHANNEL, nodeInfo, roleEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
-import { CircleNotch, X } from '../icons.js'
+import { Landmark, Building2, LoaderCircle, FileText, Search, X, ArrowLeft } from '../icons.js'
 import TenderView from './TenderView.jsx'
 import CompanyView from './CompanyView.jsx'
 import DocView from './DocView.jsx'
@@ -16,11 +16,13 @@ import NodePanel from './NodePanel.jsx'
 import { go, parse, useHash } from './route.js'
 import './pilot.css'
 
-const SCOPES = [['tenders', 'Contratos'], ['companies', 'Empresas'], ['authorities', 'Órganos'], ['all', 'Todo']]
+// The filters a search can take, each in the colour its nodes have on the graph. No filter searches all.
+const SCOPES = [['tenders', 'Contratos', FileText, 'Tender'], ['companies', 'Empresas', Building2, 'Company'],
+  ['authorities', 'Órganos', Landmark, 'Authority']]
 
 export default function PilotApp() {
   const route = parse(useHash())
-  const [query, setQuery] = useState({ q: route.params.q || '', scope: 'tenders' })
+  const [query, setQuery] = useState({ q: route.params.q || '', scope: 'all' })
   const [res, setRes] = useState({ status: 'loading' })
   const [problems, setProblems] = useState([])
 
@@ -48,7 +50,7 @@ export default function PilotApp() {
             <h1>Piloto documental · PLACSP</h1>
           </div>
           <SearchBar query={query} onSearch={(q) => { setQuery(q); if (!home) go('') }} />
-          <a className="pback" href="#/">← Búsqueda</a>
+          <a className="pback" href="#/"><ArrowLeft size={13} className="ico" /> Búsqueda</a>
         </div>
       </header>
       <main>
@@ -68,25 +70,56 @@ export default function PilotApp() {
   )
 }
 
+// Filters sit quietly above the bar. Picking one flies it into the bar as the search button, in its
+// colour, and leaves a cross in the filter row to take it off again.
 function SearchBar({ query, onSearch }) {
   const [q, setQ] = useState(query.q)
   useEffect(() => setQ(query.q), [query.q])
+  const scope = SCOPES.find(([k]) => k === query.scope)
+  const btn = useRef(null)
+  const from = useRef(null)
+
+  useLayoutEffect(() => {
+    const r = from.current
+    from.current = null
+    const el = btn.current
+    if (!r || !el?.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const to = el.getBoundingClientRect()
+    el.animate([
+      { transform: `translate(${r.left - to.left}px, ${r.top - to.top}px)`, width: `${r.width}px`, height: `${r.height}px`, borderRadius: '999px' },
+      { transform: 'none', width: `${to.width}px`, height: `${to.height}px` },
+    ], { duration: 340, easing: 'cubic-bezier(.2,.8,.2,1)' })
+  }, [query.scope])
+
+  const pick = (k, e) => { from.current = e.currentTarget.getBoundingClientRect(); onSearch({ q, scope: k }) }
+  const [, label, Icon, node] = scope || []
   return (
-    <form className="psearch" onSubmit={(e) => { e.preventDefault(); onSearch({ ...query, q }) }}>
-      <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar"
-        placeholder="Buscar por significado: «servicio de limpieza», «solvencia volumen de negocios», una empresa…" />
-      {q && <button type="button" className="icon-btn" aria-label="Borrar" onClick={() => { setQ(''); onSearch({ ...query, q: '' }) }}><X size={15} /></button>}
-      <span className="pg-modes" role="group" aria-label="Buscar en">
-        {SCOPES.map(([k, label]) => (
-          <button key={k} type="button" className={query.scope === k ? 'on' : ''} onClick={() => onSearch({ q, scope: k })}>{label}</button>
+    <div className="psearch-wrap">
+      <div className="pfilters" role="group" aria-label="Buscar en">
+        {scope ? (
+          <button type="button" className="pf-clear" aria-label="Quitar filtro" title="Quitar filtro" onClick={() => onSearch({ q, scope: 'all' })}>
+            <X size={13} strokeWidth={2.5} /> Quitar filtro
+          </button>
+        ) : SCOPES.map(([k, l, I, n]) => (
+          <button key={k} type="button" className="pf" style={{ '--k': nodeInfo(n).color }} onClick={(e) => pick(k, e)}>
+            <I size={14} /> {l}
+          </button>
         ))}
-      </span>
-    </form>
+      </div>
+      <form className="pbar psearch" onSubmit={(e) => { e.preventDefault(); onSearch({ ...query, q }) }}>
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar"
+          placeholder="Buscar por significado: «servicio de limpieza», «solvencia volumen de negocios», una empresa…" />
+        {q && <button type="button" className="icon-btn" aria-label="Borrar" onClick={() => { setQ(''); onSearch({ ...query, q: '' }) }}><X size={15} /></button>}
+        <button ref={btn} type="submit" className="pgo" style={scope ? { '--k': nodeInfo(node).color } : undefined}>
+          {scope ? <><Icon size={16} /> {label}</> : <><Search size={16} strokeWidth={2.5} /> Buscar</>}
+        </button>
+      </form>
+    </div>
   )
 }
 
 function ResultList({ res, current, onOrg }) {
-  if (res.status === 'loading') return <aside className="plist"><div className="loading-state"><CircleNotch size={22} className="spinner" /></div></aside>
+  if (res.status === 'loading') return <aside className="plist"><div className="loading-state"><LoaderCircle size={22} className="spinner" /></div></aside>
   if (res.status === 'error') return <aside className="plist"><div className="err">{res.e}</div></aside>
   const { tenders, organizations, latest } = res.d
   return (
@@ -140,15 +173,15 @@ function Landing({ res }) {
   function open(n) {
     if (n.label === 'Tender') go(`/t/${n.id.replace(/^tender:/, '')}`)
     else if (['Organization', 'Company', 'Authority'].includes(n.label)) go(`/c/${encodeURIComponent(n.id)}`)
+    else if (n.label === 'Document') go(`/t/${n.tender.replace(/^tender:/, '')}/d/${n.id.replace(/^doc:/, '')}`)
   }
-  if (!graph) return <div className="loading-state"><CircleNotch size={28} className="spinner" /></div>
+  if (!graph) return <div className="loading-state"><LoaderCircle size={28} className="spinner" /></div>
   if (graph.error) return <div className="err">{graph.error}</div>
   return (
     <>
-      <ForceCanvas graph={graph} selected={selected} onSelect={setSelected} onOpen={open} highlight={hits}
-        initiallyHidden={['Document']} height="calc(100vh - 150px)"
+      <ForceCanvas graph={graph} selected={selected} onSelect={setSelected} onOpen={open} highlight={hits} height="calc(100vh - 170px)"
         toolbar={<span className="pg-note">clic: detalle · doble clic: abrir</span>} />
-      {selected && <NodePanel id={selected} onSelect={setSelected} onClose={() => setSelected(null)} />}
+      {selected && <NodePanel id={selected} seen={graph.nodes.find((n) => n.id === selected)} onSelect={setSelected} onClose={() => setSelected(null)} />}
     </>
   )
 }

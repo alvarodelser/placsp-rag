@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../AuthContext.jsx'
-import { CircleNotch, EnvelopeSimple, Lock, User, Eye, EyeSlash } from '../icons.js'
+import { LoaderCircle, Mail, Lock, User, Eye, EyeOff } from '../icons.js'
 
 export default function AuthPage() {
   const { login, register } = useAuth()
@@ -90,7 +90,7 @@ export default function AuthPage() {
           )}
 
           <div className="auth-field">
-            <EnvelopeSimple size={18} className="auth-icon" />
+            <Mail size={18} className="auth-icon" />
             <input
               type="email"
               placeholder="Email"
@@ -116,7 +116,7 @@ export default function AuthPage() {
               onClick={() => setShowPw(!showPw)}
               tabIndex={-1}
             >
-              {showPw ? <EyeSlash size={16} /> : <Eye size={16} />}
+              {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
 
@@ -137,7 +137,7 @@ export default function AuthPage() {
 
           <button type="submit" className="auth-submit" disabled={loading}>
             {loading
-              ? <><CircleNotch size={18} className="spinner" /> Cargando…</>
+              ? <><LoaderCircle size={18} className="spinner" /> Cargando…</>
               : tab === 'login' ? 'Entrar' : 'Crear cuenta'}
           </button>
         </form>

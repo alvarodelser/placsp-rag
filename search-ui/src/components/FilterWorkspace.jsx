@@ -13,19 +13,19 @@ import ProcedureAxis from './ProcedureAxis.jsx'
 import { budgetToPos, posToBudget, presetRange, presetDeadlineRange, todayISO } from '../filters.js'
 import { money } from '../format.js'
 import {
-  Stack, MapPin, Calendar, HourglassHigh, CurrencyEur, ListChecks, Scales, Gavel, X, Trophy,
+  Layers, MapPin, Calendar, Hourglass, Euro, ListChecks, Scale, Gavel, X, Trophy,
 } from '../icons.js'
 import { RESULT_GROUPS, TYPE_GROUPS, PROC_GROUPS } from '../facetGroups.js'
 
 const CATS = [
-  { id: 'cpv',           label: 'CPV',           Icon: Stack,         fields: ['cpv'] },
+  { id: 'cpv',           label: 'CPV',           Icon: Layers,         fields: ['cpv'] },
   { id: 'nuts',          label: 'Ubicación',      Icon: MapPin,        fields: ['nuts'] },
   { id: 'publicacion',   label: 'Publicación',    Icon: Calendar,      fields: ['pub_from', 'pub_to'] },
-  { id: 'presentacion',  label: 'Presentación',   Icon: HourglassHigh, fields: ['deadline_from', 'deadline_to'] },
-  { id: 'budget',        label: 'Presupuesto',    Icon: CurrencyEur,   fields: ['budget_min', 'budget_max'] },
+  { id: 'presentacion',  label: 'Presentación',   Icon: Hourglass, fields: ['deadline_from', 'deadline_to'] },
+  { id: 'budget',        label: 'Presupuesto',    Icon: Euro,   fields: ['budget_min', 'budget_max'] },
   { id: 'status',        label: 'Estado',         Icon: ListChecks,    fields: ['status'] },
   { id: 'result',        label: 'Resultado',      Icon: Trophy,        fields: ['result'] },
-  { id: 'contract_type', label: 'Tipo',           Icon: Scales,        fields: ['contract_type'] },
+  { id: 'contract_type', label: 'Tipo',           Icon: Scale,        fields: ['contract_type'] },
   { id: 'procedure',     label: 'Procedimiento',  Icon: Gavel,         fields: ['procedure'] },
 ]
 

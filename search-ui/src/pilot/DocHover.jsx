@@ -4,7 +4,7 @@
 import { useRef, useState } from 'react'
 import { docPreview } from './pilotApi.js'
 import { roleEs } from './labels.js'
-import { CircleNotch } from '../icons.js'
+import { LoaderCircle } from '../icons.js'
 
 const cache = new Map()      // sha|tender -> promise: a preview is fetched once per page load
 const W = 420
@@ -36,7 +36,7 @@ export default function DocHover({ tenderId, sha, children, className = '' }) {
       {children}
       {card && (
         <div className="dh-card" style={{ ...card.pos, width: W }} role="tooltip">
-          {card.status === 'loading' && <div className="loading-state"><CircleNotch size={18} className="spinner" /></div>}
+          {card.status === 'loading' && <div className="loading-state"><LoaderCircle size={18} className="spinner" /></div>}
           {card.status === 'error' && <div className="err">{card.e}</div>}
           {card.status === 'done' && <Preview d={card.d} />}
         </div>

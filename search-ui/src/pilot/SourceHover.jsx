@@ -4,7 +4,7 @@
 import { useRef, useState } from 'react'
 import { getNode } from './pilotApi.js'
 import { roleEs } from './labels.js'
-import { CircleNotch } from '../icons.js'
+import { LoaderCircle } from '../icons.js'
 import { go } from './route.js'
 
 const cache = new Map()
@@ -43,7 +43,7 @@ export default function SourceHover({ id, children }) {
       {children}
       {card && (
         <div className="dh-card" style={{ ...card.pos, width: W }} role="tooltip">
-          {card.status === 'loading' && <div className="loading-state"><CircleNotch size={18} className="spinner" /></div>}
+          {card.status === 'loading' && <div className="loading-state"><LoaderCircle size={18} className="spinner" /></div>}
           {card.status === 'error' && <div className="err">{card.e}</div>}
           {card.status === 'done' && <Sources d={card.d} />}
         </div>

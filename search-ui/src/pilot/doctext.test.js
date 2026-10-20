@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { reflow, lineKey, lineKeyRanges } from './doctext.js'
+import { reflow, lineKey, lineKeyRanges, blocks } from './doctext.js'
 
 describe('doctext', () => {
   it('joins lines a PDF broke mid-sentence and keeps the length', () => {
@@ -27,5 +27,20 @@ describe('doctext', () => {
     const keys = new Set([lineKey('Documento firmado electrónicamente | Página 1 de 23')])
     const [r] = lineKeyRanges(t, keys)
     expect(t.slice(r.a, r.b)).toBe('Documento firmado electrónicamente | Página 3 de 23')
+  })
+})
+
+describe('blocks', () => {
+  const kinds = (t) => blocks(t).map((b) => `${b.type}:${t.slice(b.a, b.b).trim().replace(/\s+/g, ' ')}`)
+  it('lays a notice out as headings and label/value fields', () => {
+    const t = 'Anuncio de adjudicación\nNúmero de Expediente\n 192/2026\n\nEntidad Adjudicadora\nEmpresa Municipal de la Vivienda\nTeléfono \n +34 915168770\n'
+    expect(kinds(t)).toEqual(['heading:Anuncio de adjudicación', 'field:Número de Expediente 192/2026',
+      'heading:Entidad Adjudicadora', 'para:Empresa Municipal de la Vivienda', 'field:Teléfono +34 915168770'])
+  })
+  it('keeps pages, numbered headings, items and paragraphs apart', () => {
+    const t = '[Página 2]\n1.2 División en lotes\nEl contrato no se divide en lotes porque\nlo impide su objeto.\n\n• Primera condición\nCLÁUSULA TERCERA'
+    expect(kinds(t)).toEqual(['page:[Página 2]', 'heading:1.2 División en lotes',
+      'para:El contrato no se divide en lotes porque lo impide su objeto.', 'item:• Primera condición', 'heading:CLÁUSULA TERCERA'])
+    expect(blocks(t)[0].page).toBe(2)
   })
 })

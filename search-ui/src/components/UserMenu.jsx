@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../AuthContext.jsx'
-import { Tray, SignOut, User, Graph } from '../icons.js'
+import { Inbox, LogOut, User, Network } from '../icons.js'
 
 export default function UserMenu({ onOpenSaved, onOpenProfile }) {
   const { user, logout } = useAuth()
@@ -44,20 +44,20 @@ export default function UserMenu({ onOpenSaved, onOpenProfile }) {
             type="button"
             onClick={() => { setOpen(false); onOpenSaved?.() }}
           >
-            <Tray size={16} /> Mi Espacio
+            <Inbox size={16} /> Mi Espacio
           </button>
           <button
             type="button"
             onClick={() => { setOpen(false); window.location.hash = '#/pilot' }}
           >
-            <Graph size={16} /> Piloto documental
+            <Network size={16} /> Piloto documental
           </button>
           <hr />
           <button
             type="button"
             onClick={() => { setOpen(false); logout() }}
           >
-            <SignOut size={16} /> Cerrar sesión
+            <LogOut size={16} /> Cerrar sesión
           </button>
         </div>
       )}

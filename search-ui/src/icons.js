@@ -1,15 +1,17 @@
-// search-ui/src/icons.js — central Phosphor icon re-exports (one place to swap weights)
+// search-ui/src/icons.js — central Lucide icon re-exports (one place to swap the icon set)
 export {
-  MagnifyingGlass, SlidersHorizontal, ThumbsUp, X, CaretRight, CaretDown, CircleNotch,
-  MapPin, Calendar, CurrencyEur, Stack, ListChecks, Scales, Gavel, Buildings,
+  Search, SlidersHorizontal, ThumbsUp, X, ChevronRight, ChevronDown, LoaderCircle,
+  MapPin, Calendar, Euro, Layers, ListChecks, Scale, Gavel, Building2, Landmark,
   // Status lifecycle icons
-  Megaphone, HourglassHigh, CheckCircle, XCircle, Prohibit, Archive,
+  Megaphone, Hourglass, CircleCheck, CircleX, Ban, Archive,
   // Category / procedure icons
-  Package, Wrench, Tree, HandCoins, Storefront,
-  FileText, ArrowsLeftRight, UsersThree, Leaf,
+  Package, Wrench, TreePine, HandCoins, Store,
+  FileText, ArrowLeftRight, Users, Leaf,
   // Result icons
   Trophy,
   // Layout
-  FunnelSimple, SortAscending,
-  BookmarkSimple, User, SignOut, Tray, Graph, EnvelopeSimple, Lock, Eye, EyeSlash, UserPlus
-} from '@phosphor-icons/react'
+  Funnel, ArrowUpNarrowWide,
+  Bookmark, User, LogOut, Inbox, Network, Mail, Lock, Eye, EyeOff, UserPlus,
+  // Inline marks (replace emoji and arrow glyphs)
+  Check, Sparkles, ArrowRight, ArrowLeft, ArrowUpRight,
+} from 'lucide-react'

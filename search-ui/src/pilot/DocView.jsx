@@ -10,10 +10,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getDocument } from './pilotApi.js'
 import { nodeInfo, roleEs } from './labels.js'
-import { CircleNotch, X } from '../icons.js'
+import { LoaderCircle, X, ArrowLeft, ArrowUpRight } from '../icons.js'
 import NodePanel from './NodePanel.jsx'
 import OriginalPane from './OriginalPane.jsx'
-import { reflow, lineKeyRanges } from './doctext.js'
+import { reflow, lineKeyRanges, blocks } from './doctext.js'
 import { go } from './route.js'
 
 const PAGE = /\[Página (\d+)\]/g
@@ -83,7 +83,7 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   const boiler = useMemo(() => new Set(data?.boilerplate || []), [data])
 
   if (error) return <div className="err">{error}</div>
-  if (!data) return <div className="loading-state"><CircleNotch size={28} className="spinner" /></div>
+  if (!data) return <div className="loading-state"><LoaderCircle size={28} className="spinner" /></div>
   const d = data.document
   const first = data.chunks[0]?.chunk_idx || 0
   const next = data.start + data.chunks.length
@@ -106,13 +106,13 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   return (
     <div className="dv">
       <div className="tv-head dv-head">
-        <button type="button" className="linkish" onClick={() => go(`/t/${tenderId}`)}>← {d.tender_name || tenderId}</button>
+        <button type="button" className="linkish" onClick={() => go(`/t/${tenderId}`)}><ArrowLeft size={13} className="ico" /> {d.tender_name || tenderId}</button>
         <div className="doc-meta">
           <span className="chip">Doc {d.seq} · {roleEs(d.role)}</span>
           <time>{d.effective_date || 'sin fecha'}</time>
           {d.pages ? <span className="muted">{d.pages} págs.</span> : null}
           {d.stored && <button type="button" className="linkish" onClick={() => setOriginal({ page: data.chunks[0]?.page_from || 1 })}>Ver el original</button>}
-          {d.url && <a href={d.url} target="_blank" rel="noreferrer">En PLACSP ↗</a>}
+          {d.url && <a href={d.url} target="_blank" rel="noreferrer">En PLACSP <ArrowUpRight size={13} className="ico" /></a>}
         </div>
         <h2>{d.filename || d.title}</h2>
         {d.summary && <p className="tv-desc">{d.summary}</p>}
@@ -173,10 +173,12 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   )
 }
 
-// The chunk as plain text, with page dividers and folded repeated lines; the focused entity's
-// references framed (their quote, the name in bold) and tagged with document and page.
+// The chunk laid out as blocks (headings, a notice's label/value rows, list items, paragraphs, page
+// dividers), repeated lines folded; the focused entity's references framed (their quote, the name
+// in bold) and tagged with document and page. A reference across two blocks is framed in each.
 function Annotated({ chunk, entity, boiler, tagOf, onOpen, onPage }) {
   const text = useMemo(() => reflow(chunk.text, boiler), [chunk.text, boiler])
+  const layout = useMemo(() => blocks(text), [text])
   const refs = []
   for (const m of (chunk.mentions || []).filter((x) => x.entity_id === entity)
     .map((x) => ({ ...x, a: x.char_start ?? x.name_start, b: x.char_end ?? x.name_end, key: x.name_start ?? x.char_start ?? 0 }))
@@ -208,20 +210,50 @@ function Annotated({ chunk, entity, boiler, tagOf, onOpen, onPage }) {
     return out
   }
 
+  // [from, to) of the text with the references inside it framed.
+  function span(from, to, key) {
+    const out = []
+    let at = from
+    refs.forEach((r, i) => {
+      const a = Math.max(r.a, from), b = Math.min(r.b, to)
+      if (b <= a) return
+      if (a > at) out.push(...plain(at, a, `${key}t${i}`))
+      const ns = Math.max(a, r.name_start ?? r.a), ne = Math.min(b, r.name_end ?? r.b)
+      out.push(
+        <mark key={`${key}r${i}`} className={`ref-frame ${r.kind === 'coref' ? 'is-ref' : ''} ${onOpen ? 'can-open' : ''}`} data-k={`${chunk.chunk_idx}:${r.key}`}
+          data-tag={tagOf(r.page || chunk.page_from)}
+          title={`${r.kind === 'coref' ? 'Referencia sin nombre («la empresa»…)' : 'Referencia'}${onOpen ? ' · clic: verla en el original' : ''}`}
+          onClick={() => onOpen?.(r)}>
+          {ne > ns ? <>{text.slice(a, ns)}<b>{text.slice(ns, ne)}</b>{text.slice(ne, b)}</> : text.slice(a, b)}
+        </mark>)
+      at = b
+    })
+    if (to > at) out.push(...plain(at, to, `${key}end`))
+    return out
+  }
+
   const out = []
-  let at = 0
-  refs.forEach((r, i) => {
-    if (r.a > at) out.push(...plain(at, r.a, `t${i}`))
-    const ns = Math.max(r.a, r.name_start ?? r.a), ne = Math.min(r.b, r.name_end ?? r.b)
-    out.push(
-      <mark key={`r${i}`} className={`ref-frame ${r.kind === 'coref' ? 'is-ref' : ''} ${onOpen ? 'can-open' : ''}`} data-k={`${chunk.chunk_idx}:${r.key}`}
-        data-tag={tagOf(r.page || chunk.page_from)}
-        title={`${r.kind === 'coref' ? 'Referencia sin nombre («la empresa»…)' : 'Referencia'}${onOpen ? ' · clic: verla en el original' : ''}`}
-        onClick={() => onOpen?.(r)}>
-        {text.slice(r.a, ns)}<b>{text.slice(ns, ne)}</b>{text.slice(ne, r.b)}
-      </mark>)
-    at = r.b
-  })
-  out.push(...plain(at, text.length, 'end'))
-  return <p className="dv-p">{out}</p>
+  for (let i = 0; i < layout.length; i++) {
+    const x = layout[i], key = `b${x.a}`
+    if (x.type === 'page') {
+      out.push(<div key={key} className="dv-pagebreak">{onPage
+        ? <button type="button" className="dv-page" onClick={() => onPage(x.page)} title="Ver esta página en el original">Página {x.page}</button>
+        : <span className="dv-page">Página {x.page}</span>}</div>)
+    } else if (x.type === 'field') {
+      const rows = []
+      for (; i < layout.length && layout[i].type === 'field'; i++) {
+        const f = layout[i]
+        rows.push(<div key={`f${f.a}`} className="dv-field"><dt>{span(f.la, f.lb, `l${f.a}`)}</dt><dd>{span(f.va, f.vb, `v${f.a}`)}</dd></div>)
+      }
+      i--
+      out.push(<dl key={key} className="dv-fields">{rows}</dl>)
+    } else if (x.type === 'heading') {
+      out.push(<h4 key={key} className={`dv-h ${x.sub ? 'sub' : ''}`}>{span(x.a, x.b, key)}</h4>)
+    } else if (x.type === 'item') {
+      out.push(<p key={key} className="dv-p dv-li">{span(x.a, x.b, key)}</p>)
+    } else {
+      out.push(<p key={key} className="dv-p">{span(x.a, x.b, key)}</p>)
+    }
+  }
+  return <div className="dv-flow">{out}</div>
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import cpvMap from '../codelists/cpv.json'
 import { cpvChildren, cpvLevel } from '../cpv.js'
-import { MagnifyingGlass, CaretRight, X } from '../icons.js'
+import { Search, ChevronRight, X, ArrowLeft } from '../icons.js'
 import { cpvDist } from '../api.js'
 
 const ENTRIES = Object.entries(cpvMap)
@@ -109,7 +109,7 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
   return (
     <div className="cpv-miller">
       <div className="cm-search">
-        <MagnifyingGlass size={16} />
+        <Search size={16} />
         <input type="search" value={term} onChange={e => setTerm(e.target.value)}
           placeholder="Buscar CPV: código o descripción" />
       </div>
@@ -136,7 +136,7 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
         <div className="cm-pane cm-browse">
           {!isSearching && midPath.length > 0 && (
             <div className="cm-breadcrumb">
-              <button type="button" className="cm-back-btn" onClick={goBack}>← Atrás</button>
+              <button type="button" className="cm-back-btn" onClick={goBack}><ArrowLeft size={13} className="ico" /> Atrás</button>
               <span className="cm-bc-link" onClick={() => navigateTo(0)}>Inicio</span>
               {midPath.map((code, i) => (
                 <span key={code}>
@@ -161,7 +161,7 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
                 )}
                 <button type="button" className="cm-add-btn" aria-label="Añadir"
                   onClick={e => { e.stopPropagation(); add(code) }}>+</button>
-                {hasKids && <CaretRight size={12} className="cm-caret" />}
+                {hasKids && <ChevronRight size={12} className="cm-caret" />}
               </div>
             )
           })}
@@ -187,7 +187,7 @@ export default function CpvMiller({ value, onChange, filterParams = {} }) {
                       )}
                       <button type="button" className="cm-add-btn" aria-label="Añadir"
                         onClick={e => { e.stopPropagation(); add(code) }}>+</button>
-                      {hasKids && <CaretRight size={12} className="cm-caret" />}
+                      {hasKids && <ChevronRight size={12} className="cm-caret" />}
                     </div>
                   )
                 })

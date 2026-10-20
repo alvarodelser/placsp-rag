@@ -78,10 +78,10 @@ def summarize(body: dict) -> dict:
             return {"result": {"has_formula": False, "literal": False, "expression": "", "variables": [],
                                "conditions": [], "source_text": ""}}
         return {"result": {"has_formula": True, "literal": True, "expression": "P = Pmax * Of_min / Of",
-                           "variables": [{"symbol": "P", "meaning": "puntuación", "kind": "output", "value": None, "unit": "puntos"},
-                                         {"symbol": "Pmax", "meaning": "puntos máximos", "kind": "constant", "value": 60, "unit": "puntos"},
-                                         {"symbol": "Of_min", "meaning": "oferta más baja", "kind": "parameter", "value": None, "unit": "euros"},
-                                         {"symbol": "Of", "meaning": "oferta del licitador", "kind": "input", "value": None, "unit": "euros"}],
+                           "variables": [{"symbol": "P", "meaning": "puntuación", "kind": "output", "value": None, "unit": "puntos", "min": 0, "max": 60},
+                                         {"symbol": "Pmax", "meaning": "puntos máximos", "kind": "constant", "value": 60, "unit": "puntos", "min": None, "max": None},
+                                         {"symbol": "Of_min", "meaning": "oferta más baja", "kind": "parameter", "value": None, "unit": "euros", "min": 50000, "max": 100000},
+                                         {"symbol": "Of", "meaning": "oferta del licitador", "kind": "input", "value": None, "unit": "euros", "min": 50000, "max": 100000}],
                            "conditions": [], "source_text": "P = Pmax x Of_min / Of"}}
     return None
 

@@ -366,13 +366,13 @@ def corpus_graph(documents: bool = False):
     """What the expedientes share: tenders, the authorities that publish them and the companies
     that bid for and win them (roles from the unified tender object); with `documents`, each
     tender's documents too. A tender's own subgraph is at /tenders/{id}/graph."""
-    fields = ["tender_id", "name", "short_title", "themes", "channel", "status", "value", "authority", "companies", "counts"]
+    fields = ["tender_id", "folder_id", "name", "short_title", "channel", "status", "deadline", "value", "authority", "companies", "counts"]
     tenders = [p.payload for p in scroll_all("tenders", fields=fields + (["documents"] if documents else []))]
     nodes, edges = {}, []
     for t in tenders:
         tid = f"tender:{t['tender_id']}"
-        nodes[tid] = {"id": tid, "label": "Tender", "name": t.get("name"), "short_title": t.get("short_title"), "themes": t.get("themes"), "channel": t.get("channel"),
-                      "status": t.get("status"), "value": t.get("value"), "documents": (t.get("counts") or {}).get("documents")}
+        nodes[tid] = {"id": tid, "label": "Tender", "name": t.get("name"), "short_title": t.get("short_title"), "channel": t.get("channel"),
+                      "expediente": t.get("folder_id"), "status": t.get("status"), "deadline": t.get("deadline"), "value": t.get("value"), "documents": (t.get("counts") or {}).get("documents")}
         a = t.get("authority")
         if a:
             nodes.setdefault(a["id"], {"id": a["id"], "label": "Organization", "name": a.get("name"), "kinds": ["ContractingAuthority"]})

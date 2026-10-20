@@ -59,6 +59,11 @@ button.relgutter:hover { background: var(--accent-soft); color: var(--accent); }
 .loading-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 0; color: var(--muted); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner { animation: spin .8s linear infinite; color: var(--accent); }
+/* Lucide icons set inline with text */
+.ico { display: inline-block; vertical-align: -2px; flex-shrink: 0; }
+.ico-win { color: #c47d0e; margin-right: 4px; }
+.ico-ok { color: var(--ok); }
+.ico-no { color: #c0392b; }
 .err { background: #fdf2f2; border: 1px solid #f5c2c2; color: #9b2226; padding: 10px 12px; border-radius: 10px; margin: 8px 0; }
 .more { margin: 18px auto; display: block; background: #fff; color: var(--accent); border-color: var(--line); font-weight: 600; }
 .results .more:hover { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent); }

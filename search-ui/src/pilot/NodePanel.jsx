@@ -1,12 +1,15 @@
 // search-ui/src/pilot/NodePanel.jsx — one graph node: what it is, where it was found, what it connects to.
 import { useEffect, useState } from 'react'
 import { getNode } from './pilotApi.js'
-import { nodeInfo, roleEs } from './labels.js'
-import { CircleNotch, X } from '../icons.js'
+import { nodeInfo, roleEs, tenderState } from './labels.js'
+import { money } from '../format.js'
+import { LoaderCircle, X, ArrowRight } from '../icons.js'
 import { go } from './route.js'
 
 const SKIP = new Set(['id', 'label', 'name', 'title', 'description', 'descriptions', 'evidence', 'summary', 'documents',
   'aliases', 'url', 'sha256', 'source', 'mentions', 'detail', 'conflicts'])
+// A tender's state, number and amount are on its own line; the raw fields would repeat them.
+const TENDER_SKIP = new Set(['status', 'deadline', 'expediente', 'folder_id', 'value', 'channel', 'short_title', 'themes', 'tender_id'])
 const SOURCE = { feed: 'del feed', documents: 'extraído de documentos', 'feed+documents': 'feed + documentos' }
 const DETAIL = {
   threshold_amount: 'Cifra mínima', threshold_unit: 'Unidad', period_years: 'Periodo (años)', reference_base: 'Referencia',
@@ -15,7 +18,9 @@ const DETAIL = {
   threshold_points: 'Umbral', envelope: 'Sobre', evidence_required: 'Documentación', subtype: 'Tipo',
 }
 
-export default function NodePanel({ id, onSelect, onClose }) {
+// `seen`: the node as the graph drew it, for what the node endpoint may not carry (a tender's
+// status and deadline).
+export default function NodePanel({ id, seen, onSelect, onClose }) {
   const [state, setState] = useState({ status: 'loading' })
   useEffect(() => {
     let live = true
@@ -30,28 +35,40 @@ export default function NodePanel({ id, onSelect, onClose }) {
         <span className="np-kind" style={{ color: nodeInfo(state.d?.node.label).color }}>{nodeInfo(state.d?.node.label).es}</span>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Cerrar"><X size={16} /></button>
       </div>
-      {state.status === 'loading' && <div className="loading-state"><CircleNotch size={22} className="spinner" /></div>}
+      {state.status === 'loading' && <div className="loading-state"><LoaderCircle size={22} className="spinner" /></div>}
       {state.status === 'error' && <div className="err">{state.e}</div>}
-      {state.status === 'done' && <Body d={state.d} onSelect={onSelect} />}
+      {state.status === 'done' && <Body d={state.d} seen={seen} onSelect={onSelect} />}
     </aside>
   )
 }
 
-function Body({ d, onSelect }) {
+function Body({ d, seen, onSelect }) {
   const n = d.node
+  const deadline = n.deadline ?? seen?.deadline
+  const state = n.label === 'Tender' ? tenderState({ status: n.status ?? seen?.status, deadline }) : null
+  const exp = n.expediente ?? seen?.expediente
   // A reference ("la empresa") is evidence too: counted apart so the reader sees both.
   const refs = d.mentions.filter((m) => m.kind === 'coref').length
-  const props = Object.entries(n).filter(([k, v]) => !SKIP.has(k) && v != null && v !== '' && typeof v !== 'object')
+  const props = Object.entries(n).filter(([k, v]) => !SKIP.has(k) && !(n.label === 'Tender' && TENDER_SKIP.has(k)) && v != null && v !== '' && typeof v !== 'object')
   const isOrg = n.label === 'Organization' || n.label === 'JointVenture'
   const evidence = Array.isArray(n.evidence) ? n.evidence : []
   return (
     <div className="np-body">
       <h3>{n.label === 'Document' ? (n.title || n.filename) : (n.name || n.id)}</h3>
+      {n.label === 'Tender' && (
+        <div className="np-state">
+          {state && <span className={`badge st ${state.cls}`}>{state.es}</span>}
+          {state?.key === 'open' && deadline && <span className="muted small">ofertas hasta {dmy(deadline)}</span>}
+          {exp && <span className="np-exp">{exp}</span>}
+          {(n.value ?? seen?.value) != null && <b className="small">{money(n.value ?? seen?.value)}</b>}
+          <button type="button" className="linkish" onClick={() => go(`/t/${n.id.replace(/^tender:/, '')}`)}>Abrir expediente <ArrowRight size={13} className="ico" /></button>
+        </div>
+      )}
       <div className="chips">
-        <span className="chip">{SOURCE[n.source] || n.id.split(':')[0]}</span>
+        {n.label !== 'Tender' && <span className="chip">{SOURCE[n.source] || n.id.split(':')[0]}</span>}
         {d.mention_count > 0 && <span className="chip">{d.mention_count} menciones{refs ? ` (${refs} referencias)` : ''}</span>}
         {n.role && <span className="chip">{roleEs(n.role)}</span>}
-        {isOrg && <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(n.id)}`)}>Ver en todos los expedientes →</button>}
+        {isOrg && <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(n.id)}`)}>Ver en todos los expedientes <ArrowRight size={13} className="ico" /></button>}
       </div>
       {(n.description || n.summary) && <p className="np-desc">{n.description || n.summary}</p>}
       {props.length > 0 && (
@@ -110,6 +127,8 @@ function Body({ d, onSelect }) {
   )
 }
 
+const dmy = (d) => { const x = typeof d === 'string' ? d : d?.date; return x ? x.slice(0, 10).split('-').reverse().join('-') : '' }
+
 function Mention({ m, entity }) {
   return (
     <div className={`mention ${m.kind === 'coref' ? 'is-ref' : ''}`}>
@@ -119,7 +138,7 @@ function Mention({ m, entity }) {
         {m.kind === 'coref' && <span className="chip" title="Expresión que se refiere a la entidad sin nombrarla">referencia «{m.surface}»</span>}
         {!m.located && <span title="La cita no se encontró literal en el texto">cita aproximada</span>}
         {m.doc_sha256 && <button type="button" className="linkish small" onClick={() =>
-          go(`/t/${m.tender_id}/d/${m.doc_sha256}?c=${m.chunk_idx}&e=${encodeURIComponent(entity)}`)}>ver en el documento →</button>}
+          go(`/t/${m.tender_id}/d/${m.doc_sha256}?c=${m.chunk_idx}&e=${encodeURIComponent(entity)}`)}>ver en el documento <ArrowRight size={13} className="ico" /></button>}
       </div>
       <p>{m.before && '…'}{m.before}<mark>{m.quote}</mark>{m.after}{m.after && '…'}</p>
     </div>

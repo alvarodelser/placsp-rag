@@ -1,10 +1,11 @@
 // search-ui/src/pilot/FormulaView.jsx — a criterion's scoring formula, compact: on the left the
 // formula and its symbols (what each one is, its value to try); on the right the score as a curve
 // of the symbol picked as x axis, the current value marked. Click a symbol to make it the axis.
+// A step function of one symbol is a table of tiers instead: no formula, no staircase.
 import { useMemo, useState } from 'react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
-import { parse, evaluate, toLatex, symbolTex, defaultRange, niceTicks } from './formula.js'
+import { parse, evaluate, toLatex, symbolTex, rangeOf, niceTicks, stepTiers, CMP_TEXT } from './formula.js'
 
 export function Tex({ children, display = false }) {
   const html = useMemo(() => {
@@ -14,26 +15,52 @@ export function Tex({ children, display = false }) {
   return <span className={display ? 'tex-block' : 'tex'} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
-export default function FormulaView({ model, points }) {
-  const parsed = useMemo(() => { try { return parse(model.expression) } catch (e) { return { error: e.message } } }, [model])
+// The symbols the expression uses, each with what the model says of it.
+export function freeSymbols(model, parsed) {
+  const declared = Object.fromEntries((model.variables || []).map((v) => [v.symbol, v]))
+  return parsed.symbols.map((s) => declared[s] || { symbol: s, kind: 'input', meaning: null, value: null })
+}
+
+// A value to start from: the one the text gives, the criterion's points for "puntos máximos",
+// else the middle of the symbol's plausible range.
+export function startValues(model, parsed, points) {
+  return Object.fromEntries(freeSymbols(model, parsed).map((v) => {
+    if (v.value != null) return [v.symbol, v.value]
+    if (v.kind === 'constant' && /punt/i.test(`${v.unit} ${v.meaning}`) && points) return [v.symbol, points]
+    const [a, b] = rangeOf(v, parsed.ast)
+    return [v.symbol, +((a + b) / 2).toPrecision(3)]
+  }))
+}
+
+export function parseModel(model) {
+  try { return parse(model.expression) } catch (e) { return { error: e.message } }
+}
+
+// `values` / `onValues` let a caller (the score calculator) hold the values; without them the
+// view keeps its own.
+export default function FormulaView({ model, points, values, onValues }) {
+  const parsed = useMemo(() => parseModel(model), [model])
   if (parsed.error) {
     return <div className="fx"><div className="small warn-text">No se pudo leer la fórmula ({parsed.error}).</div>
       {model.source_text && <blockquote className="fx-src">{model.source_text}</blockquote>}</div>
   }
-  return <Formula model={model} parsed={parsed} points={points} />
+  return <Formula model={model} parsed={parsed} points={points} outer={values} onOuter={onValues} />
 }
 
-function Formula({ model, parsed, points }) {
-  const free = useMemo(() => {
-    const declared = Object.fromEntries((model.variables || []).map((v) => [v.symbol, v]))
-    return parsed.symbols.map((s) => declared[s] || { symbol: s, kind: 'input', meaning: null, value: null })
-  }, [model, parsed])
+function Formula({ model, parsed, points, outer, onOuter }) {
+  const free = useMemo(() => freeSymbols(model, parsed), [model, parsed])
   const out = (model.variables || []).find((v) => v.symbol === parsed.out)
-  const [values, setValues] = useState(() => Object.fromEntries(free.map((v) => [v.symbol, start(v, points)])))
+  const [own, setOwn] = useState(() => startValues(model, parsed, points))
+  const values = outer || own
+  const setValues = onOuter ? (f) => onOuter(f(values)) : setOwn
   const [axis, setAxis] = useState(() => (free.find((v) => v.kind === 'input') || free[0])?.symbol)
+  const tiers = useMemo(() => stepTiers(parsed, values), [parsed, values])
 
   let score = null
   try { score = evaluate(parsed.ast, values) } catch { score = null }
+
+  if (tiers) return <Tiers model={model} tiers={tiers} variable={free.find((v) => v.symbol === tiers.symbol)} out={out}
+    values={values} setValues={setValues} score={score} points={points} />
 
   return (
     <div className="fx2">
@@ -49,7 +76,7 @@ function Formula({ model, parsed, points }) {
             <li key={v.symbol} className={axis === v.symbol ? 'on' : ''} onClick={() => setAxis(v.symbol)} title="Clic: ver la puntuación según este símbolo">
               <Tex>{symbolTex(v.symbol)}</Tex>
               <span className="fx2-mean">{v.meaning || <span className="muted">—</span>}{v.unit ? <span className="muted"> ({v.unit})</span> : null}</span>
-              <input type="number" step="any" className="fx-in" value={values[v.symbol] ?? ''} onClick={(e) => e.stopPropagation()}
+              <input type="number" step="any" className="fx-in" value={values[v.symbol] ?? ''} min={v.min ?? undefined} max={v.max ?? undefined} onClick={(e) => e.stopPropagation()}
                 onChange={(e) => setValues((x) => ({ ...x, [v.symbol]: e.target.value === '' ? null : Number(e.target.value) }))} />
             </li>
           ))}
@@ -70,10 +97,36 @@ function Formula({ model, parsed, points }) {
   )
 }
 
-function start(v, points) {
-  if (v.value != null) return v.value
-  if (v.kind === 'constant' && /punt/i.test(`${v.unit} ${v.meaning}`) && points) return points
-  return 100
+// "0 puntos si A < 1, 7 si A >= 1": the tiers as rows, the one the value falls in marked.
+function Tiers({ model, tiers, variable, out, values, setValues, score, points }) {
+  const x = values[tiers.symbol]
+  const hit = x == null ? -1 : tiers.rows.findIndex((r) => CMP_TEXT[r.op].test(x, r.threshold))
+  return (
+    <div className="fx-tiers">
+      <div className="fx-tiers-head">
+        <Tex>{symbolTex(tiers.symbol)}</Tex>
+        <span className="fx2-mean">{variable?.meaning || <span className="muted">—</span>}{variable?.unit ? <span className="muted"> ({variable.unit})</span> : null}</span>
+        <input type="number" step="any" className="fx-in" value={x ?? ''} min={variable?.min ?? undefined} max={variable?.max ?? undefined}
+          onChange={(e) => setValues((v) => ({ ...v, [tiers.symbol]: e.target.value === '' ? null : Number(e.target.value) }))} />
+        <span className="muted">→</span>
+        <b className="fx2-val">{fmt(score)}{points ? <span className="muted"> / {fmt(points)}</span> : null}</b>
+      </div>
+      <table className="ptable fx-tiers-table">
+        <thead><tr><th>Tramo</th><th className="num">{out?.meaning || 'Puntuación'}</th></tr></thead>
+        <tbody>
+          {tiers.rows.map((r, i) => (
+            <tr key={i} className={i === hit ? 'on' : ''}>
+              <td>{variable?.meaning || tiers.symbol} {CMP_TEXT[r.op].text} {fmt(r.threshold)}{variable?.unit ? ` ${variable.unit}` : ''}</td>
+              <td className="num">{fmt(r.value)}</td>
+            </tr>
+          ))}
+          <tr className={hit === -1 && x != null ? 'on' : ''}><td>En otro caso</td><td className="num">{fmt(tiers.otherwise)}</td></tr>
+        </tbody>
+      </table>
+      {(model.conditions || []).length > 0 && <ul className="plain small">{model.conditions.map((c, i) => <li key={i}>• {c}</li>)}</ul>}
+      {model.source_text && <details className="small"><summary>Texto del pliego</summary><blockquote className="fx-src">{model.source_text}</blockquote></details>}
+    </div>
+  )
 }
 
 const fmt = (x) => (x == null || !Number.isFinite(x) ? '—' : x.toLocaleString('es-ES', { maximumFractionDigits: 2 }))
@@ -83,7 +136,7 @@ const PW = 420, PH = 240, M = { l: 40, r: 12, t: 12, b: 34 }
 // The score against one symbol, the others held at their values. The range is set when the axis
 // is chosen (around its value then), so typing a value moves the dot, not the axes.
 function Plot({ parsed, axis, values, points, out }) {
-  const [a, b] = useMemo(() => defaultRange(values[axis.symbol], axis.unit), [axis.symbol]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [a, b] = useMemo(() => rangeOf(axis, parsed.ast, values[axis.symbol]), [axis, parsed]) // eslint-disable-line react-hooks/exhaustive-deps
   const { pts, y0, y1 } = useMemo(() => {
     const pts = []
     for (let i = 0; i <= 160; i++) {

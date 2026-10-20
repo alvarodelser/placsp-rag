@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker'
 import { fileUrl } from './pilotApi.js'
-import { CircleNotch } from '../icons.js'
+import { LoaderCircle, ArrowUpRight } from '../icons.js'
 
 let pdfjs = null
 async function lib() {
@@ -66,7 +66,7 @@ function HtmlPane({ sha, target }) {
       break
     }
   }, [target, ready])
-  if (html == null) return <div className="op-empty"><CircleNotch size={22} className="spinner" /></div>
+  if (html == null) return <div className="op-empty"><LoaderCircle size={22} className="spinner" /></div>
   return <iframe ref={frame} className="op-frame" title="Original" srcDoc={html} sandbox="allow-same-origin" referrerPolicy="no-referrer"
     onLoad={() => setReady((x) => x + 1)} />
 }
@@ -212,13 +212,13 @@ function PdfPane({ sha, target, onPage }) {
     return false
   }
 
-  if (info.status === 'loading') return <div className="op-empty"><CircleNotch size={22} className="spinner" /></div>
+  if (info.status === 'loading') return <div className="op-empty"><LoaderCircle size={22} className="spinner" /></div>
   if (info.status === 'error') return <div className="op-empty err">No se pudo abrir el PDF: {info.e}</div>
   return (
     <div className="op">
       <div className="op-bar">
         <span>Página <b>{current}</b> de {info.n}</span>
-        <a href={fileUrl(sha, current)} target="_blank" rel="noreferrer">Abrir aparte ↗</a>
+        <a href={fileUrl(sha, current)} target="_blank" rel="noreferrer">Abrir aparte <ArrowUpRight size={13} className="ico" /></a>
       </div>
       <div className="op-scroll" ref={box}>
         {Array.from({ length: info.n }, (_, i) => (

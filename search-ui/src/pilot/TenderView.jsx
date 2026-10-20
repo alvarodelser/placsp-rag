@@ -1,19 +1,19 @@
 // search-ui/src/pilot/TenderView.jsx — the unified tender: summary, lots, documents in order, questions.
-// The head reads title, state and dates, money, authority; the summary the object (what, where,
+// The head reads title (id on hover), authority and money (figures on hover), state and dates; the summary the object (what, where,
 // how long), guarantees, the timeline (each document previewed on hover) and the record's details.
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { getTender, fileUrl } from './pilotApi.js'
 import { CHANNEL, roleEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
-import { CircleNotch } from '../icons.js'
+import { LoaderCircle, Trophy, ArrowUpRight } from '../icons.js'
 import cpvMap from '../codelists/cpv.json'
 import nutsMap from '../codelists/nuts.json'
 import NodePanel from './NodePanel.jsx'
 import AskView from './AskView.jsx'
 import DocHover from './DocHover.jsx'
 import SourceHover from './SourceHover.jsx'
-import FormulaView from './FormulaView.jsx'
-import { guessModel } from './formula.js'
+import FormulaView, { Tex, freeSymbols, parseModel, startValues } from './FormulaView.jsx'
+import { evaluate, guessModel, symbolTex } from './formula.js'
 import { go } from './route.js'
 
 const TABS = [['resumen', 'Resumen'], ['lotes', 'Lotes'], ['documentos', 'Documentos'], ['preguntar', 'Preguntar']]
@@ -30,36 +30,42 @@ export default function TenderView({ id }) {
     return () => { live = false }
   }, [id])
 
-  if (state.status === 'loading') return <div className="loading-state"><CircleNotch size={28} className="spinner" /></div>
+  if (state.status === 'loading') return <div className="loading-state"><LoaderCircle size={28} className="spinner" /></div>
   if (state.status === 'error') return <div className="err">{state.e}</div>
   const t = state.t
 
   return (
     <div className="tv">
-      <button type="button" className="linkish tv-back" onClick={() => go('')}>← Volver a la búsqueda</button>
       <div className="tv-head">
-        <h2 title={t.name}>{shortTitle(t)}</h2>
-        {shortTitle(t) !== t.name && <div className="tv-fullname">{t.name}</div>}
-        <div className="tv-dates">
-          {t.status && <span className={`badge st ${statusClass(t.status)}`}>{t.status}</span>}
-          {t.published && <span>Publicado <b>{t.published}</b></span>}
-          {t.deadline && <Deadline date={typeof t.deadline === 'string' ? t.deadline : t.deadline.date} />}
+        <div className="hp tv-title" tabIndex={0}>
+          <h2>{shortTitle(t)}</h2>
+          {shortTitle(t) !== t.name && <div className="tv-fullname">{t.name}</div>}
+          <div className="hp-card">
+            <div><span>ID</span><b>{t.tender_id}</b></div>
+            {(t.expediente || t.folder_id) && <div><span>Expediente</span><b>{t.expediente || t.folder_id}</b></div>}
+          </div>
         </div>
-        <Money value={t.value} budget={typeof t.budget === 'object' ? t.budget?.amount_tax_excl : t.budget} total={t.budget_total} />
-        {t.authority && (
-          <div className="row">Órgano de contratación: <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(t.authority.id)}`)}>{t.authority.name}</button></div>
-        )}
+        <div className="tv-mid">
+          {t.authority && (
+            <div className="tv-auth">
+              <span className="tv-lbl">Órgano de contratación</span>
+              <button type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(t.authority.id)}`)}>{t.authority.name}</button>
+            </div>
+          )}
+          <HeadMoney value={t.value} budget={typeof t.budget === 'object' ? t.budget?.amount_tax_excl : t.budget} total={t.budget_total} />
+        </div>
+        <Period t={t} />
       </div>
 
       <nav className="tv-tabs">
         {TABS.map(([k, label]) => <button key={k} type="button" className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
-        {t.source_url && <a className="tv-src" href={t.source_url} target="_blank" rel="noreferrer">Ver en PLACSP ↗</a>}
+        {t.source_url && <a className="tv-src" href={t.source_url} target="_blank" rel="noreferrer">Ver en PLACSP <ArrowUpRight size={13} className="ico" /></a>}
       </nav>
 
       {tab === 'resumen' && <Summary t={t} />}
       {tab === 'lotes' && <Lots t={t} />}
       {tab === 'documentos' && <Documents t={t} onOpen={(sha) => setSelected(`doc:${sha}`)} />}
-      {tab === 'preguntar' && <AskView tenderId={t.tender_id} />}
+      {tab === 'preguntar' && <AskView t={t} />}
       {selected && <NodePanel id={selected} onSelect={setSelected} onClose={() => setSelected(null)} />}
     </div>
   )
@@ -131,7 +137,7 @@ function Summary({ t }) {
             ['Fragmentos', t.counts?.chunks?.toLocaleString('es-ES')], ['Entidades', t.counts?.entities],
           ].filter(([, v]) => v != null && v !== '').map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
         </dl>
-        {t.source_url && <a className="small" href={t.source_url} target="_blank" rel="noreferrer">Ver en PLACSP ↗</a>}
+        {t.source_url && <a className="small" href={t.source_url} target="_blank" rel="noreferrer">Ver en PLACSP <ArrowUpRight size={13} className="ico" /></a>}
       </aside>
     </div>
   )
@@ -158,11 +164,51 @@ function Money({ value, budget, total, inline = false }) {
   return inline ? <span className="money-inline">{parts}</span> : <div className="money">{parts}</div>
 }
 
-function Deadline({ date }) {
-  const d = new Date(`${date}T23:59:59`)
-  const days = Math.ceil((d - new Date()) / 86400000)
-  const left = Number.isNaN(days) ? '' : days > 1 ? `quedan ${days} días` : days === 1 ? 'queda 1 día' : days === 0 ? 'último día' : 'cerrado'
-  return <span>Fin de plazo <b>{date}</b>{left && <span className={days >= 0 ? 'dl-open' : 'muted'}> ({left})</span>}</span>
+// The headline figure is the bids' ceiling (presupuesto base) when there is one; the hover card
+// gives every figure the record has, each with what it means.
+function HeadMoney({ value, budget, total }) {
+  const head = budget ?? value
+  if (head == null) return null
+  const same = value != null && budget != null && Math.abs(value - budget) < 0.5
+  const rows = []
+  if (same) rows.push(['Presupuesto base y valor estimado', budget, 'Sin prórrogas ni modificaciones previstas, coinciden'])
+  else {
+    if (budget != null) rows.push(['Presupuesto base', budget, 'Lo máximo que paga el órgano por el contrato base, sin IVA: el techo de las ofertas'])
+    if (value != null) rows.push(['Valor estimado', value, 'Todo lo que puede llegar a valer (prórrogas, modificaciones, opciones), sin IVA'])
+  }
+  if (total != null && budget != null && Math.abs(total - budget) >= 0.5) rows.push(['Presupuesto con IVA', total, null])
+  return (
+    <div className="hp tv-money" tabIndex={0}>
+      <span className="tv-lbl">{same ? 'Presupuesto · valor est.' : budget != null ? 'Presupuesto base' : 'Valor estimado'}</span>
+      <b>{money(head)}</b>
+      <div className="hp-card right">
+        {rows.map(([k, v, note]) => <div key={k} className="hp-money"><span>{k}</span><b>{money(v)}</b>{note && <small>{note}</small>}</div>)}
+      </div>
+    </div>
+  )
+}
+
+const dmy = (d) => (d ? d.slice(0, 10).split('-').reverse().join('-') : '…')
+
+// One line for where the tender stands: awarded (publication → award), open (publication → deadline,
+// with the days left), or otherwise its status over the same span.
+function Period({ t }) {
+  const deadline = typeof t.deadline === 'string' ? t.deadline : t.deadline?.date
+  const award = (t.lots || []).map((l) => l.result?.date).filter(Boolean).sort()[0]
+  const days = deadline ? Math.ceil((new Date(`${deadline}T23:59:59`) - new Date()) / 86400000) : NaN
+  const open = !award && days >= 0
+  const label = award ? 'Adjudicada' : open ? 'Abierta' : t.status ? t.status.charAt(0) + t.status.slice(1).toLowerCase() : null
+  const cls = award ? 'st-done' : open ? 'st-open' : t.status ? statusClass(t.status) : ''
+  const end = award || deadline
+  if (!label && !t.published && !end) return null
+  const left = !open ? null : days === 0 ? 'hoy' : days === 1 ? 'mañana' : `en ${days} días`
+  return (
+    <div className="tv-period">
+      {label && <span className={`badge st ${cls}`} title={t.status || undefined}>{label}</span>}
+      <span className="tv-range">{dmy(t.published)} <span className="muted">→</span> {dmy(end)}</span>
+      {left && <span className="dl-open">({left})</span>}
+    </div>
+  )
 }
 
 // The same document can enter the timeline through several notices: each once, at its first date.
@@ -241,7 +287,7 @@ function Lots({ t }) {
         {(l.bids || []).length > 0 && (
           <ul className="plain lv-bids">
             {l.bids.map((b, k) => (
-              <li key={k}>{b.winner ? '🏆 ' : ''}{b.bidders.map((o) => (
+              <li key={k}>{b.winner && <Trophy size={14} className="ico ico-win" aria-label="Adjudicataria" />}{b.bidders.map((o) => (
                 <button key={o.id} type="button" className="linkish" onClick={() => go(`/c/${encodeURIComponent(o.id)}`)}>{o.name}</button>
               ))}
               {b.price != null && <b> · {money(b.price)}</b>}{b.outcome && <span className="muted"> · {b.outcome}</span>}</li>
@@ -265,10 +311,20 @@ const CRIT_KIND = { JUDGEMENT: 'Juicio de valor', FORMULA: 'Fórmula' }
 const CRIT_COLOR = { JUDGEMENT: '#d14d72', FORMULA: '#8b5cf6' }
 
 // Criteria with their weight in the lot's total, each one's source on hover, and its formula
-// (from the pipeline, or found in its text) opened below it.
+// (from the pipeline, or found in its text) opened below it. The calculator holds the values of
+// every formula (the same ones an opened formula shows) and an estimate for each judged one.
 function Criteria({ lot }) {
   const cs = lot.award_criteria || []
   const [open, setOpen] = useState(null)
+  const [calc, setCalc] = useState(false)
+  const models = useMemo(() => cs.map((c) => {
+    const model = c.formula_model || guessModel([c.detail?.formula, c.formula].filter(Boolean).join('\n'))
+    const parsed = model && parseModel(model)
+    return model && !parsed.error ? { model, parsed } : model ? { model } : null
+  }), [cs])
+  const [vals, setVals] = useState({})
+  const valuesOf = (k) => vals[k] || (models[k]?.parsed ? startValues(models[k].model, models[k].parsed, cs[k].points) : {})
+  const setValuesOf = (k) => (v) => setVals((x) => ({ ...x, [k]: v }))
   if (!cs.length) return null
   const total = cs.reduce((n, c) => n + (c.points || 0), 0)
   const byKind = {}
@@ -277,7 +333,9 @@ function Criteria({ lot }) {
   return (
     <section className="tv-card">
       <h3>Criterios de adjudicación <span className="muted">· {fmtNum(total)} puntos
-        {Object.entries(byKind).map(([k, p]) => <span key={k}> · {CRIT_KIND[k] || 'Sin tipo'} {fmtNum(p)} ({fmtNum(pct(p))} %)</span>)}</span></h3>
+        {Object.entries(byKind).map(([k, p]) => <span key={k}> · {CRIT_KIND[k] || 'Sin tipo'} {fmtNum(p)} ({fmtNum(pct(p))} %)</span>)}</span>
+        <button type="button" className="linkish small cr-calc-btn" onClick={() => setCalc(!calc)}>{calc ? 'Cerrar calculadora' : 'Calcular una puntuación'}</button></h3>
+      {calc && <Calculator cs={cs} models={models} valuesOf={valuesOf} setValuesOf={setValuesOf} total={total} />}
       {total > 0 && (
         <div className="cr-bar" role="img" aria-label="Peso de cada criterio">
           {cs.filter((c) => c.points).map((c, k) => (
@@ -290,7 +348,7 @@ function Criteria({ lot }) {
         <thead><tr><th>Criterio</th><th className="num">Puntos</th><th>Peso</th><th /></tr></thead>
         <tbody>
           {cs.map((c, k) => {
-            const model = c.formula_model || guessModel([c.detail?.formula, c.formula].filter(Boolean).join('\n'))
+            const model = models[k]?.model
             const isOpen = open === k
             return (
               <Fragment key={k}>
@@ -303,13 +361,63 @@ function Criteria({ lot }) {
                   <td className="cr-w">{c.points ? <><span className="cr-wbar"><i style={{ width: `${pct(c.points)}%`, background: CRIT_COLOR[c.subtype] || '#94a3b8' }} /></span> {fmtNum(pct(c.points))} %</> : null}</td>
                   <td>{model && <button type="button" className="linkish small" onClick={() => setOpen(isOpen ? null : k)}>{isOpen ? 'Ocultar' : 'Ver fórmula'}</button>}</td>
                 </tr>
-                {isOpen && model && <tr className="cr-fx"><td colSpan={4}><FormulaView model={model} points={c.points} /></td></tr>}
+                {isOpen && model && <tr className="cr-fx"><td colSpan={4}><FormulaView model={model} points={c.points} values={models[k]?.parsed ? valuesOf(k) : undefined} onValues={setValuesOf(k)} /></td></tr>}
               </Fragment>
             )
           })}
         </tbody>
       </table>
     </section>
+  )
+}
+
+// One row per criterion: the symbols of its formula that the text leaves open (what the bidder
+// offers, the other offers), or for a judged one the points expected; its score capped to
+// [0, points]; the total at the foot.
+function Calculator({ cs, models, valuesOf, setValuesOf, total }) {
+  let sum = 0, missing = 0
+  const rows = cs.map((c, k) => {
+    const m = models[k]
+    const vs = valuesOf(k)
+    let score = null, open = []
+    if (m?.parsed) {
+      open = freeSymbols(m.model, m.parsed).filter((v) => v.kind !== 'constant' && v.kind !== 'output' && !(v.value != null && v.kind === 'parameter'))
+      try { score = evaluate(m.parsed.ast, vs) } catch { score = null }
+    } else score = vs.estimate ?? null
+    if (score != null && Number.isFinite(score)) score = Math.max(0, c.points ? Math.min(c.points, score) : score)
+    else score = null
+    if (score == null) missing++
+    else sum += score
+    return { c, k, m, vs, score, open }
+  })
+  const set = (k, vs, sym) => (e) => setValuesOf(k)({ ...vs, [sym]: e.target.value === '' ? null : Number(e.target.value) })
+  return (
+    <div className="cr-calc">
+      {rows.map(({ c, k, m, vs, score, open }) => (
+        <div key={k} className="cr-calc-row">
+          <div className="cr-calc-name">{c.name}</div>
+          <div className="cr-calc-in">
+            {m?.parsed ? open.map((v) => (
+              <label key={v.symbol} title={v.meaning || v.symbol}>
+                <Tex>{symbolTex(v.symbol)}</Tex>
+                <span className="cr-calc-mean">{v.meaning || ''}{v.unit ? ` (${v.unit})` : ''}</span>
+                <input type="number" step="any" className="fx-in" value={vs[v.symbol] ?? ''} min={v.min ?? undefined} max={v.max ?? undefined} onChange={set(k, vs, v.symbol)} />
+              </label>
+            )) : (
+              <label><span className="cr-calc-mean muted">{c.subtype === 'JUDGEMENT' ? 'Puntos que esperas del comité' : 'Puntos estimados (sin fórmula leída)'}</span>
+                <input type="number" step="any" className="fx-in" value={vs.estimate ?? ''} min={0} max={c.points ?? undefined} onChange={set(k, vs, 'estimate')} />
+              </label>
+            )}
+          </div>
+          <b className="cr-calc-score">{score != null ? fmtNum(score) : '—'}<span className="muted"> / {c.points != null ? fmtNum(c.points) : '—'}</span></b>
+        </div>
+      ))}
+      <div className="cr-calc-row cr-calc-total">
+        <div className="cr-calc-name">Total{missing ? <span className="muted small"> · faltan {missing} {missing === 1 ? 'criterio' : 'criterios'}</span> : null}</div>
+        <div />
+        <b className="cr-calc-score">{fmtNum(sum)}<span className="muted"> / {fmtNum(total)}</span></b>
+      </div>
+    </div>
   )
 }
 
@@ -365,7 +473,7 @@ function Documents({ t, onOpen }) {
               <button type="button" className="linkish" onClick={() => go(`/t/${t.tender_id}/d/${d.sha256}`)}>Leer con anotaciones</button>
               <button type="button" className="linkish" onClick={() => onOpen(d.sha256)}>Entidades y relaciones</button>
               {d.stored && <a href={fileUrl(d.sha256)} target="_blank" rel="noreferrer">Archivo guardado</a>}
-              {d.url && <a href={d.url} target="_blank" rel="noreferrer">Original ↗</a>}
+              {d.url && <a href={d.url} target="_blank" rel="noreferrer">Original <ArrowUpRight size={13} className="ico" /></a>}
               <span className="muted mono" title={d.sha256}>{d.sha256.slice(0, 10)}</span>
             </div>
           </div>

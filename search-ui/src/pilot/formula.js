@@ -156,12 +156,61 @@ export function toLatex(parsed) {
 
 // ── plotting help ─────────────────────────────────────────────────────────
 
-// A range around a value that shows the shape: 0 to twice the value, or 0..100 without one.
-export function defaultRange(v, unit) {
-  if (unit === '%') return [0, 100]
-  if (v == null || !Number.isFinite(v) || v === 0) return [0, 100]
-  return v > 0 ? [0, v * 2] : [v * 2, 0]
+// The values a symbol can take, for its axis and its input: the range the pipeline read or
+// estimated (min, max), else one past the thresholds the expression compares it with ("A >= 3"
+// → 0..4,5), else 0..100 for a percentage, else 0 to twice its value.
+export function rangeOf(v, ast, value) {
+  if (Number.isFinite(v.min) && Number.isFinite(v.max) && v.max > v.min) return [v.min, v.max]
+  const ts = ast ? thresholds(ast, v.symbol) : []
+  if (ts.length) {
+    const lo = Math.min(0, ...ts), hi = Math.max(...ts)
+    const pad = (hi - lo || Math.abs(hi) || 1) * 0.5
+    return [Number.isFinite(v.min) ? v.min : lo, Number.isFinite(v.max) ? v.max : hi + pad]
+  }
+  if (v.unit === '%') return [0, 100]
+  if (value == null || !Number.isFinite(value) || value === 0) return [0, 100]
+  return value > 0 ? [0, value * 2] : [value * 2, 0]
 }
+
+// The numbers a symbol is compared with: the edges of its tiers.
+export function thresholds(n, sym, out = []) {
+  if (CMP[n.bin]) {
+    if (n.l.sym === sym && n.r.num != null) out.push(n.r.num)
+    if (n.r.sym === sym && n.l.num != null) out.push(n.l.num)
+  }
+  for (const c of [n.neg, n.l, n.r, ...(n.args || [])]) if (c) thresholds(c, sym, out)
+  return [...new Set(out)].sort((a, b) => a - b)
+}
+
+// A step function of one symbol, `if(A >= 3, 20, if(A >= 1, 7, 0))`: every condition compares the
+// same symbol with a number, every outcome is a number (or a constant the env knows). Those read
+// better as a table of tiers than as a formula and a staircase. Null when it is anything else.
+export function stepTiers(parsed, env = {}) {
+  const rows = []
+  let sym = null, x = parsed.ast
+  const fixed = (n) => { try { const v = evaluate(n, env); return Number.isFinite(v) ? v : null } catch { return null } }
+  while (x.call === 'if') {
+    const c = x.args[0]
+    if (!CMP[c.bin]) return null
+    const [s, op, t] = c.l.sym && c.r.num != null ? [c.l.sym, c.bin, c.r.num]
+      : c.r.sym && c.l.num != null ? [c.r.sym, FLIP[c.bin], c.l.num] : []
+    if (!s || (sym && s !== sym)) return null
+    sym = s
+    const v = fixed(x.args[1])
+    if (v == null) return null
+    rows.push({ op, threshold: t, value: v })
+    x = x.args[2]
+  }
+  const otherwise = fixed(x)
+  return sym && otherwise != null ? { symbol: sym, rows, otherwise } : null
+}
+// How a tier's comparison reads, and whether a value falls in it.
+export const CMP_TEXT = {
+  '<': { text: '<', test: (x, t) => x < t }, '<=': { text: '≤', test: (x, t) => x <= t },
+  '>': { text: '>', test: (x, t) => x > t }, '>=': { text: '≥', test: (x, t) => x >= t },
+  '==': { text: '=', test: (x, t) => x === t }, '!=': { text: '≠', test: (x, t) => x !== t },
+}
+const FLIP = { '<': '>', '<=': '>=', '>': '<', '>=': '<=', '==': '==', '!=': '!=' }
 
 export function niceTicks(a, b, n = 5) {
   const span = b - a || 1
