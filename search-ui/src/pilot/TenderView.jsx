@@ -16,13 +16,16 @@ import DocHover from './DocHover.jsx'
 import SourceHover from './SourceHover.jsx'
 import FormulaView, { Tex, freeSymbols, parseModel, startValues } from './FormulaView.jsx'
 import { evaluate, guessModel, symbolTex } from './formula.js'
-import { go } from './route.js'
+import { go, replace, TENDER_TABS } from './route.js'
+import { useNavName } from './Nav.jsx'
 
-const TABS = [['resumen', 'Resumen'], ['lotes', 'Lotes'], ['documentos', 'Documentos'], ['preguntar', 'Preguntar']]
 
-export default function TenderView({ id }) {
+// `tab` comes from the address (?tab=), so it is in the trail and kept when coming back.
+export default function TenderView({ id, tab: asked }) {
   const [state, setState] = useState({ status: 'loading' })
-  const [tab, setTab] = useState('resumen')
+  const tab = TENDER_TABS.some(([k]) => k === asked) ? asked : 'resumen'
+  const setTab = (k) => replace(`/t/${id}${k === 'resumen' ? '' : `?tab=${k}`}`)
+  useNavName(`t:${id}`, state.t && { name: shortTitle(state.t) })
 
   useEffect(() => {
     let live = true
@@ -60,7 +63,7 @@ export default function TenderView({ id }) {
         <Period t={t} />
       </div>
 
-      <Tabs items={TABS} value={tab} onChange={setTab} extra={<ExtLink href={t.source_url}>Ver en PLACSP</ExtLink>} />
+      <Tabs items={TENDER_TABS} value={tab} onChange={setTab} extra={<ExtLink href={t.source_url}>Ver en PLACSP</ExtLink>} />
 
       {tab === 'resumen' && <Summary t={t} />}
       {tab === 'lotes' && <Lots t={t} />}
@@ -127,7 +130,7 @@ function Summary({ t }) {
         <dl className="tv-facts">
           {[
             ['ID', t.tender_id], ['Expediente', t.expediente || t.folder_id], ['Canal', CHANNEL[t.channel] || t.channel],
-            ['Tipo de contrato', t.contract_type], ['Subtipo', t.subtype], ['Procedimiento', t.procedure],
+            ['Tipo de contrato', t.contract_type], ['CPV', cpvCodes(t.cpv)], ['Procedimiento', t.procedure],
             ['Regulación armonizada', t.sara == null ? null : t.sara ? 'Sí' : 'No'],
             ['Legislación', t.terms?.national_legislation?.label], ['Financiación', t.terms?.funding?.label],
             ['Variantes', t.terms?.variants_allowed == null ? null : t.terms.variants_allowed ? 'Admitidas' : 'No admitidas'],
@@ -215,6 +218,19 @@ function timeline(t) {
 }
 
 const placeName = (s) => s.replace(/\b([A-ZÁÉÍÓÚÑ'][A-ZÁÉÍÓÚÑ' ]+)\b/g, (w) => (w.length > 3 ? w.charAt(0) + w.slice(1).toLowerCase() : w))
+
+// The codes alone, each named (and its sector) on hover.
+function cpvCodes(codes) {
+  if (!(codes || []).length) return null
+  return (
+    <span className="cpv-codes">
+      {codes.map((c) => {
+        const label = cpvLabel(c), div = cpvDivision(c)
+        return <Tip key={c} tip={label ? <>{label}{div && <span className="muted"> · {div}</span>}</> : null}><span className="mono">{c}</span></Tip>
+      })}
+    </span>
+  )
+}
 
 function cpvLabel(code) {
   return (cpvMap[String(code).slice(0, 8)] || '').replace(/\.$/, '')

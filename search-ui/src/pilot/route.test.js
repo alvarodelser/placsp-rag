@@ -1,4 +1,4 @@
-import { parse, isPilot } from './route.js'
+import { parse, isPilot, trail, track, previous } from './route.js'
 
 describe('pilot routes', () => {
   it('parses tender, company and ask routes', () => {
@@ -12,5 +12,29 @@ describe('pilot routes', () => {
     expect(isPilot('#/pilot/t/1')).toBe(true)
     expect(isPilot('')).toBe(false)
     expect(isPilot('#/')).toBe(false)
+  })
+})
+
+describe('trail', () => {
+  it('names where a route is, from the start', () => {
+    const names = { 't:1': { name: 'Limpieza' }, 'd:abc': { name: 'PCAP · doc 2' }, 'c:org:x': { name: 'Clece', label: 'Company' } }
+    expect(trail(parse('#/pilot'), names).map((s) => s.name)).toEqual(['Inicio'])
+    expect(trail(parse('#/pilot/t/1'), names).map((s) => s.name)).toEqual(['Inicio', 'Limpieza'])
+    expect(trail(parse('#/pilot/t/1?tab=lotes'), names).map((s) => s.name)).toEqual(['Inicio', 'Limpieza', 'Lotes'])
+    expect(trail(parse('#/pilot/t/1/d/abc'), names).map((s) => [s.name, s.to])).toEqual([
+      ['Inicio', ''], ['Limpieza', '/t/1'], ['Documentos', '/t/1?tab=documentos'], ['PCAP · doc 2', '/t/1/d/abc']])
+    expect(trail(parse(`#/pilot/c/${encodeURIComponent('org:x')}`), names)[1]).toMatchObject({ label: 'Company', name: 'Clece' })
+  })
+  it('falls back to the id until the page has loaded its name', () => {
+    expect(trail(parse('#/pilot/t/9'))[1].name).toBe('9')
+  })
+})
+
+describe('track / previous', () => {
+  it('knows the page before, and forgets it on the way back', () => {
+    track('#/pilot'); track('#/pilot/t/1'); track('#/pilot/t/1/d/a')
+    expect(previous()).toBe('#/pilot/t/1')
+    track('#/pilot/t/1')
+    expect(previous()).toBe('#/pilot')
   })
 })

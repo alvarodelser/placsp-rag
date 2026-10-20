@@ -2,7 +2,7 @@
 // at a time of the documents that mention it (‹ › or the arrow keys swap them), the document it is
 // in named on top, the found words highlighted. A click (on the thing, or "Ver en el original")
 // opens the passage shown in the provenance window (SourceWindow), over the page.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import SourceWindow from './SourceWindow.jsx'
 import { getNode } from './pilotApi.js'
 import { ChevronLeft, ChevronRight, Maximize2 } from '../icons.js'
@@ -22,12 +22,14 @@ export default function SourceHover({ id, children, block = false }) {
   const [win, setWin] = useState(null)               // the mention open in the window
   const timer = useRef(null)
   const el = useRef(null)
+  useEffect(() => () => clearTimeout(timer.current), [])
 
   // The card opens after a short pause and stays while the pointer is on it, so its arrows can be used.
   function enter() {
     clearTimeout(timer.current)
     if (card || win) return
     timer.current = setTimeout(() => {
+      if (!el.current) return
       const r = el.current.getBoundingClientRect()
       const below = window.innerHeight - r.bottom > 340
       setNth(0)

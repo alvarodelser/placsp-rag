@@ -521,3 +521,32 @@ button.dv-page:hover:not(:disabled) { background: var(--subtle); color: var(--ac
   .sw-box { height: 100vh; border-radius: 0; }
 }
 .np-body > .linkish { justify-self: start; }
+.cpv-codes { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.tip-card .muted { color: var(--faint); }
+
+/* Navigation: "Atrás" and the trail from the start, under the search bar on every page but the start.
+   Each step names its kind with the graph's dot (Expediente, Empresa, Órgano, Documento); the last is the page itself. */
+.pilot a.brand { color: var(--ink); text-decoration: none; border-radius: var(--radius-xs); }
+.pilot a.brand:hover h1 span { color: var(--ink-2); }
+.pilot.has-nav { --head-h: 147px; }
+.pnav { display: flex; align-items: center; gap: 14px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; min-width: 0; }
+.pnav-back { flex: none; display: inline-flex; align-items: center; gap: 6px; background: #fff; color: var(--ink); border: 1px solid var(--line-2); padding: 4px 11px 4px 9px; font-size: 13px; }
+.pilot .pnav-back:hover:not(:disabled) { background: var(--subtle); }
+.crumbs { flex: 1; list-style: none; margin: 0; padding: 0; display: flex; align-items: center; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.crumbs::-webkit-scrollbar { display: none; }
+.crumbs li { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+.crumbs li.on { flex: 0 1 auto; min-width: 120px; }
+.crumb-sep { color: var(--faint); flex: none; margin: 0 2px; }
+.crumb { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 360px; padding: 3px 7px; border-radius: var(--radius-xs); color: var(--muted); white-space: nowrap; }
+.pilot a.crumb:hover { background: var(--subtle); color: var(--ink); text-decoration: none; }
+.crumbs li.on .crumb { color: var(--ink); font-weight: 600; max-width: 100%; }
+.crumb-kind { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
+.crumbs li.on .crumb-kind { color: var(--muted); }
+.crumb-kind i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.crumb-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 900px) {
+  .pilot.has-nav { --head-h: 0px; }
+  .pnav { gap: 10px; }
+  .crumbs li:not(.on), .crumbs li.on .crumb-sep { display: none; }
+  .crumbs li.on { min-width: 0; }
+}

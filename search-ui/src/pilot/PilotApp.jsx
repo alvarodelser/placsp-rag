@@ -3,7 +3,7 @@
 // One search on top (contracts, companies, authorities or all) narrows the list on the left and
 // lights its hits on the pilot's graph in the middle. A tender, a company or a document opens on
 // its own page; going back returns to the list and graph as they were left.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { listTenders, search, health, corpusGraph } from './pilotApi.js'
 import { CHANNEL, dmy, nodeInfo, orgKindEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
@@ -14,7 +14,8 @@ import CompanyView from './CompanyView.jsx'
 import DocView from './DocView.jsx'
 import ForceCanvas from './ForceCanvas.jsx'
 import NodePanel from './NodePanel.jsx'
-import { go, parse, useHash } from './route.js'
+import Nav, { NavNames } from './Nav.jsx'
+import { go, parse, track, useHash } from './route.js'
 import './pilot.css'
 
 // The filters a search can take, each in the colour its nodes have on the graph. No filter searches all.
@@ -22,7 +23,11 @@ const SCOPES = [['tenders', 'Contratos', FileText, 'Tender'], ['companies', 'Emp
   ['authorities', 'Órganos', Landmark, 'Authority']]
 
 export default function PilotApp() {
-  const route = parse(useHash())
+  const hash = useHash()
+  track(hash)                      // idempotent: the visit's pages, read by "Atrás" in this same render
+  const route = parse(hash)
+  const [names, setNames] = useState({})
+  const setName = useCallback((k, v) => setNames((n) => (JSON.stringify(n[k]) === JSON.stringify(v) ? n : { ...n, [k]: v })), [])
   const [query, setQuery] = useState({ q: route.params.q || '', scope: 'all' })
   const [res, setRes] = useState({ status: 'loading' })
   const [problems, setProblems] = useState([])
@@ -44,14 +49,16 @@ export default function PilotApp() {
   const home = !['t', 'c'].includes(route.kind)
   const current = route.kind === 't' ? route.id : route.kind === 'c' ? route.id : null
   return (
-    <div className="pilot">
+    <NavNames.Provider value={setName}>
+    <div className={`pilot ${home ? '' : 'has-nav'}`}>
       <header>
         <div className="wrap header-top">
-          <div className="brand">
+          <a className="brand" href="#/pilot" title="Inicio del piloto">
             <h1>PLACSP <span>· Piloto documental</span></h1>
-          </div>
+          </a>
           <SearchBar query={query} onSearch={(q) => { setQuery(q); if (!home) go('') }} />
         </div>
+        <div className="wrap"><Nav hash={hash} route={route} names={names} /></div>
       </header>
       <main>
         {problems.length > 0 && <div className="wrap" style={{ marginBottom: 12 }}>{problems.map(([k, v]) => <ErrorNote key={k}><b>{k}</b>: {v}</ErrorNote>)}</div>}
@@ -59,7 +66,7 @@ export default function PilotApp() {
           {home && <ResultList res={res} current={current} onOrg={(id) => go(`/c/${encodeURIComponent(id)}`)} />}
           <section className="pmain">
             {home && <Landing res={res} />}
-            {route.kind === 't' && !route.doc && <TenderView key={route.id} id={route.id} />}
+            {route.kind === 't' && !route.doc && <TenderView key={route.id} id={route.id} tab={route.params.tab} />}
             {route.kind === 't' && route.doc && <DocView key={`${route.id}/${route.doc}`} tenderId={route.id} sha={route.doc}
               focusChunk={route.params.c} focusEntity={route.params.e} />}
             {route.kind === 'c' && <CompanyView key={route.id} id={route.id} />}
@@ -67,6 +74,7 @@ export default function PilotApp() {
         </div>
       </main>
     </div>
+    </NavNames.Provider>
   )
 }
 

@@ -12,12 +12,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { getDocument } from './pilotApi.js'
 import { dmy, docDateTip, nodeInfo, roleEs } from './labels.js'
 import Tip from './Tip.jsx'
-import { ArrowLeft, ChevronLeft, ChevronRight, X } from '../icons.js'
+import { ChevronLeft, ChevronRight, X } from '../icons.js'
 import { ErrorNote, ExtLink, Loading, SourceRef, Tabs, sourceText } from './ui.jsx'
 import NodePanel from './NodePanel.jsx'
 import OriginalPane from './OriginalPane.jsx'
 import { reflow, lineKeyRanges, blocks } from './doctext.js'
-import { go } from './route.js'
+import { useNavName } from './Nav.jsx'
 
 const PAGE = /\[Página (\d+)\]/g
 const BATCH = 40
@@ -85,6 +85,9 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
       .sort((a, b) => b.n - a.n)
   }, [data])
   const boiler = useMemo(() => new Set(data?.boilerplate || []), [data])
+  const doc = data?.document
+  useNavName(`d:${sha}`, doc && { name: sourceText(doc.role, doc.seq) })
+  useNavName(`t:${tenderId}`, doc?.tender_name && { name: doc.tender_name })
 
   if (error) return <ErrorNote>{error}</ErrorNote>
   if (!data) return <Loading size={26} />
@@ -110,7 +113,6 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
 
   return (
     <div className="dv">
-      <button type="button" className="linkish subtle dv-back" onClick={() => go(`/t/${tenderId}`)}><ArrowLeft size={14} /> {d.tender_name || tenderId}</button>
       <div className="tv-head dv-head">
         <div className="tv-title">
           <div className="doc-meta">

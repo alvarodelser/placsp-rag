@@ -1,7 +1,7 @@
 // search-ui/src/pilot/DocHover.jsx — a document at a glance, on hover: its role, date, pages and
 // summary. Wrap any trigger with it; clicking is the caller's. (Where an entity was found is
 // SourceHover's job: here nothing is marked.)
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { docPreview } from './pilotApi.js'
 import { dmy, roleEs, docDateTip } from './labels.js'
 import { ErrorNote, Loading } from './ui.jsx'
@@ -13,11 +13,13 @@ export default function DocHover({ tenderId, sha, children, className = '' }) {
   const [card, setCard] = useState(null)
   const timer = useRef(null)
   const el = useRef(null)
+  useEffect(() => () => clearTimeout(timer.current), [])
 
   function enter() {
     clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       // Below the trigger (above it near the bottom of the window), never over the row itself.
+      if (!el.current) return
       const r = el.current.getBoundingClientRect()
       const below = window.innerHeight - r.bottom > 360
       const pos = { left: Math.max(8, Math.min(r.left, window.innerWidth - W - 8)),

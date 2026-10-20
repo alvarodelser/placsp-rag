@@ -5,6 +5,7 @@ import { CHANNEL, COMPANY_ROLE, dmy, nodeInfo, orgKindEs } from './labels.js'
 import { money } from '../format.js'
 import { ErrorNote, Loading, StatusBadge } from './ui.jsx'
 import { go } from './route.js'
+import { useNavName } from './Nav.jsx'
 
 export default function CompanyView({ id }) {
   const [state, setState] = useState({ status: 'loading' })
@@ -14,6 +15,9 @@ export default function CompanyView({ id }) {
     getCompany(id).then((d) => live && setState({ status: 'done', d })).catch((e) => live && setState({ status: 'error', e: e.message }))
     return () => { live = false }
   }, [id])
+  const kinds = state.d?.node.kinds || []
+  useNavName(`c:${id}`, state.d && { name: state.d.node.name,
+    label: kinds.some((k) => /authority/i.test(k)) && !kinds.includes('Company') ? 'Authority' : kinds.includes('Company') ? 'Company' : 'Organization' })
   if (state.status === 'loading') return <Loading size={26} />
   if (state.status === 'error') return <ErrorNote>{state.e}</ErrorNote>
   const { node, tenders, rivals, authorities } = state.d
