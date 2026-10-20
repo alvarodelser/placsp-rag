@@ -5,13 +5,14 @@
 //  - Provenance on demand: with an entity in focus (from a link, or picked from the list), each of
 //    its references in this document is framed, tagged with the document and page on its top left,
 //    the found name in bold; a navigator steps through all of them.
-//  - The original (pdf.js, or the notice as published) opens in a window over the text, at the
-//    reference clicked, framed and tagged the same way.
+//  - Two tabs: the text, and the original where it was published (PLACSP), shown in a frame; the
+//    pilot keeps no copy. A reference or a page clicked in the text opens the original at its page
+//    (a PDF's #page=N); the text stays where it was.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getDocument } from './pilotApi.js'
 import { docDateTip, nodeInfo, roleEs } from './labels.js'
 import Tip from './Tip.jsx'
-import { LoaderCircle, X, ArrowLeft, ArrowUpRight } from '../icons.js'
+import { LoaderCircle, ArrowLeft, ArrowUpRight } from '../icons.js'
 import NodePanel from './NodePanel.jsx'
 import OriginalPane from './OriginalPane.jsx'
 import { reflow, lineKeyRanges, blocks } from './doctext.js'
@@ -26,7 +27,8 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   const [entity, setEntity] = useState(focusEntity || null)
   const [panel, setPanel] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [original, setOriginal] = useState(null)     // the window: null, or {page, quote, tag}
+  const [view, setView] = useState('text')           // 'text' or 'original'
+  const [original, setOriginal] = useState(null)     // where the original opens: null, or {page, quote, tag}
   const [nth, setNth] = useState(0)
   const pending = useRef(null)                       // a reference to scroll to once its chunk is loaded
   const arrived = useRef(false)                      // the link's own entity was taken to its reference
@@ -101,8 +103,9 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   }
   function openAt(ref, chunk) {
     const page = ref.page || chunk.page_from
-    setOriginal({ page, quote: chunk.text.slice(ref.a, ref.b), tag: tagOf(page) })
+    show({ page, tag: tagOf(page) })
   }
+  function show(target) { setOriginal(target); setView('original'); window.scrollTo({ top: 0 }) }
 
   return (
     <div className="dv">
@@ -112,13 +115,28 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
           <span className="chip">Doc {d.seq} · {roleEs(d.role)}</span>
           <Tip tip={docDateTip(d)}><time>{d.effective_date || 'sin fecha'}</time></Tip>
           {d.pages ? <span className="muted">{d.pages} págs.</span> : null}
-          {d.stored && <button type="button" className="linkish" onClick={() => setOriginal({ page: data.chunks[0]?.page_from || 1 })}>Ver el original</button>}
-          {d.url && <a href={d.url} target="_blank" rel="noreferrer">En PLACSP <ArrowUpRight size={13} className="ico" /></a>}
         </div>
         <h2>{d.filename || d.title}</h2>
         {d.summary && <p className="tv-desc">{d.summary}</p>}
       </div>
 
+      <nav className="tv-tabs dv-tabs">
+        <button type="button" className={view === 'text' ? 'on' : ''} onClick={() => setView('text')}>Texto anotado</button>
+        <button type="button" className={view === 'original' ? 'on' : ''} onClick={() => view !== 'original' && show(original || { page: data.chunks[0]?.page_from || 1 })}>Original</button>
+      </nav>
+
+      {view === 'original' && (
+        <div className="dv-original">
+          <div className="dv-original-head">
+            {original?.tag && <span className="ref-tag static">{original.tag}</span>}
+            <span className="muted small">{d.url ? 'Tal como está publicado en la Plataforma de Contratación' : 'No consta dónde se publicó este documento'}</span>
+            {d.url && <a href={d.url} target="_blank" rel="noreferrer">Abrir en una pestaña nueva <ArrowUpRight size={13} className="ico" /></a>}
+          </div>
+          <OriginalPane url={d.url} ext={d.ext} page={original?.page} title={d.filename || d.title} archive={!!d.in_archive} />
+        </div>
+      )}
+
+      <div hidden={view !== 'text'}>
       <div className="dv-bar">
         {entity ? (
           <span className="dv-nav">
@@ -151,24 +169,13 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
             <div className="dv-chunk-head" title={c.ner !== 'ok' ? 'Este fragmento no pasó por la extracción de entidades' : ''}>
               {c.chunk_idx + 1}{c.ner !== 'ok' && <span> · sin extracción</span>}</div>
             <Annotated chunk={c} entity={entity} boiler={boiler} tagOf={tagOf}
-              onOpen={d.stored ? (ref) => openAt(ref, c) : null} onPage={d.stored ? (p) => setOriginal({ page: p }) : null} />
+              onOpen={d.url ? (ref) => openAt(ref, c) : null} onPage={d.url ? (p) => show({ page: p }) : null} />
           </section>
         ))}
         {next < data.total_chunks && <button type="button" className="more" disabled={loading} onClick={() => load(next, true)}>{loading ? 'Cargando…' : 'Más fragmentos'}</button>}
       </article>
+      </div>
 
-      {original && d.stored && (
-        <div className="dv-window" role="dialog" aria-label="Documento original" onClick={(e) => { if (e.target === e.currentTarget) setOriginal(null) }}>
-          <div className="dv-window-box">
-            <div className="dv-window-head">
-              <b>{d.filename || d.title}</b>
-              {original.tag && <span className="ref-tag static">{original.tag}</span>}
-              <button type="button" className="icon-btn" aria-label="Cerrar" onClick={() => setOriginal(null)}><X size={16} /></button>
-            </div>
-            <OriginalPane sha={sha} ext={d.ext} target={original} />
-          </div>
-        </div>
-      )}
       {panel && <NodePanel id={panel} onSelect={setPanel} onClose={() => setPanel(null)} />}
     </div>
   )

@@ -15,7 +15,7 @@ export const overview = () => get('/overview')
 export const listTenders = (params) => get('/tenders', params)
 export const getTender = (id) => get(`/tenders/${encodeURIComponent(id)}`)
 export const getTenderGraph = (id) => get(`/tenders/${encodeURIComponent(id)}/graph`)
-export const getNode = (id) => get('/node', { id })
+export const getNode = (id, chunks) => get('/node', chunks ? { id, chunks } : { id })
 export const getCompany = (id) => get(`/companies/${encodeURIComponent(id)}`)
 export const ask = (params) => get('/ask', params)
 
@@ -46,4 +46,3 @@ export const docPreview = (sha, tender) => get(`/documents/${sha}/preview`, { te
 export const corpusGraph = (params) => get('/graph', params)
 export const search = (params) => get('/search', params)
 export const health = () => get('/health')
-export const fileUrl = (sha, page) => `${BASE}/file/${sha}${page ? `#page=${page}` : ''}`
