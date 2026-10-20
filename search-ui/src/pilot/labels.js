@@ -111,3 +111,21 @@ export function shortOrg(name, max = 30) {
   while (words.length > 1 && LOWER.has(words[words.length - 1].toLowerCase())) words.pop()   // not "Servicios para la…"
   return `${words.join(' ').replace(/[\s,.]+$/, '')}…`
 }
+
+// What a date is, for its hover: a node's date fields (label, explanation) and where a document's
+// date comes from (order.py's date_source).
+export const DATE_FIELD = {
+  published: ['Publicado', 'Primera publicación de un anuncio de este expediente en la Plataforma de Contratación.'],
+  deadline: ['Fin de ofertas', 'Último día para presentar ofertas.'],
+  date: ['Adjudicación', 'Fecha del acuerdo de adjudicación, según el anuncio.'],
+  signed_date: ['Formalización', 'Fecha en que se formalizó (firmó) el contrato.'],
+  start: ['Inicio', 'Fecha de inicio de la ejecución del contrato.'],
+  effective_date: ['Fecha', 'Fecha con la que se ordena este documento en el expediente.'],
+}
+const DATE_SOURCE = {
+  published: 'Fecha en que se publicó este documento en la Plataforma de Contratación.',
+  notice: 'Fecha del anuncio con el que se publicó este documento.',
+  stage: 'El documento no trae fecha propia: es la de la fase del expediente a la que pertenece.',
+  none: 'No se conoce la fecha de este documento.',
+}
+export const docDateTip = (d) => DATE_SOURCE[d?.date_source] || 'Fecha del documento en el expediente.'

@@ -1,7 +1,9 @@
 // search-ui/src/pilot/NodePanel.jsx — one graph node: what it is, where it was found, what it connects to.
 import { useEffect, useState } from 'react'
 import { getNode } from './pilotApi.js'
-import { nodeInfo, roleEs, tenderState } from './labels.js'
+import { DATE_FIELD, nodeInfo, roleEs, tenderState } from './labels.js'
+import Tip from './Tip.jsx'
+import cpvMap from '../codelists/cpv.json'
 import { money } from '../format.js'
 import { LoaderCircle, X, ArrowRight } from '../icons.js'
 import { go } from './route.js'
@@ -10,6 +12,8 @@ const SKIP = new Set(['id', 'label', 'name', 'title', 'description', 'descriptio
   'aliases', 'url', 'sha256', 'source', 'mentions', 'detail', 'conflicts'])
 // A tender's state, number and amount are on its own line; the raw fields would repeat them.
 const TENDER_SKIP = new Set(['status', 'deadline', 'expediente', 'folder_id', 'value', 'channel', 'short_title', 'themes', 'tender_id'])
+// A tender's or lot's subtype says little next to its CPV codes, which are shown instead.
+const CPV_FIRST = new Set(['Tender', 'Lot'])
 const SOURCE = { feed: 'del feed', documents: 'extraído de documentos', 'feed+documents': 'feed + documentos' }
 const DETAIL = {
   threshold_amount: 'Cifra mínima', threshold_unit: 'Unidad', period_years: 'Periodo (años)', reference_base: 'Referencia',
@@ -49,7 +53,9 @@ function Body({ d, seen, onSelect }) {
   const exp = n.expediente ?? seen?.expediente
   // A reference ("la empresa") is evidence too: counted apart so the reader sees both.
   const refs = d.mentions.filter((m) => m.kind === 'coref').length
-  const props = Object.entries(n).filter(([k, v]) => !SKIP.has(k) && !(n.label === 'Tender' && TENDER_SKIP.has(k)) && v != null && v !== '' && typeof v !== 'object')
+  const props = Object.entries(n).filter(([k, v]) => !SKIP.has(k) && !(n.label === 'Tender' && TENDER_SKIP.has(k)) &&
+    !(k === 'subtype' && CPV_FIRST.has(n.label)) && v != null && v !== '' && typeof v !== 'object')
+  const cpvs = [n.cpv].flat().filter(Boolean).map(String)
   const isOrg = n.label === 'Organization' || n.label === 'JointVenture'
   const evidence = Array.isArray(n.evidence) ? n.evidence : []
   return (
@@ -73,8 +79,18 @@ function Body({ d, seen, onSelect }) {
       {(n.description || n.summary) && <p className="np-desc">{n.description || n.summary}</p>}
       {props.length > 0 && (
         <dl className="np-props">
-          {props.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{String(v)}</dd></div>)}
+          {props.map(([k, v]) => DATE_FIELD[k]
+            ? <div key={k}><dt>{DATE_FIELD[k][0]}</dt><dd><Tip tip={DATE_FIELD[k][1]}>{dmy(v)}</Tip></dd></div>
+            : <div key={k}><dt>{k}</dt><dd>{String(v)}</dd></div>)}
         </dl>
+      )}
+      {cpvs.length > 0 && (
+        <div className="np-sec">
+          <div className="np-rel">CPV</div>
+          <ul className="plain np-cpv">
+            {cpvs.map((c) => <li key={c}><span className="mono">{c}</span> {(cpvMap[c.slice(0, 8)] || '').replace(/\.$/, '')}</li>)}
+          </ul>
+        </div>
       )}
       {n.detail && Object.keys(n.detail).length > 0 && (
         <div className="np-sec">

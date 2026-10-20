@@ -3,7 +3,8 @@
 // how long), guarantees, the timeline (each document previewed on hover) and the record's details.
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { getTender, fileUrl } from './pilotApi.js'
-import { CHANNEL, roleEs, shortTitle } from './labels.js'
+import { CHANNEL, docDateTip, roleEs, shortTitle } from './labels.js'
+import Tip from './Tip.jsx'
 import { money } from '../format.js'
 import { LoaderCircle, Trophy, ArrowUpRight } from '../icons.js'
 import cpvMap from '../codelists/cpv.json'
@@ -109,7 +110,7 @@ function Summary({ t }) {
             {timeline(t).map((e, i) => {
               const d = e.sha256 && docs[e.sha256]
               return (
-                <li key={i}><time>{e.date || '—'}</time>
+                <li key={i}><Tip tip={d ? docDateTip(d) : e.event?.startsWith('Anuncio: ') ? `Fecha en que se publicó el anuncio «${e.event.slice(9)}» en la Plataforma de Contratación.` : e.event}><time>{e.date || '—'}</time></Tip>
                   {d ? (
                     <DocHover tenderId={t.tender_id} sha={d.sha256}>
                       <button type="button" className="linkish tl-doc" onClick={() => go(`/t/${t.tender_id}/d/${d.sha256}`)}>
@@ -459,7 +460,7 @@ function Documents({ t, onOpen }) {
           <div className="doc-main">
             <div className="doc-meta">
               <span className="chip">{roleEs(d.role)}</span>
-              <time title={`fecha: ${d.date_source}`}>{d.effective_date || 'sin fecha'}</time>
+              <Tip tip={docDateTip(d)}><time>{d.effective_date || 'sin fecha'}</time></Tip>
               <span className="muted">{STAGE[d.stage]}</span>
               {d.chars ? <span className="muted">{Math.round(d.chars / 1000)}k caracteres</span> : null}
               {d.ner_chunks ? <span className="muted">{d.ner_chunks} fragmentos</span> : null}

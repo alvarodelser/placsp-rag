@@ -9,7 +9,8 @@
 //    reference clicked, framed and tagged the same way.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getDocument } from './pilotApi.js'
-import { nodeInfo, roleEs } from './labels.js'
+import { docDateTip, nodeInfo, roleEs } from './labels.js'
+import Tip from './Tip.jsx'
 import { LoaderCircle, X, ArrowLeft, ArrowUpRight } from '../icons.js'
 import NodePanel from './NodePanel.jsx'
 import OriginalPane from './OriginalPane.jsx'
@@ -109,7 +110,7 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
         <button type="button" className="linkish" onClick={() => go(`/t/${tenderId}`)}><ArrowLeft size={13} className="ico" /> {d.tender_name || tenderId}</button>
         <div className="doc-meta">
           <span className="chip">Doc {d.seq} · {roleEs(d.role)}</span>
-          <time>{d.effective_date || 'sin fecha'}</time>
+          <Tip tip={docDateTip(d)}><time>{d.effective_date || 'sin fecha'}</time></Tip>
           {d.pages ? <span className="muted">{d.pages} págs.</span> : null}
           {d.stored && <button type="button" className="linkish" onClick={() => setOriginal({ page: data.chunks[0]?.page_from || 1 })}>Ver el original</button>}
           {d.url && <a href={d.url} target="_blank" rel="noreferrer">En PLACSP <ArrowUpRight size={13} className="ico" /></a>}

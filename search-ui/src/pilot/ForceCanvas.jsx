@@ -1,10 +1,9 @@
 // search-ui/src/pilot/ForceCanvas.jsx — the pilot's corpus as a force-directed graph on a canvas,
 // drawn like an entity–relationship diagram:
 //  - authorities (blue) and companies (green) are circles; a contract (expediente) is the small
-//    graphite diamond between them, filled while open, tinted in evaluation, hollow once closed,
-//    and sized by its amount;
-//  - links say the relation: an authority publishes (blue), a company wins (green, solid) or
-//    bids (grey, dashed); a bid is drawn as the link it is, company to lot, not as a node;
+//    graphite diamond between them, sized by its amount; its state is in the panel, not the map;
+//  - every link is one graphite line: what a link means is plain from what it joins; a bid is
+//    drawn as the link it is, company to lot, not as a node;
 //  - a contract's documents are not on the map: selecting the contract unfolds them around it as
 //    pages, and they fold away when something else is selected;
 //  - contracts carry no name, only their expediente number once the reader has selected them,
@@ -15,7 +14,7 @@
 // Drag a node to move it, drag the background to pan, wheel to zoom, click to select, double-click to open.
 import { useEffect, useMemo, useRef } from 'react'
 import { forceSimulation, forceLink, forceManyBody, forceCollide, forceX, forceY } from 'd3-force'
-import { nodeInfo, NOT_DRAWN, roleEs, shortOrg, tenderState } from './labels.js'
+import { nodeInfo, NOT_DRAWN, roleEs, shortOrg } from './labels.js'
 
 const BELONGS = new Set(['HAS_LOT', 'HAS_CRITERION', 'REQUIRES', 'INCLUDES', 'HAS_RESULT', 'HAS_NOTICE', 'HAS_CONDITION',
   'WINNER', 'RESULTED_IN', 'DETAILED_BY', 'ACCEPTS', 'PUBLISHED', 'HAS_CONTRACT', 'CONTRACT_FOR'])
@@ -24,7 +23,7 @@ const WON = new Set(['WINNER', 'ADJUDICATARIA', 'CONTRACTOR'])
 const ORGS = new Set(['Organization', 'Company', 'Authority'])
 const SHAPE = { Tender: 'diamond' }       // everything else is a circle
 const C = { Authority: nodeInfo('Authority').color, Tender: nodeInfo('Tender').color, Company: nodeInfo('Company').color,
-  doc: nodeInfo('Document').color, won: '#15803d', bid: '#94a3b8', tint: '#aeb4be', ink: '#161a23', bg: '#fbfcfe' }
+  doc: nodeInfo('Document').color, link: '#4b5563', ink: '#161a23', bg: '#fbfcfe' }
 const NAMES_PER_PX = 1 / 26000      // how many names a screen carries: one per this many square pixels
 const CLOSE = 25                    // nodes in view below which a name gets a line of detail
 const UNFOLD_MS = 320, STAGGER_MS = 28
@@ -113,7 +112,7 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, height 
     s.byId = Object.fromEntries(nodes.map((n) => [n.id, n]))
     s.adj = {}
     for (const l of links) { (s.adj[l.src] ||= new Set()).add(l.dst); (s.adj[l.dst] ||= new Set()).add(l.src) }
-    for (const n of nodes) { n.r = radius(n); n.tenders = 0; n.won = new Set(); n.state = n.label === 'Tender' ? tenderState(n)?.key : null }
+    for (const n of nodes) { n.r = radius(n); n.tenders = 0; n.won = new Set() }
     for (const l of links) {
       for (const [a, b] of [[l.src, l.dst], [l.dst, l.src]]) {
         const n = s.byId[a], m = s.byId[b]
@@ -222,14 +221,11 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, height 
     for (const l of s.links) {
       const on = focus ? (l.source.id === focus.id || l.target.id === focus.id)
         : hits ? (hits.has(l.source.id) || hits.has(l.target.id)) && near.has(l.source.id) && near.has(l.target.id) : false
-      const won = WON.has(l.rel), pub = l.rel === 'PUBLISHED'
-      ctx.globalAlpha = on ? 0.95 : near ? 0.05 : won ? 0.5 : pub ? 0.3 : 0.28
-      ctx.strokeStyle = won ? C.won : pub ? C.Authority : C.bid
-      ctx.lineWidth = (won ? 1.5 : 1) * (on ? 1.7 : 1) / Math.sqrt(k)
-      ctx.setLineDash(won || pub ? [] : [3 / k, 3 / k])
+      ctx.globalAlpha = on ? 0.9 : near ? 0.05 : 0.22
+      ctx.strokeStyle = C.link
+      ctx.lineWidth = (on ? 1.6 : 1) / Math.sqrt(k)
       ctx.beginPath(); ctx.moveTo(l.source.x, l.source.y); ctx.lineTo(l.target.x, l.target.y); ctx.stroke()
     }
-    ctx.setLineDash([])
 
     for (const n of s.nodes) {
       ctx.globalAlpha = near && !near.has(n.id) ? 0.15 : 1
@@ -241,16 +237,8 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, height 
         outline(ctx, n, n.r + 4 / k); ctx.lineWidth = 2 / k; ctx.strokeStyle = C.ink; ctx.stroke()
       }
       outline(ctx, n, n.r)
-      if (n.label === 'Tender') {
-        ctx.fillStyle = n.state === 'open' ? col : n.state === 'pending' ? C.tint : '#fff'
-        ctx.fill()
-        ctx.lineWidth = 1.8 / k; ctx.strokeStyle = n.state === 'void' ? '#94a3b8' : col
-        if (n.state === 'void') ctx.setLineDash([2 / k, 2 / k])
-        ctx.stroke(); ctx.setLineDash([])
-      } else {
-        ctx.fillStyle = col; ctx.fill()
-        ctx.lineWidth = 1.5 / k; ctx.strokeStyle = '#fff'; ctx.stroke()      // a rim keeps touching shapes apart
-      }
+      ctx.fillStyle = col; ctx.fill()
+      ctx.lineWidth = 1.5 / k; ctx.strokeStyle = '#fff'; ctx.stroke()      // a rim keeps touching shapes apart
     }
 
     // The selected contract's documents, unfolding around it.
@@ -364,6 +352,7 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, height 
   function up() {
     const s = st.current
     if (s.press) onSelect?.(s.press.id)
+    if (s.pan && !s.moved) onSelect?.(null)          // a click on the background lets go of the selection
     if (s.drag) {
       if (!s.moved) onSelect?.(s.drag.id)
       s.drag.fx = null; s.drag.fy = null
@@ -397,54 +386,25 @@ export default function ForceCanvas({ graph, selected, onSelect, onOpen, height 
   )
 }
 
-// The legend is the diagram's grammar: who publishes what, who wins or bids, and how a contract's
-// state and documents show.
+// The legend: what each mark is, nothing more.
 function Legend({ counts, children }) {
   const n = (k) => counts[k] ? <span className="pg-n">{counts[k]}</span> : null
   return (
     <div className="pg-legend">
-      <div className="pg-schema">
-        <span className="pg-ent"><Glyph kind="Authority" />Órgano de contratación{n('Authority')}</span>
-        <Wire kind="pub" label="publica" />
-        <span className="pg-ent"><Glyph kind="Tender" />Expediente{n('Tender')}</span>
-        <span className="pg-wires"><Wire kind="won" label="adjudicataria" back /><Wire kind="bid" label="licitadora" back /></span>
-        <span className="pg-ent"><Glyph kind="Company" />Empresa{n('Company')}</span>
-      </div>
-      <div className="pg-grammar">
-        <span><Glyph kind="Tender" state="open" />abierto</span>
-        <span><Glyph kind="Tender" state="pending" />en evaluación</span>
-        <span><Glyph kind="Tender" state="done" />cerrado</span>
-        <span className="muted">tamaño: importe</span>
-        <span><Glyph kind="Document" />documentos al seleccionar</span>
-        <span className="pg-tools">{children}</span>
-      </div>
+      <span className="pg-ent"><Glyph kind="Authority" />Órgano de contratación{n('Authority')}</span>
+      <span className="pg-ent"><Glyph kind="Tender" />Expediente{n('Tender')}</span>
+      <span className="pg-ent"><Glyph kind="Company" />Empresa{n('Company')}</span>
+      <span className="pg-tools">{children}</span>
     </div>
   )
 }
 
-function Glyph({ kind, state = 'open' }) {
-  const col = kind === 'Tender' ? C.Tender : kind === 'Authority' ? C.Authority : kind === 'Document' ? C.doc : C.Company
+function Glyph({ kind }) {
+  const col = kind === 'Tender' ? C.Tender : kind === 'Authority' ? C.Authority : C.Company
   return (
     <svg className="pg-glyph" viewBox="0 0 16 16" aria-hidden="true">
-      {(kind === 'Authority' || kind === 'Company') && <circle cx="8" cy="8" r="6" fill={col} />}
-      {kind === 'Tender' && <path d="M8 3 13 8 8 13 3 8Z" fill={state === 'open' ? col : state === 'pending' ? C.tint : '#fff'}
-        stroke={col} strokeWidth="1.6" strokeLinejoin="round" />}
-      {kind === 'Document' && <path d="M4 2h5.5L12 4.5V14H4Z M9.5 2v2.5H12" fill="#fff" stroke={col} strokeWidth="1.2" strokeLinejoin="round" />}
+      {kind === 'Tender' ? <path d="M8 3 13 8 8 13 3 8Z" fill={col} /> : <circle cx="8" cy="8" r="6" fill={col} />}
     </svg>
-  )
-}
-
-function Wire({ kind, label, back }) {
-  const col = kind === 'won' ? C.won : kind === 'pub' ? C.Authority : C.bid
-  return (
-    <span className="pg-wire">
-      <svg viewBox="0 0 54 8" aria-hidden="true">
-        <line x1={back ? 8 : 2} y1="4" x2={back ? 52 : 46} y2="4" stroke={col} strokeWidth={kind === 'won' ? 2 : 1.4}
-          strokeDasharray={kind === 'bid' ? '3 3' : undefined} />
-        <path d={back ? 'M8 0.5 1.5 4 8 7.5Z' : 'M46 0.5 52.5 4 46 7.5Z'} fill={col} />
-      </svg>
-      <span style={{ color: col }}>{label}</span>
-    </span>
   )
 }
 

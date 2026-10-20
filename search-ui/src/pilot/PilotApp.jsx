@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { listTenders, search, health, corpusGraph } from './pilotApi.js'
 import { CHANNEL, nodeInfo, roleEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
-import { Landmark, Building2, LoaderCircle, FileText, Search, X, ArrowLeft } from '../icons.js'
+import { Landmark, Building2, LoaderCircle, FileText, Search, X } from '../icons.js'
 import TenderView from './TenderView.jsx'
 import CompanyView from './CompanyView.jsx'
 import DocView from './DocView.jsx'
@@ -50,7 +50,6 @@ export default function PilotApp() {
             <h1>Piloto documental · PLACSP</h1>
           </div>
           <SearchBar query={query} onSearch={(q) => { setQuery(q); if (!home) go('') }} />
-          <a className="pback" href="#/"><ArrowLeft size={13} className="ico" /> Búsqueda</a>
         </div>
       </header>
       <main>
@@ -71,7 +70,7 @@ export default function PilotApp() {
 }
 
 // Filters sit quietly above the bar. Picking one flies it into the bar as the search button, in its
-// colour, and leaves a cross in the filter row to take it off again.
+// colour; the row then offers "En todo" and the other filters.
 function SearchBar({ query, onSearch }) {
   const [q, setQ] = useState(query.q)
   useEffect(() => setQ(query.q), [query.q])
@@ -96,11 +95,12 @@ function SearchBar({ query, onSearch }) {
   return (
     <div className="psearch-wrap">
       <div className="pfilters" role="group" aria-label="Buscar en">
-        {scope ? (
-          <button type="button" className="pf-clear" aria-label="Quitar filtro" title="Quitar filtro" onClick={() => onSearch({ q, scope: 'all' })}>
-            <X size={13} strokeWidth={2.5} /> Quitar filtro
+        {scope && (
+          <button type="button" className="pf-clear" onClick={() => onSearch({ q, scope: 'all' })}>
+            <Search size={13} strokeWidth={2.5} /> En todo
           </button>
-        ) : SCOPES.map(([k, l, I, n]) => (
+        )}
+        {SCOPES.filter(([k]) => k !== query.scope).map(([k, l, I, n]) => (
           <button key={k} type="button" className="pf" style={{ '--k': nodeInfo(n).color }} onClick={(e) => pick(k, e)}>
             <I size={14} /> {l}
           </button>

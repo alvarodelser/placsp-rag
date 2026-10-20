@@ -3,7 +3,7 @@
 // SourceHover's job: here nothing is marked.)
 import { useRef, useState } from 'react'
 import { docPreview } from './pilotApi.js'
-import { roleEs } from './labels.js'
+import { roleEs, docDateTip } from './labels.js'
 import { LoaderCircle } from '../icons.js'
 
 const cache = new Map()      // sha|tender -> promise: a preview is fetched once per page load
@@ -52,12 +52,11 @@ function Preview({ d }) {
       <div className="doc-meta">
         <span className="chip">{roleEs(doc.role)}</span>
         {doc.seq != null && <span className="muted">Doc {doc.seq}</span>}
-        <time>{doc.effective_date || 'sin fecha'}</time>
+        <time title={docDateTip(doc)}>{doc.effective_date || 'sin fecha'}</time>
         {doc.pages ? <span className="muted">{doc.pages} pág.</span> : null}
       </div>
       <div className="dh-title">{doc.filename || doc.title}</div>
       {doc.summary && <p className="dh-sum">{doc.summary}</p>}
-      <div className="dh-foot">Clic para leerlo con sus anotaciones</div>
     </>
   )
 }
