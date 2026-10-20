@@ -1,9 +1,9 @@
 // search-ui/src/pilot/CompanyView.jsx — one company or authority across every expediente of the pilot.
 import { useEffect, useState } from 'react'
 import { getCompany } from './pilotApi.js'
-import { CHANNEL, COMPANY_ROLE } from './labels.js'
+import { CHANNEL, COMPANY_ROLE, dmy, nodeInfo, orgKindEs } from './labels.js'
 import { money } from '../format.js'
-import { LoaderCircle } from '../icons.js'
+import { ErrorNote, Loading, StatusBadge } from './ui.jsx'
 import { go } from './route.js'
 
 export default function CompanyView({ id }) {
@@ -14,8 +14,8 @@ export default function CompanyView({ id }) {
     getCompany(id).then((d) => live && setState({ status: 'done', d })).catch((e) => live && setState({ status: 'error', e: e.message }))
     return () => { live = false }
   }, [id])
-  if (state.status === 'loading') return <div className="loading-state"><LoaderCircle size={28} className="spinner" /></div>
-  if (state.status === 'error') return <div className="err">{state.e}</div>
+  if (state.status === 'loading') return <Loading size={26} />
+  if (state.status === 'error') return <ErrorNote>{state.e}</ErrorNote>
   const { node, tenders, rivals, authorities } = state.d
   const roles = {}
   tenders.forEach((t) => t.roles.forEach((r) => { roles[r] = (roles[r] || 0) + 1 }))
@@ -23,8 +23,11 @@ export default function CompanyView({ id }) {
   return (
     <div className="tv">
       <div className="tv-head">
-        <div className="badges">{(node.kinds || []).map((k) => <span key={k} className="badge">{k}</span>)}</div>
-        <h2>{node.name}</h2>
+        <div className="tv-title">
+          <div className="tv-kicker">{(node.kinds || []).map((k) => (
+            <span key={k} className="chip"><i className="kind-dot" style={{ background: nodeInfo(/authority/i.test(k) ? 'Authority' : 'Company').color }} />{orgKindEs(k)}</span>))}</div>
+          <h2>{node.name}</h2>
+        </div>
         <div className="row">{node.nif ? <>NIF <b>{node.nif}</b></> : 'Sin NIF: identificada por nombre'}
           {(node.aliases || []).length > 1 && <span className="muted"> · también: {node.aliases.filter((a) => a !== node.name).slice(0, 4).join(' · ')}</span>}
         </div>
@@ -42,11 +45,11 @@ export default function CompanyView({ id }) {
             <tbody>
               {tenders.map((t) => (
                 <tr key={t.tender_id}>
-                  <td className="nowrap">{t.published}</td>
+                  <td className="nowrap tabular">{dmy(t.published)}</td>
                   <td><button type="button" className="linkish" onClick={() => go(`/t/${t.tender_id}`)}>{t.name}</button>
-                    <div className="muted small">{CHANNEL[t.channel] || t.channel} · {t.status}</div></td>
+                    <div className="tv-kicker"><span>{CHANNEL[t.channel] || t.channel}</span><StatusBadge t={t} /></div></td>
                   <td className="small">{t.authority}</td>
-                  <td>{t.roles.map((r) => <span key={r} className={`chip role-${r}`}>{COMPANY_ROLE[r] || r}</span>)}</td>
+                  <td><span className="chips">{t.roles.map((r) => <span key={r} className={`chip role-${r}`}>{COMPANY_ROLE[r] || r}</span>)}</span></td>
                   <td className="num">{money(t.value) || '—'}</td>
                 </tr>
               ))}

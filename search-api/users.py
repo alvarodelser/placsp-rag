@@ -71,6 +71,13 @@ CREATE TABLE IF NOT EXISTS saved_items_analysis (
     analyzed_at     TEXT NOT NULL,
     UNIQUE(user_id, item_id)
 );
+
+-- Invite-only: the emails that may create an account and sign in (manage_users.py).
+CREATE TABLE IF NOT EXISTS allowed_emails (
+    email           TEXT PRIMARY KEY,         -- lower case
+    note            TEXT,
+    added_at        TEXT NOT NULL
+);
 """
 
 # Idempotent ALTERs for DBs created before the column existed.
@@ -106,6 +113,33 @@ def connect(path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=3000")
     init_db(conn)
     return conn
+
+
+# ── Allowed emails (invite-only) ───────────────────────────────────────────
+
+def is_allowed(conn: sqlite3.Connection, email: str) -> bool:
+    return conn.execute("SELECT 1 FROM allowed_emails WHERE email = ?",
+                        ((email or "").strip().lower(),)).fetchone() is not None
+
+
+def allow_email(conn: sqlite3.Connection, email: str, note: str | None = None) -> None:
+    conn.execute("INSERT INTO allowed_emails (email, note, added_at) VALUES (?, ?, ?)"
+                 " ON CONFLICT(email) DO UPDATE SET note = COALESCE(excluded.note, note)",
+                 (email.strip().lower(), note, _now()))
+    conn.commit()
+
+
+def disallow_email(conn: sqlite3.Connection, email: str) -> bool:
+    cur = conn.execute("DELETE FROM allowed_emails WHERE email = ?", (email.strip().lower(),))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def list_allowed(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        "SELECT a.email, a.note, a.added_at, u.display_name, u.created_at AS registered_at"
+        " FROM allowed_emails a LEFT JOIN users u ON u.email = a.email ORDER BY a.email").fetchall()
+    return [dict(r) for r in rows]
 
 
 # ── Users ──────────────────────────────────────────────────────────────────

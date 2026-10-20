@@ -3,10 +3,11 @@
 // how long), guarantees, the timeline (each document previewed on hover) and the record's details.
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { getTender } from './pilotApi.js'
-import { CHANNEL, docDateTip, nodeInfo, roleEs, shortTitle } from './labels.js'
+import { CHANNEL, dmy, docDateTip, nodeInfo, roleEs, shortTitle, tenderState } from './labels.js'
 import Tip from './Tip.jsx'
 import { money } from '../format.js'
-import { LoaderCircle, Trophy, ArrowUpRight } from '../icons.js'
+import { Trophy } from '../icons.js'
+import { ErrorNote, ExtLink, Loading, Tabs } from './ui.jsx'
 import cpvMap from '../codelists/cpv.json'
 import nutsMap from '../codelists/nuts.json'
 import NodePanel from './NodePanel.jsx'
@@ -30,14 +31,16 @@ export default function TenderView({ id }) {
     return () => { live = false }
   }, [id])
 
-  if (state.status === 'loading') return <div className="loading-state"><LoaderCircle size={28} className="spinner" /></div>
-  if (state.status === 'error') return <div className="err">{state.e}</div>
+  if (state.status === 'loading') return <Loading size={26} />
+  if (state.status === 'error') return <ErrorNote>{state.e}</ErrorNote>
   const t = state.t
 
   return (
     <div className="tv">
       <div className="tv-head">
         <div className="hp tv-title" tabIndex={0}>
+          <div className="tv-kicker"><span className="chip">{CHANNEL[t.channel] || t.channel || 'Expediente'}</span>
+            {(t.expediente || t.folder_id) && <span className="mono">{t.expediente || t.folder_id}</span>}</div>
           <h2>{shortTitle(t)}</h2>
           {shortTitle(t) !== t.name && <div className="tv-fullname">{t.name}</div>}
           <div className="hp-card">
@@ -57,10 +60,7 @@ export default function TenderView({ id }) {
         <Period t={t} />
       </div>
 
-      <nav className="tv-tabs">
-        {TABS.map(([k, label]) => <button key={k} type="button" className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
-        {t.source_url && <a className="tv-src" href={t.source_url} target="_blank" rel="noreferrer">Ver en PLACSP <ArrowUpRight size={13} className="ico" /></a>}
-      </nav>
+      <Tabs items={TABS} value={tab} onChange={setTab} extra={<ExtLink href={t.source_url}>Ver en PLACSP</ExtLink>} />
 
       {tab === 'resumen' && <Summary t={t} />}
       {tab === 'lotes' && <Lots t={t} />}
@@ -108,11 +108,11 @@ function Summary({ t }) {
             {timeline(t).map((e, i) => {
               const d = e.sha256 && docs[e.sha256]
               return (
-                <li key={i}><time>{e.date || '—'}</time>
+                <li key={i}><time>{dmy(e.date) || '—'}</time>
                   {d ? (
                     <DocHover tenderId={t.tender_id} sha={d.sha256}>
                       <button type="button" className="linkish tl-doc" onClick={() => go(`/t/${t.tender_id}/d/${d.sha256}`)}>
-                        <span className="chip">{roleEs(d.role)}</span> {d.filename || d.title}
+                        <span className="chip">{roleEs(d.role)}</span><span>{d.filename || d.title}</span>
                       </button>
                     </DocHover>
                   ) : <span>{e.event}</span>}
@@ -136,7 +136,7 @@ function Summary({ t }) {
             ['Fragmentos', t.counts?.chunks?.toLocaleString('es-ES')], ['Entidades', t.counts?.entities],
           ].filter(([, v]) => v != null && v !== '').map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
         </dl>
-        {t.source_url && <a className="small" href={t.source_url} target="_blank" rel="noreferrer">Ver en PLACSP <ArrowUpRight size={13} className="ico" /></a>}
+        <ExtLink href={t.source_url} className="small">Ver en PLACSP</ExtLink>
       </aside>
     </div>
   )
@@ -177,8 +177,6 @@ function HeadMoney({ value, budget }) {
   )
 }
 
-const dmy = (d) => (d ? d.slice(0, 10).split('-').reverse().join('-') : '…')
-
 // One line for where the tender stands: awarded (publication → award), open (publication → deadline,
 // with the days left), or otherwise its status over the same span.
 function Period({ t }) {
@@ -186,18 +184,19 @@ function Period({ t }) {
   const award = (t.lots || []).map((l) => l.result?.date).filter(Boolean).sort()[0]
   const days = deadline ? Math.ceil((new Date(`${deadline}T23:59:59`) - new Date()) / 86400000) : NaN
   const open = !award && days >= 0
-  const label = award ? 'Adjudicada' : open ? 'Abierta' : t.status ? t.status.charAt(0) + t.status.slice(1).toLowerCase() : null
-  const cls = award ? 'st-done' : open ? 'st-open' : t.status ? statusClass(t.status) : ''
+  const st = tenderState(t)
+  const label = award ? 'Adjudicada' : open ? 'Abierta' : st?.es
+  const cls = award ? 'st-done' : open ? 'st-open' : st?.cls
   const end = award || deadline
   if (!label && !t.published && !end) return null
   const left = !open ? null : days === 0 ? 'hoy' : days === 1 ? 'mañana' : `en ${days} días`
   return (
     <div className="tv-period">
-      {label && <span className={`badge st ${cls}`} title={t.status || undefined}>{label}</span>}
+      {label && <span className={`status ${cls}`} title={t.status || undefined}>{label}</span>}
       <span className="tv-range">
-        {t.published && <Tip tip="Publicación del primer anuncio en la Plataforma de Contratación">{dmy(t.published)}</Tip>}
+        {t.published ? <Tip tip="Publicación del primer anuncio en la Plataforma de Contratación">{dmy(t.published)}</Tip> : '…'}
         {' '}<span className="muted">→</span>{' '}
-        {end && <Tip tip={award ? 'Fecha de adjudicación' : 'Fin del plazo de presentación de ofertas'}>{dmy(end)}</Tip>}
+        {end ? <Tip tip={award ? 'Fecha de adjudicación' : 'Fin del plazo de presentación de ofertas'}>{dmy(end)}</Tip> : '…'}
       </span>
       {left && <span className="dl-open">({left})</span>}
     </div>
@@ -229,20 +228,11 @@ function nutsLabel(code) {
   const parent = code.length > 4 && nutsMap[code.slice(0, 4)]          // a province: say its region too
   return [nutsMap[code] || code, parent].filter(Boolean).join(', ')
 }
-// Open, pending, resolved, void: the colour says where the tender stands.
-function statusClass(s) {
-  const x = s.toUpperCase()
-  if (x.includes('PLAZO') || x.includes('PUBLICAD')) return 'st-open'
-  if (x.includes('PENDIENTE') || x.includes('EVALUACI')) return 'st-pending'
-  if (x.includes('ANULAD') || x.includes('DESIERT') || x.includes('DESIST') || x.includes('RENUNCIA')) return 'st-void'
-  return 'st-done'
-}
-
 function fmtDuration(d) {
   if (typeof d !== 'object') return String(d)
   const n = d.amount ?? d.value
   const unit = (n === 1 ? UNIT1 : UNIT)[d.unit] || d.unit_label || d.unit
-  const span = [d.start, d.end].filter(Boolean).join(' → ')
+  const span = [d.start, d.end].filter(Boolean).map(dmy).join(' → ')
   return [n != null ? Number(n).toLocaleString('es-ES') : null, unit].filter((x) => x != null && x !== '').join(' ') + (span ? ` (${span})` : '')
 }
 
@@ -255,7 +245,7 @@ function Lots({ t }) {
   return (
     <div className="lv">
       {lots.length > 1 && (
-        <nav className="lv-tabs" aria-label="Lotes">
+        <nav className="seg" aria-label="Lotes">
           {lots.map((x, k) => (
             <button key={x.number || k} type="button" className={k === i ? 'on' : ''} title={x.name || ''} onClick={() => setI(k)}>
               Lote {x.number || k + 1}
@@ -303,7 +293,7 @@ function Lots({ t }) {
 const CRIT_KIND = { JUDGEMENT: 'Juicio de valor', FORMULA: 'Fórmula' }
 const CRIT_GROUP = { JUDGEMENT: 'Evaluables mediante juicio de valor', FORMULA: 'Evaluables mediante fórmulas', OTHER: 'Sin tipo' }
 const CRIT_ORDER = ['JUDGEMENT', 'FORMULA', 'OTHER']
-const CRIT_COLOR = { JUDGEMENT: '#d14d72', FORMULA: '#8b5cf6' }
+const CRIT_COLOR = { JUDGEMENT: '#b4637a', FORMULA: '#6d5bd0' }
 const kindOf = (c) => (CRIT_KIND[c.subtype] ? c.subtype : 'OTHER')
 
 // Criteria grouped by how they are scored (judgement, then formulas), each with its weight in the
@@ -333,14 +323,16 @@ function Criteria({ lot }) {
   const color = (c) => CRIT_COLOR[c.subtype] || '#94a3b8'
   return (
     <section className="tv-card">
-      <h3>Criterios de adjudicación <span className="muted">· {fmtNum(total)} puntos</span>
-        <button type="button" className="linkish small cr-calc-btn" onClick={() => setCalc(!calc)}>{calc ? 'Cerrar calculadora' : 'Calcular una puntuación'}</button></h3>
+      <div className="cr-head">
+        <h3>Criterios de adjudicación <span className="muted">· {fmtNum(total)} puntos</span></h3>
+        <button type="button" className="linkish small" onClick={() => setCalc(!calc)}>{calc ? 'Cerrar calculadora' : 'Calcular una puntuación'}</button>
+      </div>
       {calc && <Calculator cs={cs} models={models} valuesOf={valuesOf} setValuesOf={setValuesOf} total={total} />}
       {total > 0 && (
         <div className={`cr-bar ${hot != null ? 'has-hot' : ''}`} role="img" aria-label="Peso de cada criterio" onMouseLeave={() => setHot(null)}>
           {cs.map((c, k) => c.points ? (
             <span key={k} className={hot === k ? 'hot' : ''} onMouseEnter={() => setHot(k)}
-              style={{ width: `${pct(c.points)}%`, background: color(c), opacity: hot === k ? 1 : 0.5 + 0.5 * ((k % 3) / 2) }}
+              style={{ width: `${pct(c.points)}%`, background: color(c) }}
               title={`${c.name}: ${fmtNum(c.points)} puntos (${fmtNum(pct(c.points))} %)`} />
           ) : null)}
         </div>
@@ -465,7 +457,8 @@ function Requirements({ reqs, title }) {
   const nested = new Set(reqs.flatMap((r) => r.detailed_by || []))
   const item = (r, child = false) => (
     <li key={r.id || r.name} className={child ? 'req-child' : ''}>
-      <span className="req-name">{r.name || r.text}</span>
+      {r.id ? <SourceHover id={r.id}><span className="req-name">{r.name || r.text}</span></SourceHover>
+        : <span className="req-name">{r.name || r.text}</span>}
       {r.amount != null && <b> · {money(r.amount)}</b>}
       {r.detail?.threshold_amount != null && <b> · {r.detail.threshold_amount} {r.detail.threshold_unit || ''}{r.detail.period_years ? ` (${r.detail.period_years} años)` : ''}</b>}
       {r.source === 'feed' && <span className="muted small"> · feed</span>}
@@ -507,7 +500,7 @@ function Documents({ t }) {
           <div className="doc-main">
             <div className="doc-meta">
               <span className="chip">{roleEs(d.role)}</span>
-              <Tip tip={docDateTip(d)}><time>{d.effective_date || 'sin fecha'}</time></Tip>
+              <Tip tip={docDateTip(d)}><time>{dmy(d.effective_date) || 'sin fecha'}</time></Tip>
               <span className="muted">{STAGE[d.stage]}</span>
               {d.chars ? <span className="muted">{Math.round(d.chars / 1000)}k caracteres</span> : null}
               {d.ner_chunks ? <span className="muted">{d.ner_chunks} fragmentos</span> : null}
@@ -518,7 +511,7 @@ function Documents({ t }) {
             </DocHover>
             {d.summary && <p className="doc-sum">{d.summary}</p>}
             <div className="doc-links">
-              {d.url && <a href={d.url} target="_blank" rel="noreferrer">Original <ArrowUpRight size={13} className="ico" /></a>}
+              <ExtLink href={d.url}>Original</ExtLink>
             </div>
           </div>
         </li>

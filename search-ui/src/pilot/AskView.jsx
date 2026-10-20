@@ -6,7 +6,7 @@
 // A source opens in a window over the answer: the original at its page, the sentence framed.
 import { useEffect, useRef, useState } from 'react'
 import { answer } from './pilotApi.js'
-import { roleEs } from './labels.js'
+import { SourceRef } from './ui.jsx'
 import { claims, sources, sourceOf, context } from './cites.js'
 import { LoaderCircle, ChevronRight, Maximize2 } from '../icons.js'
 import SourceWindow from './SourceWindow.jsx'
@@ -54,6 +54,7 @@ export default function AskView({ t }) {
         <div className="ask-body">
           {turns.length === 0 && (
             <div className="ask-empty">
+              <span className="muted small">Pregunta sobre los pliegos, anuncios y actas de este expediente. Cada respuesta cita el fragmento del que sale.</span>
               <div className="chips">{EXAMPLES.map((x) => <button key={x} type="button" className="chip linkchip" onClick={() => run(x)}>{x}</button>)}</div>
             </div>
           )}
@@ -104,7 +105,7 @@ function Turn({ turn }) {
       {srcs.length > 0 && (
         <div className="ask-pills">
           {shown.map((s) => <Pill key={s.key} s={s} on={s === src} onPick={() => pick(s)} />)}
-          {hidden > 0 && <button type="button" className="ask-pill ask-pill-more" onClick={() => setMore(true)}>+{hidden} {hidden === 1 ? 'fuente' : 'fuentes'}</button>}
+          {hidden > 0 && <button type="button" className="src-more" onClick={() => setMore(true)}>+{hidden} {hidden === 1 ? 'fuente' : 'fuentes'}</button>}
         </div>
       )}
       {turn.status === 'done' && turn.text.trim() && !srcs.length && <div className="ask-note warn-text">La respuesta no cita ningún fragmento.</div>}
@@ -118,19 +119,15 @@ function Turn({ turn }) {
   )
 }
 
-function place(s) {
-  const p = s.passage
-  if (!p) return { doc: 'PLACSP', rest: ['datos del expediente'] }
-  const pg = p.page_from ? `pág. ${p.page_from}${p.page_to && p.page_to !== p.page_from ? `–${p.page_to}` : ''}` : null
-  return { doc: p.doc_role ? roleEs(p.doc_role) : `Doc ${p.doc_seq}`, rest: [pg].filter(Boolean) }
-}
+// A passage's place, drawn as every source reference is.
+const Place = ({ p, num, title }) => (p
+  ? <SourceRef num={num} role={p.doc_role} seq={p.doc_seq} page={p.page_from} pageTo={p.page_to} title={title ?? p.doc_title} />
+  : <SourceRef num={num} title="Datos publicados en PLACSP" />)
 
 function Pill({ s, on, onPick }) {
-  const { doc, rest } = place(s)
   return (
-    <button type="button" className={`ask-pill ${on ? 'on' : ''}`} title={s.passage?.doc_title || 'Datos publicados en PLACSP'}
-      onMouseEnter={onPick} onClick={onPick}>
-      <sup>{s.num}</sup><b>{doc}</b>{rest.map((x) => <span key={x}>{x}</span>)}
+    <button type="button" className={`src-pick ${on ? 'on' : ''}`} onMouseEnter={onPick} onClick={onPick}>
+      <Place p={s.passage} num={s.num} title={s.passage?.doc_title || 'Datos publicados en PLACSP'} />
     </button>
   )
 }
@@ -152,7 +149,6 @@ function Excerpt({ p, claim, onOpen, muted }) {
   )
 }
 
-// Every passage the answer was written from, folded: the cited ones first, with their source number.
 // Every passage the answer was written from, folded, in the same shape as the cited source: its
 // place on a pill, then the passage around what the answer (or, uncited, the question) asked.
 function Consulted({ turn, srcs, onOpen }) {
@@ -168,11 +164,9 @@ function Consulted({ turn, srcs, onOpen }) {
       <div className="ask-consulted">
         {order.map((i) => {
           const p = ps[i], n = num(i)
-          const { doc, rest } = place({ passage: p })
           return (
             <div key={i} className="ask-src">
-              <span className={`ask-pill static ${n ? 'on' : ''}`} title={p.doc_title}>
-                {n ? <sup>{n}</sup> : null}<b>{doc}</b>{rest.map((x) => <span key={x}>{x}</span>)}
+              <span><Place p={p} num={n} />
                 {p.rerank != null && <span className="score" title="Puntuación del reranker">{p.rerank.toFixed(2)}</span>}
               </span>
               <Excerpt p={p} claim={n ? claimOf(i) : turn.q} onOpen={onOpen} muted={!n} />

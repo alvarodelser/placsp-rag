@@ -129,3 +129,43 @@ const DATE_SOURCE = {
   none: 'No se conoce la fecha de este documento.',
 }
 export const docDateTip = (d) => DATE_SOURCE[d?.date_source] || 'Fecha del documento en el expediente.'
+
+// Every date in the pilot reads the same: dd/mm/aaaa. Takes '2026-01-10', a timestamp, or {date}.
+export function dmy(d) {
+  const x = typeof d === 'string' ? d : d?.date
+  if (!x || !/^\d{4}-\d{2}-\d{2}/.test(x)) return x || ''
+  return x.slice(0, 10).split('-').reverse().join('/')
+}
+
+// A graph relation as the panels name it, outgoing and (with " ←", as the node endpoint marks it)
+// incoming. Unknown relations fall back to the raw name, lower-cased.
+const REL = {
+  HAS_LOT: ['Lotes', 'Expediente'], HAS_CRITERION: ['Criterios', 'Lote'], REQUIRES: ['Requisitos', 'Exigido en'],
+  INCLUDES: ['Incluye', 'Incluido en'], HAS_RESULT: ['Resultado', 'Lote'], HAS_NOTICE: ['Anuncios', 'Expediente'],
+  HAS_CONDITION: ['Condiciones', 'Expediente'], WINNER: ['Adjudicataria', 'Adjudicaciones'], RESULTED_IN: ['Resultó en', 'Resultado de'],
+  DETAILED_BY: ['Detallado en', 'Detalla'], ACCEPTS: ['Acepta', 'Aceptado por'], PUBLISHED: ['Publicó', 'Publicado por'],
+  HAS_CONTRACT: ['Contrato', 'Expediente'], CONTRACT_FOR: ['Contrato de', 'Contratos'], SUBMITTED_BY: ['Presentada por', 'Ofertas'],
+  RECEIVED_BID: ['Ofertas recibidas', 'Oferta a'], BID_FOR: ['Oferta a', 'Ofertas recibidas'], HAS_DOCUMENT: ['Documentos', 'Expediente'],
+  CLASSIFIED_AS: ['Sector', 'Expedientes del sector'], TENDERED: ['Licitó', 'Licitadoras'], LOCATED_IN: ['Lugar', 'Expedientes en'],
+  MENTIONED_IN: ['Mencionado en', 'Menciona'], BIDDER: ['Licitadora', 'Licitó en'], CONTRACTOR: ['Contratista', 'Contratos'],
+}
+export function relEs(key) {
+  const incoming = key.endsWith(' ←')
+  const base = key.replace(/ ←$/, '')
+  return REL[base]?.[incoming ? 1 : 0] || base.toLowerCase().replace(/_/g, ' ')
+}
+
+// A node's raw property, named for the panel; unknown ones are shown as written, without underscores.
+const FIELD = {
+  procedure: 'Procedimiento', contract_type: 'Tipo de contrato', subtype: 'Subtipo', nif: 'NIF', number: 'Número',
+  points: 'Puntos', amount: 'Importe', budget: 'Presupuesto base', value: 'Valor estimado', role: 'Papel', pages: 'Páginas',
+  filename: 'Archivo', ext: 'Formato', seq: 'Orden', stage: 'Fase', pct: 'Porcentaje', unit: 'Unidad', text: 'Texto',
+  winner: 'Adjudicataria', price: 'Precio', outcome: 'Resultado', bids_received: 'Ofertas recibidas', nuts: 'NUTS', cpv: 'CPV',
+  sara: 'Regulación armonizada', kind: 'Tipo', kinds: 'Tipo', place: 'Lugar', duration: 'Duración',
+}
+export const fieldEs = (k) => FIELD[k] || k.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+
+// An organization's kinds (the graph's, or the search's lower-case ones) in Spanish.
+const ORG_KIND = { Company: 'Empresa', company: 'Empresa', ContractingAuthority: 'Órgano de contratación', authority: 'Órgano de contratación',
+  JointVenture: 'UTE', Organization: 'Organización' }
+export const orgKindEs = (k) => ORG_KIND[k] || k

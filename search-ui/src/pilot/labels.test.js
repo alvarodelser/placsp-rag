@@ -1,4 +1,4 @@
-import { shortOrg } from './labels.js'
+import { dmy, fieldEs, orgKindEs, relEs, shortOrg } from './labels.js'
 
 describe('shortOrg', () => {
   it('drops the organ inside a council and abbreviates it', () => {
@@ -19,5 +19,29 @@ describe('shortOrg', () => {
   })
   it('cuts long names at a word', () => {
     expect(shortOrg('Consorcio de Transportes de la Comunidad de Madrid y su Área Metropolitana', 30)).toBe('Consorcio de Transportes…')
+  })
+})
+
+describe('dmy', () => {
+  it('reads every date the same way', () => {
+    expect(dmy('2026-01-10')).toBe('10/01/2026')
+    expect(dmy('2026-01-10T12:00:00Z')).toBe('10/01/2026')
+    expect(dmy({ date: '2026-03-02' })).toBe('02/03/2026')
+    expect(dmy(null)).toBe('')
+    expect(dmy('sin fecha')).toBe('sin fecha')
+  })
+})
+
+describe('relEs / fieldEs / orgKindEs', () => {
+  it('names relations both ways and falls back to readable text', () => {
+    expect(relEs('PUBLISHED')).toBe('Publicó')
+    expect(relEs('PUBLISHED ←')).toBe('Publicado por')
+    expect(relEs('SOME_NEW_REL')).toBe('some new rel')
+  })
+  it('names fields and kinds in Spanish', () => {
+    expect(fieldEs('procedure')).toBe('Procedimiento')
+    expect(fieldEs('weird_field')).toBe('Weird field')
+    expect(orgKindEs('ContractingAuthority')).toBe('Órgano de contratación')
+    expect(orgKindEs('company')).toBe('Empresa')
   })
 })

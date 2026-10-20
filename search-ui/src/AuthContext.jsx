@@ -11,6 +11,13 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined)
   const [savedIds, setSavedIds] = useState(new Set())
 
+  // A session that could not be renewed (authFetch.js), or an email taken off the list: sign in again.
+  useEffect(() => {
+    const expired = () => { setUser(null); setSavedIds(new Set()) }
+    window.addEventListener('auth:expired', expired)
+    return () => window.removeEventListener('auth:expired', expired)
+  }, [])
+
   // On mount: check if already logged in via cookie.
   useEffect(() => {
     authMe()

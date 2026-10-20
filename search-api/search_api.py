@@ -70,6 +70,28 @@ FIELDS = [
 ]
 
 app = FastAPI(title="PLACSP Search API")
+
+# Invite-only: every /api route needs a signed-in user, except signing in itself and the health
+# check (Docker's). Accounts are only for emails in allowed_emails (manage_users.py), checked at
+# register, login and refresh, so an email taken off the list loses access within one access
+# token (ACCESS_TOKEN_MINUTES). AUTH_REQUIRED=0 opens the API (local development, tests).
+OPEN_PATHS = {"/api/health", "/api/auth/login", "/api/auth/register", "/api/auth/refresh", "/api/auth/logout"}
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    path = request.url.path
+    if (os.getenv("AUTH_REQUIRED", "1").lower() in ("0", "false", "no") or request.method == "OPTIONS"
+            or not path.startswith("/api/") or path in OPEN_PATHS):
+        return await call_next(request)
+    try:
+        await auth.get_current_user(request)
+    except HTTPException as e:
+        return JSONResponse({"detail": e.detail}, status_code=e.status_code)
+    return await call_next(request)
+
+
+# Added after the login check, so it wraps it: a 401 still carries the CORS headers.
 app.add_middleware(
     CORSMiddleware, allow_origins=CORS_ORIGINS,
     allow_credentials=True,
@@ -699,6 +721,8 @@ def register(body: RegisterIn):
 
     conn = _users_conn()
     try:
+        if not users.is_allowed(conn, email):
+            raise HTTPException(403, "Este email no está invitado. Pide acceso al administrador.")
         hashed = auth.hash_password(body.password)
         try:
             user = users.create_user(
@@ -732,11 +756,13 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
     """Authenticate with email (username field) + password.  Sets auth cookies."""
     conn = _users_conn()
     try:
-        user = users.get_user_by_email(conn, form.username)
+        user = users.get_user_by_email(conn, form.username.strip().lower())
         if not user or not auth.verify_password(form.password, user["hashed_password"]):
             raise HTTPException(401, "Invalid email or password")
         if not user.get("is_active", True):
             raise HTTPException(403, "Account disabled")
+        if not users.is_allowed(conn, user["email"]):
+            raise HTTPException(403, "Este email ya no tiene acceso. Pide acceso al administrador.")
 
         users.update_last_seen(conn, user["user_id"])
         access = auth.create_access_token(user["user_id"], user["email"])
@@ -786,6 +812,8 @@ def refresh(request: Request):
         user = users.get_user_by_id(conn, user_id)
         if not user:
             raise HTTPException(401, "User not found")
+        if not user.get("is_active", True) or not users.is_allowed(conn, user["email"]):
+            raise HTTPException(403, "Access revoked")
 
         users.update_last_seen(conn, user_id)
     finally:

@@ -3,8 +3,8 @@
 // SourceHover's job: here nothing is marked.)
 import { useRef, useState } from 'react'
 import { docPreview } from './pilotApi.js'
-import { roleEs, docDateTip } from './labels.js'
-import { LoaderCircle } from '../icons.js'
+import { dmy, roleEs, docDateTip } from './labels.js'
+import { ErrorNote, Loading } from './ui.jsx'
 
 const cache = new Map()      // sha|tender -> promise: a preview is fetched once per page load
 const W = 420
@@ -36,8 +36,8 @@ export default function DocHover({ tenderId, sha, children, className = '' }) {
       {children}
       {card && (
         <div className="dh-card" style={{ ...card.pos, width: W }} role="tooltip">
-          {card.status === 'loading' && <div className="loading-state"><LoaderCircle size={18} className="spinner" /></div>}
-          {card.status === 'error' && <div className="err">{card.e}</div>}
+          {card.status === 'loading' && <Loading size={18} />}
+          {card.status === 'error' && <ErrorNote>{card.e}</ErrorNote>}
           {card.status === 'done' && <Preview d={card.d} />}
         </div>
       )}
@@ -51,9 +51,9 @@ function Preview({ d }) {
     <>
       <div className="doc-meta">
         <span className="chip">{roleEs(doc.role)}</span>
-        {doc.seq != null && <span className="muted">Doc {doc.seq}</span>}
-        <time title={docDateTip(doc)}>{doc.effective_date || 'sin fecha'}</time>
-        {doc.pages ? <span className="muted">{doc.pages} pág.</span> : null}
+        {doc.seq != null && <span>Documento {doc.seq}</span>}
+        <time title={docDateTip(doc)}>{dmy(doc.effective_date) || 'sin fecha'}</time>
+        {doc.pages ? <span>{doc.pages} págs.</span> : null}
       </div>
       <div className="dh-title">{doc.filename || doc.title}</div>
       {doc.summary && <p className="dh-sum">{doc.summary}</p>}

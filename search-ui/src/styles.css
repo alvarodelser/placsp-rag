@@ -489,6 +489,12 @@ button.ws-clear:hover { border-color: #ef4444; color: #ef4444; background: #fff1
   cursor: not-allowed;
 }
 
+.auth-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted, #6b7385);
+}
+
 .auth-error {
   background: #fee2e2;
   color: #b91c1c;

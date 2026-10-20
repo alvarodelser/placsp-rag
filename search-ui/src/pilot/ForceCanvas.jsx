@@ -23,7 +23,7 @@ const WON = new Set(['WINNER', 'ADJUDICATARIA', 'CONTRACTOR'])
 const ORGS = new Set(['Organization', 'Company', 'Authority'])
 const SHAPE = { Tender: 'diamond' }       // everything else is a circle
 const C = { Authority: nodeInfo('Authority').color, Tender: nodeInfo('Tender').color, Company: nodeInfo('Company').color,
-  doc: nodeInfo('Document').color, link: '#4b5563', ink: '#161a23', bg: '#fbfcfe' }
+  doc: nodeInfo('Document').color, link: '#4b5563', ink: '#0f172a', bg: '#fbfbfc' }
 const NAMES_PER_PX = 1 / 26000      // how many names a screen carries: one per this many square pixels
 const CLOSE = 25                    // nodes in view below which a name gets a line of detail
 const UNFOLD_MS = 320, STAGGER_MS = 28

@@ -30,6 +30,14 @@ describe('formula', () => {
     expect(() => evaluate(parse('P = a + 1').ast, {})).toThrow(/a/)
   })
 
+  it('reads quoted yes/no answers as 1 and 0', () => {
+    const f = parse("P = if(Cert == 'SI', 4.0, 0)")
+    expect(evaluate(f.ast, { Cert: 1 })).toBe(4)
+    expect(evaluate(f.ast, { Cert: 0 })).toBe(0)
+    expect(toLatex(f)).toContain('\\text{SI}')
+    expect(() => parse("P = if(Tipo == 'grande', 4, 0)")).toThrow(/grande/)
+  })
+
   it('ticks land on round numbers', () => {
     expect(niceTicks(0, 100)).toEqual([0, 20, 40, 60, 80, 100])
     expect(niceTicks(0, 1)).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1])

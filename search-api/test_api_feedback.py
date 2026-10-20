@@ -11,6 +11,7 @@ def env(tmp_path, monkeypatch):
     db = str(tmp_path / "fb.db")
     monkeypatch.setenv("FEEDBACK_DB", db)
     monkeypatch.setenv("APP_VERSION", "testver")
+    monkeypatch.setenv("AUTH_REQUIRED", "0")       # feedback, not sign-in, is under test
     import search_api
     importlib.reload(search_api)
     return TestClient(search_api.app), db

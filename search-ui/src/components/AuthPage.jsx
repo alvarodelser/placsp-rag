@@ -76,6 +76,7 @@ export default function AuthPage() {
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
+          {tab === 'register' && <p className="auth-hint">El acceso es solo por invitación: usa el email con el que te invitaron.</p>}
           {tab === 'register' && (
             <div className="auth-field">
               <User size={18} className="auth-icon" />

@@ -10,9 +10,10 @@
 //    (a PDF's #page=N); the text stays where it was.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getDocument } from './pilotApi.js'
-import { docDateTip, nodeInfo, roleEs } from './labels.js'
+import { dmy, docDateTip, nodeInfo, roleEs } from './labels.js'
 import Tip from './Tip.jsx'
-import { LoaderCircle, ArrowLeft, ArrowUpRight } from '../icons.js'
+import { ArrowLeft, ChevronLeft, ChevronRight, X } from '../icons.js'
+import { ErrorNote, ExtLink, Loading, SourceRef, Tabs, sourceText } from './ui.jsx'
 import NodePanel from './NodePanel.jsx'
 import OriginalPane from './OriginalPane.jsx'
 import { reflow, lineKeyRanges, blocks } from './doctext.js'
@@ -85,13 +86,13 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   }, [data])
   const boiler = useMemo(() => new Set(data?.boilerplate || []), [data])
 
-  if (error) return <div className="err">{error}</div>
-  if (!data) return <div className="loading-state"><LoaderCircle size={28} className="spinner" /></div>
+  if (error) return <ErrorNote>{error}</ErrorNote>
+  if (!data) return <Loading size={26} />
   const d = data.document
   const first = data.chunks[0]?.chunk_idx || 0
   const next = data.start + data.chunks.length
   const focus = entity ? data.focus || [] : []
-  const tagOf = (page) => `${roleEs(d.role)}${d.seq != null ? ` · doc ${d.seq}` : ''}${page ? ` · pág. ${page}` : ''}`
+  const tagOf = (page) => sourceText(d.role, d.seq, page)
 
   function goTo(k) {
     const f = (data.focus || [])[k]
@@ -109,28 +110,29 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
 
   return (
     <div className="dv">
+      <button type="button" className="linkish subtle dv-back" onClick={() => go(`/t/${tenderId}`)}><ArrowLeft size={14} /> {d.tender_name || tenderId}</button>
       <div className="tv-head dv-head">
-        <button type="button" className="linkish" onClick={() => go(`/t/${tenderId}`)}><ArrowLeft size={13} className="ico" /> {d.tender_name || tenderId}</button>
-        <div className="doc-meta">
-          <span className="chip">Doc {d.seq} · {roleEs(d.role)}</span>
-          <Tip tip={docDateTip(d)}><time>{d.effective_date || 'sin fecha'}</time></Tip>
-          {d.pages ? <span className="muted">{d.pages} págs.</span> : null}
+        <div className="tv-title">
+          <div className="doc-meta">
+            <span className="chip">{roleEs(d.role)}</span>
+            {d.seq != null && <span>Documento {d.seq}</span>}
+            <Tip tip={docDateTip(d)}><time>{dmy(d.effective_date) || 'sin fecha'}</time></Tip>
+            {d.pages ? <span>{d.pages} págs.</span> : null}
+          </div>
+          <h2>{d.filename || d.title}</h2>
         </div>
-        <h2>{d.filename || d.title}</h2>
         {d.summary && <p className="tv-desc">{d.summary}</p>}
       </div>
 
-      <nav className="tv-tabs dv-tabs">
-        <button type="button" className={view === 'text' ? 'on' : ''} onClick={() => setView('text')}>Texto anotado</button>
-        <button type="button" className={view === 'original' ? 'on' : ''} onClick={() => view !== 'original' && show(original || { page: data.chunks[0]?.page_from || 1 })}>Original</button>
-      </nav>
+      <Tabs items={[['text', 'Texto anotado'], ['original', 'Original']]} value={view}
+        onChange={(k) => (k === 'text' ? setView('text') : view !== 'original' && show(original || { page: data.chunks[0]?.page_from || 1 }))}
+        extra={<ExtLink href={d.url}>Abrir en la Plataforma</ExtLink>} />
 
       {view === 'original' && (
         <div className="dv-original">
           <div className="dv-original-head">
-            {original?.tag && <span className="ref-tag static">{original.tag}</span>}
+            {original?.page && <SourceRef role={d.role} seq={d.seq} page={original.page} />}
             <span className="muted small">{d.url ? 'Tal como está publicado en la Plataforma de Contratación' : 'No consta dónde se publicó este documento'}</span>
-            {d.url && <a href={d.url} target="_blank" rel="noreferrer">Abrir en una pestaña nueva <ArrowUpRight size={13} className="ico" /></a>}
           </div>
           <OriginalPane url={d.url} ext={d.ext} page={original?.page} title={d.filename || d.title} archive={!!d.in_archive} />
         </div>
@@ -143,12 +145,14 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
             <i style={{ background: nodeInfo(data.entities[entity]?.label).color }} />
             <b>{data.entities[entity]?.name || entity}</b>
             {focus.length > 0 ? <>
-              <button type="button" className="icon-btn" aria-label="Anterior" disabled={nth <= 0} onClick={() => goTo(nth - 1)}>‹</button>
-              <span>{nth + 1} de {focus.length}</span>
-              <button type="button" className="icon-btn" aria-label="Siguiente" disabled={nth >= focus.length - 1} onClick={() => goTo(nth + 1)}>›</button>
+              <span className="sep" />
+              <button type="button" className="icon-btn" aria-label="Anterior" disabled={nth <= 0} onClick={() => goTo(nth - 1)}><ChevronLeft size={15} /></button>
+              <span className="tabular">{nth + 1} de {focus.length}</span>
+              <button type="button" className="icon-btn" aria-label="Siguiente" disabled={nth >= focus.length - 1} onClick={() => goTo(nth + 1)}><ChevronRight size={15} /></button>
             </> : <span className="muted">sin referencias en este documento</span>}
+            <span className="sep" />
             <button type="button" className="linkish small" onClick={() => setPanel(entity)}>Ficha</button>
-            <button type="button" className="icon-btn" aria-label="Quitar" onClick={() => setEntity(null)}>×</button>
+            <button type="button" className="icon-btn" aria-label="Quitar" onClick={() => setEntity(null)}><X size={14} /></button>
           </span>
         ) : <span className="muted small">Elige una entidad para ver dónde la cita este documento.</span>}
         <details className="dv-ents">

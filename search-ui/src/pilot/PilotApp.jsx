@@ -5,9 +5,10 @@
 // its own page; going back returns to the list and graph as they were left.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { listTenders, search, health, corpusGraph } from './pilotApi.js'
-import { CHANNEL, nodeInfo, roleEs, shortTitle } from './labels.js'
+import { CHANNEL, dmy, nodeInfo, orgKindEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
-import { Landmark, Building2, LoaderCircle, FileText, Search, X } from '../icons.js'
+import { Landmark, Building2, FileText, Search, X } from '../icons.js'
+import { ErrorNote, Loading, SourceRef, StatusBadge } from './ui.jsx'
 import TenderView from './TenderView.jsx'
 import CompanyView from './CompanyView.jsx'
 import DocView from './DocView.jsx'
@@ -47,13 +48,13 @@ export default function PilotApp() {
       <header>
         <div className="wrap header-top">
           <div className="brand">
-            <h1>Piloto documental · PLACSP</h1>
+            <h1>PLACSP <span>· Piloto documental</span></h1>
           </div>
           <SearchBar query={query} onSearch={(q) => { setQuery(q); if (!home) go('') }} />
         </div>
       </header>
       <main>
-        {problems.map(([k, v]) => <div key={k} className="wrap err"><b>{k}</b>: {v}</div>)}
+        {problems.length > 0 && <div className="wrap" style={{ marginBottom: 12 }}>{problems.map(([k, v]) => <ErrorNote key={k}><b>{k}</b>: {v}</ErrorNote>)}</div>}
         <div className={`wrap playout ${home ? '' : 'full'}`}>
           {home && <ResultList res={res} current={current} onOrg={(id) => go(`/c/${encodeURIComponent(id)}`)} />}
           <section className="pmain">
@@ -97,7 +98,7 @@ function SearchBar({ query, onSearch }) {
       <div className="pfilters" role="group" aria-label="Buscar en">
         {scope && (
           <button type="button" className="pf-clear" onClick={() => onSearch({ q, scope: 'all' })}>
-            <Search size={13} strokeWidth={2.5} /> En todo
+            <Search size={13} /> En todo
           </button>
         )}
         {SCOPES.filter(([k]) => k !== query.scope).map(([k, l, I, n]) => (
@@ -109,9 +110,9 @@ function SearchBar({ query, onSearch }) {
       <form className="pbar psearch" onSubmit={(e) => { e.preventDefault(); onSearch({ ...query, q }) }}>
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar"
           placeholder="Buscar por significado: «servicio de limpieza», «solvencia volumen de negocios», una empresa…" />
-        {q && <button type="button" className="icon-btn" aria-label="Borrar" onClick={() => { setQ(''); onSearch({ ...query, q: '' }) }}><X size={15} /></button>}
+        {q && <button type="button" className="icon-btn" aria-label="Borrar" onClick={() => { setQ(''); onSearch({ ...query, q: '' }) }}><X size={16} /></button>}
         <button ref={btn} type="submit" className="pgo" style={scope ? { '--k': nodeInfo(node).color } : undefined}>
-          {scope ? <><Icon size={16} /> {label}</> : <><Search size={16} strokeWidth={2.5} /> Buscar</>}
+          {scope ? <><Icon size={15} /> {label}</> : <><Search size={15} /> Buscar</>}
         </button>
       </form>
     </div>
@@ -119,12 +120,12 @@ function SearchBar({ query, onSearch }) {
 }
 
 function ResultList({ res, current, onOrg }) {
-  if (res.status === 'loading') return <aside className="plist"><div className="loading-state"><LoaderCircle size={22} className="spinner" /></div></aside>
-  if (res.status === 'error') return <aside className="plist"><div className="err">{res.e}</div></aside>
+  if (res.status === 'loading') return <aside className="plist"><Loading /></aside>
+  if (res.status === 'error') return <aside className="plist"><ErrorNote>{res.e}</ErrorNote></aside>
   const { tenders, organizations, latest } = res.d
   return (
     <aside className="plist">
-      <div className="plist-head muted small">
+      <div className="plist-head">
         {latest ? `${tenders.length} expedientes, los últimos primero`
           : `${tenders.length ? `${tenders.length} expedientes` : ''}${tenders.length && organizations.length ? ' · ' : ''}${organizations.length ? `${organizations.length} organizaciones` : ''}` || 'Sin resultados'}
       </div>
@@ -133,13 +134,13 @@ function ResultList({ res, current, onOrg }) {
         {tenders.map((t) => (
           <li key={t.tender_id}>
             <button type="button" className={`pitem ${current === t.tender_id ? 'on' : ''}`} onClick={() => go(`/t/${t.tender_id}`)}>
-              <span className="pitem-top"><span className="badge">{CHANNEL[t.channel] || t.channel}</span>
-                <span className="muted">{t.published}</span></span>
+              <span className="pitem-top"><span className="chip">{CHANNEL[t.channel] || t.channel}</span>
+                <time>{dmy(t.published)}</time><StatusBadge t={t} /></span>
               <span className="pitem-name" title={t.name}>{shortTitle(t)}</span>
-              <span className="muted small">{t.authority?.name}</span>
-              <span className="muted small">{t.counts?.documents ?? 0} docs · {t.counts?.lots ?? 0} lotes{t.value != null ? ` · ${money(t.value)}` : ''}</span>
+              <span className="pitem-sub">{t.authority?.name}</span>
+              <span className="pitem-sub tabular">{t.value != null && <><b>{money(t.value)}</b> · </>}{t.counts?.documents ?? 0} docs · {t.counts?.lots ?? 0} lotes</span>
               {(t.passages || []).slice(0, 1).map((p, i) => (
-                <span key={i} className="pitem-hit"><b>{roleEs(p.doc_role)}{p.page_from ? ` · pág. ${p.page_from}` : ''}</b> {p.text.slice(0, 220)}…</span>
+                <span key={i} className="pitem-hit"><SourceRef role={p.doc_role} page={p.page_from} />{p.text.slice(0, 200)}…</span>
               ))}
             </button>
           </li>
@@ -149,8 +150,8 @@ function ResultList({ res, current, onOrg }) {
           <li key={o.id}>
             <button type="button" className={`pitem ${current === o.id ? 'on' : ''}`} onClick={() => onOrg(o.id)}>
               <span className="pitem-top">
-                {o.kinds.map((k) => <span key={k} className={`badge ${k === 'authority' ? 'org-auth' : 'org-co'}`}>{k === 'authority' ? 'Órgano' : 'Empresa'}</span>)}
-                <span className="muted">{o.tender_ids.length} exp.</span>
+                {o.kinds.map((k) => <span key={k} className="chip"><i className="kind-dot" style={{ background: nodeInfo(k === 'authority' ? 'Authority' : 'Company').color }} />{orgKindEs(k)}</span>)}
+                <span>{o.tender_ids.length} {o.tender_ids.length === 1 ? 'expediente' : 'expedientes'}</span>
               </span>
               <span className="pitem-name">{o.name}</span>
             </button>
@@ -175,8 +176,8 @@ function Landing({ res }) {
     else if (['Organization', 'Company', 'Authority'].includes(n.label)) go(`/c/${encodeURIComponent(n.id)}`)
     else if (n.label === 'Document') go(`/t/${n.tender.replace(/^tender:/, '')}/d/${n.id.replace(/^doc:/, '')}`)
   }
-  if (!graph) return <div className="loading-state"><LoaderCircle size={28} className="spinner" /></div>
-  if (graph.error) return <div className="err">{graph.error}</div>
+  if (!graph) return <Loading size={26} />
+  if (graph.error) return <ErrorNote>{graph.error}</ErrorNote>
   return (
     <>
       <ForceCanvas graph={graph} selected={selected} onSelect={setSelected} onOpen={open} highlight={hits} height="calc(100vh - 170px)"

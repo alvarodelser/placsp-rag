@@ -1,11 +1,12 @@
 // search-ui/src/pilot/NodePanel.jsx — one graph node: what it is, where it was found, what it connects to.
 import { useEffect, useState } from 'react'
 import { getNode } from './pilotApi.js'
-import { DATE_FIELD, nodeInfo, roleEs, tenderState } from './labels.js'
+import { DATE_FIELD, dmy, fieldEs, nodeInfo, relEs, roleEs, tenderState } from './labels.js'
 import Tip from './Tip.jsx'
 import cpvMap from '../codelists/cpv.json'
 import { money } from '../format.js'
-import { LoaderCircle, X, ArrowRight } from '../icons.js'
+import { X, ArrowRight } from '../icons.js'
+import { ErrorNote, Loading, SourceRef, StatusBadge } from './ui.jsx'
 import { go } from './route.js'
 
 const SKIP = new Set(['id', 'label', 'name', 'title', 'description', 'descriptions', 'evidence', 'summary', 'documents',
@@ -36,11 +37,11 @@ export default function NodePanel({ id, seen, onSelect, onClose }) {
   return (
     <aside className="np">
       <div className="np-head">
-        <span className="np-kind" style={{ color: nodeInfo(state.d?.node.label).color }}>{nodeInfo(state.d?.node.label).es}</span>
+        <span className="np-kind">{state.d && <i style={{ background: nodeInfo(state.d.node.label).color }} />}{state.d ? nodeInfo(state.d.node.label).es : ''}</span>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Cerrar"><X size={16} /></button>
       </div>
-      {state.status === 'loading' && <div className="loading-state"><LoaderCircle size={22} className="spinner" /></div>}
-      {state.status === 'error' && <div className="err">{state.e}</div>}
+      {state.status === 'loading' && <Loading />}
+      {state.status === 'error' && <div className="np-body"><ErrorNote>{state.e}</ErrorNote></div>}
       {state.status === 'done' && <Body d={state.d} seen={seen} onSelect={onSelect} />}
     </aside>
   )
@@ -49,7 +50,6 @@ export default function NodePanel({ id, seen, onSelect, onClose }) {
 function Body({ d, seen, onSelect }) {
   const n = d.node
   const deadline = n.deadline ?? seen?.deadline
-  const state = n.label === 'Tender' ? tenderState({ status: n.status ?? seen?.status, deadline }) : null
   const exp = n.expediente ?? seen?.expediente
   // A reference ("la empresa") is evidence too: counted apart so the reader sees both.
   const refs = d.mentions.filter((m) => m.kind === 'coref').length
@@ -63,13 +63,13 @@ function Body({ d, seen, onSelect }) {
       <h3>{n.label === 'Document' ? (n.title || n.filename) : (n.name || n.id)}</h3>
       {n.label === 'Tender' && (
         <div className="np-state">
-          {state && <span className={`badge st ${state.cls}`}>{state.es}</span>}
-          {state?.key === 'open' && deadline && <span className="muted small">ofertas hasta {dmy(deadline)}</span>}
+          <StatusBadge t={{ status: n.status ?? seen?.status, deadline }} />
+          {tenderState({ status: n.status ?? seen?.status, deadline })?.key === 'open' && deadline && <span className="muted">ofertas hasta {dmy(deadline)}</span>}
           {exp && <span className="np-exp">{exp}</span>}
           {(n.value ?? seen?.value) != null && <b className="small">{money(n.value ?? seen?.value)}</b>}
-          <button type="button" className="linkish" onClick={() => go(`/t/${n.id.replace(/^tender:/, '')}`)}>Abrir expediente <ArrowRight size={13} className="ico" /></button>
         </div>
       )}
+      {n.label === 'Tender' && <button type="button" className="linkish" onClick={() => go(`/t/${n.id.replace(/^tender:/, '')}`)}>Abrir expediente <ArrowRight size={13} className="ico" /></button>}
       <div className="chips">
         {n.label !== 'Tender' && <span className="chip">{SOURCE[n.source] || n.id.split(':')[0]}</span>}
         {d.mention_count > 0 && <span className="chip">{d.mention_count} menciones{refs ? ` (${refs} referencias)` : ''}</span>}
@@ -81,7 +81,7 @@ function Body({ d, seen, onSelect }) {
         <dl className="np-props">
           {props.map(([k, v]) => DATE_FIELD[k]
             ? <div key={k}><dt>{DATE_FIELD[k][0]}</dt><dd><Tip tip={DATE_FIELD[k][1]}>{dmy(v)}</Tip></dd></div>
-            : <div key={k}><dt>{k}</dt><dd>{String(v)}</dd></div>)}
+            : <div key={k}><dt>{fieldEs(k)}</dt><dd>{v === true ? 'Sí' : v === false ? 'No' : String(v)}</dd></div>)}
         </dl>
       )}
       {cpvs.length > 0 && (
@@ -97,7 +97,7 @@ function Body({ d, seen, onSelect }) {
           <div className="np-rel">Detalle extraído</div>
           <dl className="np-props">
             {Object.entries(n.detail).filter(([, v]) => v !== '' && v != null).map(([k, v]) => (
-              <div key={k}><dt>{DETAIL[k] || k}</dt><dd>{String(v)}</dd></div>))}
+              <div key={k}><dt>{DETAIL[k] || fieldEs(k)}</dt><dd>{v === true ? 'Sí' : v === false ? 'No' : String(v)}</dd></div>))}
           </dl>
         </div>
       )}
@@ -122,7 +122,7 @@ function Body({ d, seen, onSelect }) {
       )}
       {Object.entries(d.neighbours).map(([rel, list]) => (
         <div key={rel} className="np-sec">
-          <div className="np-rel">{rel} <span>{list.length}</span></div>
+          <div className="np-rel">{relEs(rel)} <span>{list.length}</span></div>
           <ul className="np-list">
             {list.slice(0, 25).map((m) => (
               <li key={m.id}><button type="button" className="linkish" onClick={() => onSelect(m.id)}>
@@ -143,15 +143,12 @@ function Body({ d, seen, onSelect }) {
   )
 }
 
-const dmy = (d) => { const x = typeof d === 'string' ? d : d?.date; return x ? x.slice(0, 10).split('-').reverse().join('-') : '' }
-
 function Mention({ m, entity }) {
   return (
     <div className={`mention ${m.kind === 'coref' ? 'is-ref' : ''}`}>
       <div className="chunk-meta">
-        <span>Doc {m.doc_seq ?? '?'} · {roleEs(m.doc_role)}</span>
-        {m.page && <span>pág. {m.page}</span>}
-        {m.kind === 'coref' && <span className="chip" title="Expresión que se refiere a la entidad sin nombrarla">referencia «{m.surface}»</span>}
+        <SourceRef role={m.doc_role} seq={m.doc_seq} page={m.page} title={m.doc_title} />
+        {m.kind === 'coref' && <span title="Expresión que se refiere a la entidad sin nombrarla">referencia «{m.surface}»</span>}
         {!m.located && <span title="La cita no se encontró literal en el texto">cita aproximada</span>}
         {m.doc_sha256 && <button type="button" className="linkish small" onClick={() =>
           go(`/t/${m.tender_id}/d/${m.doc_sha256}?c=${m.chunk_idx}&e=${encodeURIComponent(entity)}`)}>ver en el documento <ArrowRight size={13} className="ico" /></button>}
@@ -162,12 +159,11 @@ function Mention({ m, entity }) {
 }
 
 export function Chunk({ c, showTender = false }) {
-  const pages = c.page_from ? (c.page_to && c.page_to !== c.page_from ? `págs. ${c.page_from}–${c.page_to}` : `pág. ${c.page_from}`) : null
   return (
     <div className="chunk">
       <div className="chunk-meta">
         {showTender && <button type="button" className="linkish" onClick={() => go(`/t/${c.tender_id}`)}>{c.tender_id}</button>}
-        <span>Doc {c.doc_seq} · {roleEs(c.doc_role)}</span>{pages && <span>{pages}</span>}
+        <SourceRef role={c.doc_role} seq={c.doc_seq} page={c.page_from} pageTo={c.page_to} />
         {c.score != null && <span className="score">{c.score}</span>}
       </div>
       <div className="chunk-title">{c.doc_title}</div>

@@ -31,3 +31,17 @@ uvicorn search_api:app --host 0.0.0.0 --port 8092 --reload
 - `GET /api/health` — reports configured upstream URLs and reachability
 
 `CORS_ORIGINS` defaults to `*`; set it to your UI's public origin in production.
+
+## Access (invite-only)
+
+Every `/api` route needs a signed-in user, except sign-in itself and `/api/health`. Only emails
+on the allowed list can create an account or sign in; taking one off the list ends its access
+within `ACCESS_TOKEN_MINUTES` (30). The list lives in the users database (`USERS_DB`):
+
+```bash
+docker compose exec placsp-search-api python manage_users.py allow persona@ejemplo.es "nota"
+docker compose exec placsp-search-api python manage_users.py remove persona@ejemplo.es
+docker compose exec placsp-search-api python manage_users.py list
+```
+
+`AUTH_REQUIRED=0` opens the API (local development).

@@ -4,24 +4,32 @@
 // Language (same as nlp/summarizer/formula.py): `OUT = expr` with numbers, symbols
 // [A-Za-z][A-Za-z0-9_]*, + - * / ^ ( ), comparisons, if(c, a, b), min, max, abs, sqrt, ln, log10,
 // exp, floor, ceil. A parse error throws; nothing is ever passed to eval().
+// A yes/no criterion is often written with quoted answers, `if(X == 'SI', 4, 0)`: 'SI' reads as 1
+// and 'NO' as 0 (shown as written); any other quoted text is an error.
 
 const FUNCS = {
   min: Math.min, max: Math.max, abs: Math.abs, sqrt: Math.sqrt, ln: Math.log, log10: Math.log10,
   exp: Math.exp, floor: Math.floor, ceil: Math.ceil,
 }
+const YES_NO = { SI: 1, 'SÍ': 1, S: 1, YES: 1, Y: 1, TRUE: 1, VERDADERO: 1, NO: 0, N: 0, FALSE: 0, FALSO: 0 }
 const BIN = { '+': [10, 'L'], '-': [10, 'L'], '*': [20, 'L'], '/': [20, 'L'], '^': [30, 'R'],
   '<': [5, 'L'], '<=': [5, 'L'], '>': [5, 'L'], '>=': [5, 'L'], '==': [5, 'L'], '!=': [5, 'L'] }
 
 function tokens(s) {
   const out = []
-  const re = /\s*(?:(\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|([A-Za-z][A-Za-z0-9_]*)|(<=|>=|==|!=|[-+*/^(),<>]))/y
+  const re = /\s*(?:(\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|([A-Za-z][A-Za-z0-9_]*)|(<=|>=|==|!=|[-+*/^(),<>])|'([^']*)'|"([^"]*)")/y
   let m
   re.lastIndex = 0
   while (re.lastIndex < s.length) {
     if (/^\s*$/.test(s.slice(re.lastIndex))) break
     const at = re.lastIndex
     if (!(m = re.exec(s))) throw new Error(`no se entiende «${s.slice(at, at + 12)}»`)
-    out.push(m[1] ? { t: 'num', v: Number(m[1]) } : m[2] ? { t: 'id', v: m[2] } : { t: 'op', v: m[3] })
+    const str = m[4] ?? m[5]
+    if (str != null) {
+      const v = YES_NO[str.trim().toUpperCase()]
+      if (v == null) throw new Error(`texto no admitido «${str}»`)
+      out.push({ t: 'num', v, text: str.trim() })
+    } else out.push(m[1] ? { t: 'num', v: Number(m[1]) } : m[2] ? { t: 'id', v: m[2] } : { t: 'op', v: m[3] })
   }
   return out
 }
@@ -39,7 +47,7 @@ export function parse(expression) {
   function primary() {
     const t = next()
     if (!t) throw new Error('expresión incompleta')
-    if (t.t === 'num') return { num: t.v }
+    if (t.t === 'num') return t.text ? { num: t.v, text: t.text } : { num: t.v }
     if (t.v === '(') { const e = expr(0); expect(')'); return e }
     if (t.v === '-') return { neg: expr(25) }
     if (t.v === '+') return expr(25)
@@ -119,6 +127,7 @@ const CMP = { '<': '<', '<=': '\\le', '>': '>', '>=': '\\ge', '==': '=', '!=': '
 const PREC = (n) => (n.bin ? BIN[n.bin][0] : 100)
 
 function tex(n, parent = 0) {
+  if (n.text) return `\\text{${n.text}}`
   if (n.num != null) return String(n.num).replace('.', '{,}')
   if (n.sym) return symbolTex(n.sym)
   if (n.neg) return `-${tex(n.neg, 25)}`
