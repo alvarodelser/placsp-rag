@@ -198,6 +198,12 @@ export PILOT_RUN_DIR=/opt/placsp/pilot_runs/$(date +%F)
 nohup .venv/bin/python -m placsp_pilot run > $PILOT_RUN_DIR/run.log 2>&1 &
 ```
 
+**Growing the sample.** `./add.sh [N]` (default 20) selects N more expedientes with `run --add N`:
+spread evenly over the themes plus `otros` (an entry in no theme) and, within each theme, over
+contract types, counting what the run already has, then processes them under `nohup`. It reads the
+exports above from `~/.placsp_pilot.env` and the run dir from `PILOT_RUN_DIR` (default
+`~/pilot_runs/themes`). `./add.sh 0` finishes an interrupted run without adding any.
+
 **Before running.** Check that `nlp_service`'s Ollama has the GPU and that thinking is off.
 On the server, `ollama_high` once lost its GPU after a host `systemctl daemon-reload`
 (`docker exec ollama_high nvidia-smi` gave `Failed to initialize NVML`), and gemma4:31b ran on

@@ -133,6 +133,86 @@ def select_themes(cfg: PilotConfig, store: Store, quotas: dict[str, int], channe
             log(f"select: themes short after {max_pages} pages per channel: {short} (raise --max-pages or add channels)")
 
 
+OTHER = "otros"
+
+
+def pick_balanced(pool: dict, have_theme: Counter, have_cell: Counter, n: int) -> list:
+    """Up to n candidates from `pool` ({(theme, type): [candidate, newest first]}): each time the theme
+    with the fewest expedientes so far, and within it the contract type with the fewest; a theme or
+    type with no candidates left is passed over. Updates the counters."""
+    out = []
+    while len(out) < n:
+        themes = {th for (th, _), c in pool.items() if c}
+        if not themes:
+            break
+        th = min(themes, key=lambda k: (have_theme[k], k))
+        cell = min((k for k, c in pool.items() if c and k[0] == th), key=lambda k: (have_cell[k], k))
+        out.append(pool[cell].pop(0))
+        have_theme[th] += 1
+        have_cell[cell] += 1
+    return out
+
+
+def select_balanced(cfg: PilotConfig, store: Store, n: int, channels: list[str], max_pages: int = 200):
+    """n more expedientes, newest first from the given channels' feeds, spread evenly over the themes
+    (themes.py, plus "otros" for an entry in none) and, within a theme, over the contract types
+    (obras, servicios, suministros...), counting what the run already has. Each call adds n new ones;
+    a theme the feeds have too few of takes what there is and the rest goes to the others."""
+    from placsp_pilot.themes import THEMES, themes_of
+    parser = Parser(Codelists(cfg.codelist_dir))
+    http = _http(cfg)
+    with store.tx() as c:
+        c.execute("CREATE TABLE IF NOT EXISTS expediente_theme (exp_id TEXT NOT NULL, theme TEXT NOT NULL, quota INTEGER,"
+                  " PRIMARY KEY (exp_id, theme))")
+    ctype = lambda tender: ((tender or {}).get("contract_type") or {}).get("code") or "?"
+    first = {r["exp_id"]: r["theme"] for r in store.q("SELECT exp_id, theme FROM expediente_theme WHERE quota=1")}
+    have_theme, have_cell = Counter(), Counter()
+    for r in store.q("SELECT id, tender_json FROM expediente"):
+        th = first.get(r["id"], OTHER)
+        have_theme[th] += 1
+        have_cell[(th, ctype(json.loads(r["tender_json"] or "{}").get("tender")))] += 1
+    themes = list(THEMES) + [OTHER]
+    log("select: have " + ", ".join(f"{k} {have_theme[k]}" for k in themes))
+
+    # Read the feeds until every theme has n candidates or the pages run out. The first page is
+    # the live file and is read again each time; the older ones never change and are kept.
+    pool, short = defaultdict(list), lambda: [k for k in themes if sum(len(v) for (th, _), v in pool.items() if th == k) < n]
+    seen = set()
+    for channel in channels:
+        url, page = f"{FEED_BASE}/{FEEDS[channel]}.atom", 0
+        while url and page < max_pages and short():
+            page += 1
+            path = cfg.raw_dir / (f"feed_{channel}_live.atom" if page == 1 else f"feed_{channel}_{url.rsplit('/', 1)[-1]}")
+            if page == 1 or not path.exists():
+                r = http.get(url)
+                r.raise_for_status()
+                path.write_bytes(r.content)
+            entries, url = iter_entries(str(path))
+            for e in sorted(entries, key=lambda e: e.findtext("{http://www.w3.org/2005/Atom}updated") or "", reverse=True):
+                rec = parser.parse_entry(e, channel)
+                if not rec.get("folder_id") or rec["id"] in seen or store.one("SELECT 1 FROM expediente WHERE id=?", (rec["id"],)):
+                    continue
+                seen.add(rec["id"])
+                ths = themes_of(rec) or [OTHER]
+                th = next((k for k in ths if k in short()), None)
+                if th is None:
+                    continue
+                pool[(th, ctype(rec.get("tender")))].append((rec, etree.tostring(e), ths, th))
+            if page % 10 == 0:
+                log(f"select {channel}: {page} pages; still short of {short()}")
+
+    with store.stage("select") as st:
+        for rec, raw, ths, th in pick_balanced(pool, have_theme, have_cell, n):
+            raw_path = cfg.raw_dir / f"{rec['id']}.xml"
+            raw_path.write_bytes(raw)
+            _insert_expediente(store, rec, raw_path, len(raw))
+            with store.tx() as c:
+                c.executemany("INSERT OR IGNORE INTO expediente_theme VALUES (?,?,?)",
+                              [(rec["id"], k, int(k == th)) for k in ths])
+            st["items"] += 1
+    log("select: now " + ", ".join(f"{k} {have_theme[k]}" for k in themes))
+
+
 def _insert_expediente(store: Store, rec: dict, raw_path: Path, raw_bytes: int):
     reason = NOT_ANALYSABLE.get(rec["channel"])
     technical_urls = {d["url"] for d in rec["documents"] if d["source"] == "feed_technical"}

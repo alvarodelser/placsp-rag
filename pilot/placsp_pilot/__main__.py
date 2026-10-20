@@ -1,4 +1,4 @@
-"""CLI: python -m placsp_pilot <stage> [--run-dir DIR] [--quota channel=n,... | --themes theme=n,...]
+"""CLI: python -m placsp_pilot <stage> [--run-dir DIR] [--quota channel=n,... | --themes theme=n,... | --add N]
 
 Stages run in this order; `run` does them all. Each is resumable.
   select       pick the latest expedientes per channel from the live feeds, or with --themes the
@@ -63,6 +63,8 @@ def main(argv=None):
     ap.add_argument("--quota", help="per-channel sample size, e.g. placsp_mayores=50,externos_mayores=20,placsp_menores=15,propios=15")
     ap.add_argument("--themes", help="select by theme instead (CPV lists in themes.py), e.g. "
                                      "urbanismo=30,sostenibilidad=30,cartografia=25,participacion=15")
+    ap.add_argument("--add", type=int, help="select N more, spread over the themes plus \"otros\" and, within each, "
+                                            "over contract types, counting what the run already has")
     ap.add_argument("--channels", default="placsp_mayores,externos_mayores",
                     help="feeds --themes reads (default the two with pliegos)")
     ap.add_argument("--max-pages", type=int, default=200, help="feed pages read per channel by --themes")
@@ -79,7 +81,8 @@ def main(argv=None):
         print("retry: " + ", ".join(f"{k} {v}" for k, v in store.reset_failed().items() if v), flush=True)
 
     steps = {
-        "select": lambda: stages.select_themes(cfg, store, _themes(args.themes), args.channels.split(","), args.max_pages)
+        "select": lambda: stages.select_balanced(cfg, store, args.add, args.channels.split(","), args.max_pages)
+        if args.add is not None else stages.select_themes(cfg, store, _themes(args.themes), args.channels.split(","), args.max_pages)
         if args.themes else stages.select(cfg, store, _quotas(args.quota)),
         "discover": lambda: stages.discover(cfg, store),
         "fetch": lambda: stages.fetch(cfg, store),
