@@ -3,12 +3,13 @@
 // a small model writes it from them, each claim citing [n]. The reader sees one source at a time:
 // the claim it backs is lit, its sentence quoted, its place named on a pill. The other sources
 // wait on their pills (the first few; the rest behind "+N"), the uncited passages behind a fold.
+// A source opens in a window over the answer: the original at its page, the sentence framed.
 import { useEffect, useRef, useState } from 'react'
 import { answer } from './pilotApi.js'
 import { roleEs } from './labels.js'
-import { claims, sources, sourceOf, excerpt } from './cites.js'
-import { LoaderCircle, ArrowRight, ChevronRight } from '../icons.js'
-import { go } from './route.js'
+import { claims, sources, sourceOf, context } from './cites.js'
+import { LoaderCircle, ChevronRight, Maximize2 } from '../icons.js'
+import SourceWindow from './SourceWindow.jsx'
 
 const EXAMPLES = ['¿Qué solvencia económica se exige?', '¿Cuál es la garantía definitiva?', '¿Cómo se valora el precio?',
   '¿Qué penalidades hay por incumplimiento?', '¿Se permite subcontratar?', '¿Qué equipo mínimo se exige?']
@@ -74,6 +75,7 @@ function Turn({ turn }) {
   const srcs = sources(parts, ps)
   const [sel, setSel] = useState(null)              // { src, claim } the reader chose; else the first source
   const [more, setMore] = useState(false)
+  const [win, setWin] = useState(null)              // the source open in a window: { passage, quote }
   const src = srcs.find((s) => s.key === sel?.src) || srcs[0]
   const claimIdx = sel?.claim ?? parts.findIndex((p) => p.refs?.some((r) => src?.nums.includes(r)))
   const writing = turn.status === 'writing'
@@ -98,7 +100,7 @@ function Turn({ turn }) {
           {writing && <span className="ask-caret" />}
         </p>
       )}
-      {src && <Quote src={src} claim={parts[claimIdx]?.text || ''} />}
+      {src && <Quote src={src} claim={parts[claimIdx]?.text || ''} onOpen={setWin} />}
       {srcs.length > 0 && (
         <div className="ask-pills">
           {shown.map((s) => <Pill key={s.key} s={s} on={s === src} onPick={() => pick(s)} />)}
@@ -110,7 +112,8 @@ function Turn({ turn }) {
       {turn.status === 'stopped' && <div className="ask-note">Interrumpida por la pregunta siguiente.</div>}
       {turn.status === 'error' && <div className="err">{turn.error}</div>}
       {(turn.info?.notes || []).map((n, i) => <div key={i} className="ask-note warn-text">{n}</div>)}
-      {ps.length > 0 && <Consulted turn={turn} srcs={srcs} />}
+      {ps.length > 0 && <Consulted turn={turn} srcs={srcs} onOpen={setWin} />}
+      {win && <SourceWindow passage={win.passage} quote={win.quote} onClose={() => setWin(null)} />}
     </div>
   )
 }
@@ -132,42 +135,51 @@ function Pill({ s, on, onPick }) {
   )
 }
 
-function Quote({ src, claim }) {
+function Quote({ src, claim, onOpen }) {
   if (!src.passage) return <blockquote className="ask-quote f">Datos del expediente en PLACSP.</blockquote>
-  const p = src.passage
-  const ex = excerpt(p.text, claim)
+  return <Excerpt p={src.passage} claim={claim} onOpen={onOpen} />
+}
+
+// A passage as the reader judges a citation: the sentence closest to the claim, marked, inside the
+// text around it.
+function Excerpt({ p, claim, onOpen, muted }) {
+  const c = context(p.text, claim)
   return (
-    <blockquote className="ask-quote">
-      «{ex.text}»
-      <button type="button" className="linkish" onClick={() => go(`/t/${p.tender_id}/d/${p.doc_sha256}?c=${p.chunk_idx}`)}>Abrir en el documento <ArrowRight size={13} className="ico" /></button>
+    <blockquote className={`ask-quote ${muted ? 'muted-q' : ''}`}>
+      <span>«{c.lead && '…'}{c.before}<mark>{c.hit}</mark>{c.after}{c.tail && '…'}»</span>
+      <button type="button" className="linkish" onClick={() => onOpen({ passage: p, quote: c.hit })}><Maximize2 size={13} className="ico" /> Ver en el original</button>
     </blockquote>
   )
 }
 
 // Every passage the answer was written from, folded: the cited ones first, with their source number.
-function Consulted({ turn, srcs }) {
+// Every passage the answer was written from, folded, in the same shape as the cited source: its
+// place on a pill, then the passage around what the answer (or, uncited, the question) asked.
+function Consulted({ turn, srcs, onOpen }) {
   const ps = turn.passages
   const num = (i) => sourceOf(srcs, i + 1)?.num
   const order = ps.map((p, i) => i).sort((a, b) => (num(a) ?? 99) - (num(b) ?? 99))
+  const parts = claims(turn.text, ps.length)
+  const claimOf = (i) => parts.filter((c) => c.refs?.includes(i + 1)).map((c) => c.text).join(' ')
   const info = turn.info
   return (
     <details className="ask-more">
       <summary><ChevronRight size={13} className="ico ask-more-chev" />{ps.length} fragmentos consultados{srcs.length ? ` · ${srcs.filter((s) => s.passage).length} citados` : ''}</summary>
-      {order.map((i) => {
-        const p = ps[i]
-        return (
-          <div key={i} className={`chunk ask-p ${num(i) ? 'cited' : ''}`}>
-            <div className="chunk-meta">
-              {num(i) ? <b>{num(i)}</b> : <span className="muted">—</span>}
-              <span>{roleEs(p.doc_role)} · Doc {p.doc_seq}</span>
-              {p.page_from && <span>pág. {p.page_from}{p.page_to && p.page_to !== p.page_from ? `–${p.page_to}` : ''}</span>}
-              {p.rerank != null && <span className="score" title="Puntuación del reranker">{p.rerank.toFixed(2)}</span>}
-              <button type="button" className="linkish small" onClick={() => go(`/t/${p.tender_id}/d/${p.doc_sha256}?c=${p.chunk_idx}`)}>Abrir <ArrowRight size={13} className="ico" /></button>
+      <div className="ask-consulted">
+        {order.map((i) => {
+          const p = ps[i], n = num(i)
+          const { doc, rest } = place({ passage: p })
+          return (
+            <div key={i} className="ask-src">
+              <span className={`ask-pill static ${n ? 'on' : ''}`} title={p.doc_title}>
+                {n ? <sup>{n}</sup> : null}<b>{doc}</b>{rest.map((x) => <span key={x}>{x}</span>)}
+                {p.rerank != null && <span className="score" title="Puntuación del reranker">{p.rerank.toFixed(2)}</span>}
+              </span>
+              <Excerpt p={p} claim={n ? claimOf(i) : turn.q} onOpen={onOpen} muted={!n} />
             </div>
-            <p>{p.text}{p.text.length >= 900 ? '…' : ''}</p>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
       {info && (
         <div className="ask-note">
           {info.hybrid ? 'Significado + palabras clave' : 'Solo significado'} · {info.reranked ? 'reordenado por el reranker' : 'sin reranker'}

@@ -13,5 +13,5 @@ export {
   Funnel, ArrowUpNarrowWide,
   Bookmark, User, LogOut, Inbox, Network, Mail, Lock, Eye, EyeOff, UserPlus,
   // Inline marks (replace emoji and arrow glyphs)
-  Check, Sparkles, ArrowRight, ArrowLeft, ArrowUpRight,
+  Check, Sparkles, ArrowRight, ArrowLeft, ArrowUpRight, Maximize2,
 } from 'lucide-react'

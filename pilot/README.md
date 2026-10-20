@@ -273,8 +273,8 @@ They read only `/api/pilot` (`search-api/pilot_api.py`), which reads only the pi
 that fails (without the vectorizer there is no search by meaning and no Preguntar).
 
 On the server, `placsp-search-api` reads the pilot collections in `placsp-qdrant` with
-`QDRANT_API_KEY`. To serve the stored files as well, set `PILOT_FILES_DIR=<run dir>/files`
-in `.env`. Then rebuild: `docker compose up -d --build placsp-search-api`, and the UI.
+`QDRANT_API_KEY`. The originals are not served: the viewer shows each one from its PLACSP link,
+in a frame. Then rebuild: `docker compose up -d --build placsp-search-api`, and the UI.
 
 ## Tests
 

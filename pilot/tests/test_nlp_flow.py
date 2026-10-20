@@ -145,3 +145,34 @@ def test_ner_stops_when_calls_are_too_slow(run, monkeypatch):
         nlpstages.ner(cfg, store)
     counts = {r["status"]: r["n"] for r in store.q("SELECT status, COUNT(*) n FROM chunk GROUP BY status")}
     assert counts["ok"] == 2 and counts["pending"] > 0  # two tries, the rest left for the next run
+
+
+def test_text_stage_deletes_the_file_and_keeps_its_text(tmp_path, monkeypatch):
+    import base64
+    import hashlib
+    from placsp_pilot import stages
+    cfg = load_config(str(tmp_path))
+    store = Store(cfg.db_path)
+    data = PCAP_TEXT.encode()
+    sha = _save_blob(cfg, store, data, "PCAP.txt", "text/plain")
+    path = Path(store.one("SELECT path FROM blob WHERE sha=?", (sha,))["path"])
+    assert path.exists()
+    stages.text(cfg, store)
+    b = store.one("SELECT * FROM blob WHERE sha=?", (sha,))
+    assert b["text_status"] == "ok" and Path(b["text_path"]).read_text(encoding="utf-8").strip()
+    assert not path.exists() and b["path"] is None
+    assert b["sha1_b64"] == base64.b64encode(hashlib.sha1(data).digest()).decode()
+    # Asked to extract again, it says the file must be fetched again instead of failing the stage.
+    store.update("blob", {"sha": sha}, text_status="pending")
+    stages.text(cfg, store)
+    assert "refetch" in store.one("SELECT error FROM blob WHERE sha=?", (sha,))["error"]
+
+
+def test_text_stage_keeps_the_file_when_asked(tmp_path, monkeypatch):
+    from placsp_pilot import stages
+    monkeypatch.setenv("PILOT_KEEP_FILES", "1")
+    cfg = load_config(str(tmp_path))
+    store = Store(cfg.db_path)
+    sha = _save_blob(cfg, store, PCAP_TEXT.encode(), "PCAP.txt", "text/plain")
+    stages.text(cfg, store)
+    assert Path(store.one("SELECT path FROM blob WHERE sha=?", (sha,))["path"]).exists()

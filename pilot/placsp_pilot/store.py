@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS blob (
     bytes         INTEGER,
     mime          TEXT,
     ext           TEXT,
-    path          TEXT,
+    path          TEXT,                      -- the downloaded file; NULL once deleted after text extraction
+    sha1_b64      TEXT,                      -- SHA-1 (base64), to check against the feed's DocumentHash
     pages         INTEGER,
     text_status   TEXT,                      -- pending | ok | empty | unsupported | failed | needs_ocr
     text_method   TEXT,
@@ -154,6 +155,8 @@ class Store:
         self._lock = threading.Lock()
         with self.tx() as c:
             c.executescript(SCHEMA)
+            if "sha1_b64" not in {r[1] for r in c.execute("PRAGMA table_info(blob)")}:     # pilot.db from before
+                c.execute("ALTER TABLE blob ADD COLUMN sha1_b64 TEXT")
 
     def conn(self) -> sqlite3.Connection:
         c = getattr(self._local, "c", None)

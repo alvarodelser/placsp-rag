@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { claims, sources, excerpt } from './cites.js'
+import { claims, sources, excerpt, context } from './cites.js'
 
 const P = (sha, page, text = '') => ({ doc_sha256: sha, page_from: page, text })
 
@@ -27,6 +27,14 @@ describe('cites', () => {
     const text = '12.1. Garantías\nSe exige garantía.\n12.2. Solvencia económica\nVolumen anual de negocios mínimo de 450.000 euros referido al mejor ejercicio.'
     const ex = excerpt(text, 'un volumen anual de negocios mínimo de 450.000 €')
     expect(ex.text).toBe('…Volumen anual de negocios mínimo de 450.000 euros referido al mejor ejercicio')
+  })
+
+  it('shows a heading together with what it heads', () => {
+    const text = '28.- Garantías. Ninguna.\n29.- Subcontratación\nProcede: SI, de acuerdo con lo establecido en el art. 215 LCSP.\n30.- Penalidades\nLas del art. 192.'
+    const c = context(text, 'la subcontratación está permitida', 120)
+    expect(c.hit).toBe('29.- Subcontratación')
+    expect(c.after).toContain('Procede: SI')
+    expect(c.lead).toBe(true)
   })
 
 })

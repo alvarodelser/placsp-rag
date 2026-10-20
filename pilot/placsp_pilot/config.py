@@ -42,6 +42,9 @@ class PilotConfig:
     fetch_workers: int
     nlp_workers: int
     max_file_mb: int
+    # Keep each downloaded file after its text is extracted (default: delete it; the viewer shows
+    # the original from its PLACSP link). Files waiting for OCR or that failed are always kept.
+    keep_files: bool
     # NER chunk size in words, as nlp_service's relation pipeline (RELATIONS_CHUNK_TOKENS).
     chunk_words: int
     # Max NER chunks per document (0 = all). Over the cap, the chunks with the most procurement
@@ -96,6 +99,7 @@ def load_config(run_dir: str | None = None) -> PilotConfig:
         fetch_workers=int(_env("PILOT_FETCH_WORKERS", "4")),
         nlp_workers=int(_env("PILOT_NLP_WORKERS", "2")),
         max_file_mb=int(_env("PILOT_MAX_FILE_MB", "200")),
+        keep_files=_env("PILOT_KEEP_FILES", "0") not in ("0", "false", "no"),
         chunk_words=int(_env("PILOT_CHUNK_WORDS", "512")),
         ner_max_chunks=int(_env("PILOT_NER_MAX_CHUNKS", "60")),
         describe_relations=_env("PILOT_DESCRIBE_RELATIONS", "1") not in ("0", "false", "no"),

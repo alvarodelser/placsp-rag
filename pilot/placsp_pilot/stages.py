@@ -1,4 +1,5 @@
 """Pipeline stages. Each one is resumable: it only processes rows not yet done."""
+import base64
 import hashlib
 import json
 import re
@@ -210,10 +211,11 @@ def _save_blob(cfg: PilotConfig, store: Store, data: bytes, filename: str | None
     path = cfg.files_dir / sha[:2] / f"{sha}.{ext}"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
+    sha1 = base64.b64encode(hashlib.sha1(data).digest()).decode()      # the file may be gone when validate runs
     with store.tx() as c:
-        c.execute("INSERT OR IGNORE INTO blob (sha, bytes, mime, ext, path, text_status, summary_status, ner_status,"
-                  " resolve_status, describe_status) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                  (sha, len(data), mime, ext, str(path), "pending", "pending", "pending", "pending", "pending"))
+        c.execute("INSERT OR IGNORE INTO blob (sha, bytes, mime, ext, path, sha1_b64, text_status, summary_status, ner_status,"
+                  " resolve_status, describe_status) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                  (sha, len(data), mime, ext, str(path), sha1, "pending", "pending", "pending", "pending", "pending"))
     return sha
 
 
@@ -259,9 +261,15 @@ def fetch(cfg: PilotConfig, store: Store):
 
 # ── text ──────────────────────────────────────────────────────────────────
 
+# Extraction outcomes after which the file is not needed again (not needs_ocr, not failed).
+DONE_WITH_FILE = {"ok", "empty", "unsupported", "archive"}
+
+
 def text(cfg: PilotConfig, store: Store):
     def one(b):
         t0 = time.time()
+        if not b["path"] or not Path(b["path"]).exists():
+            return b, None, 0
         data = Path(b["path"]).read_bytes()
         res = extract_text(data, b["ext"], cfg.ocr_url, cfg.ocr_min_chars_per_page)
         return b, res, int((time.time() - t0) * 1000)
@@ -274,6 +282,11 @@ def text(cfg: PilotConfig, store: Store):
             with ThreadPoolExecutor(max(1, cfg.fetch_workers)) as pool:
                 for f in as_completed([pool.submit(one, b) for b in blobs]):
                     b, res, ms = f.result()
+                    if res is None:          # deleted after an earlier extraction: fetch it again to re-read it
+                        store.update("blob", {"sha": b["sha"]}, text_status="failed", error="file deleted; refetch to extract again",
+                                     summary_status="skipped", ner_status="skipped", resolve_status="skipped", describe_status="skipped")
+                        st["items"] += 1
+                        continue
                     fields = dict(text_status=res.status, text_method=res.method, pages=res.pages, text_ms=ms,
                                   ocr_pages=res.ocr_pages, ocr_ms=res.ocr_ms, error=res.error or None,
                                   text_chars=len(res.text))
@@ -289,6 +302,11 @@ def text(cfg: PilotConfig, store: Store):
                         fields["summary_status"] = "skipped"
                     if res.status != "ok":
                         fields.update(ner_status="skipped", resolve_status="skipped", describe_status="skipped")
+                    # The text (and an archive's members) is all the pipeline reads from here on; the
+                    # original is shown from PLACSP. Kept: what OCR or a retry may need again.
+                    if not cfg.keep_files and res.status in DONE_WITH_FILE:
+                        Path(b["path"]).unlink(missing_ok=True)
+                        fields["path"] = None
                     store.update("blob", {"sha": b["sha"]}, **fields)
                     if res.ocr_ms:
                         store.log_call(service="ocr", task="ocr", sha=b["sha"], input_chars=0,

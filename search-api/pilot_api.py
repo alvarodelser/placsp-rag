@@ -7,7 +7,6 @@ the `:Pilot` nodes in Neo4j, and touches nothing the search above uses.
   PILOT_QDRANT_API_KEY      default QDRANT_API_KEY
   PILOT_COLLECTION_PREFIX   default pilot_
   PILOT_NEO4J_LABEL_PREFIX  default Pilot (same Neo4j as graph_api: NEO4J_URL/USER/PASSWORD)
-  PILOT_FILES_DIR           <pilot run dir>/files, to serve the stored documents (optional)
   VECTORIZER_URL            BGE-M3, for semantic search and /ask
 """
 import json
@@ -17,11 +16,10 @@ import unicodedata
 import uuid
 import warnings
 from collections import Counter, defaultdict
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 import pilot_rag
 from graph_api import get_driver
@@ -32,7 +30,6 @@ QDRANT_URL = os.getenv("PILOT_QDRANT_URL", os.getenv("QDRANT_URL", "http://local
 QDRANT_API_KEY = os.getenv("PILOT_QDRANT_API_KEY", os.getenv("QDRANT_API_KEY", ""))
 PREFIX = os.getenv("PILOT_COLLECTION_PREFIX", "pilot_")
 LABEL = os.getenv("PILOT_NEO4J_LABEL_PREFIX", "Pilot")
-FILES_DIR = os.getenv("PILOT_FILES_DIR", "")
 VECTORIZER_URL = os.getenv("VECTORIZER_URL", "http://localhost:8089").rstrip("/")
 
 # Same namespace as pilot/placsp_pilot/index.py, so point ids can be computed instead of searched.
@@ -194,7 +191,7 @@ def tender(tender_id: str):
         raise HTTPException(404, "tender not in the pilot")
     t = pts[0].payload
     for d in t.get("documents") or []:
-        d["stored"] = bool(d.pop("file_path", None))
+        d.pop("file_path", None)          # a pilot path, from indexes built when it kept the files
     return t
 
 
@@ -272,7 +269,7 @@ def document(sha: str, tender: str, start: int = Query(0, ge=0), limit: int = Qu
         focus.sort()
     t = qdrant().retrieve(coll("tenders"), ids=[point_id("tender", tender)], with_payload=["documents", "name"])
     doc = next((d for d in (t[0].payload.get("documents") or []) if d.get("sha256") == sha), {}) if t else {}
-    doc = {k: v for k, v in doc.items() if k != "file_path"} | {"stored": bool(doc.get("file_path")), "tender_name": t[0].payload.get("name") if t else None}
+    doc = {k: v for k, v in doc.items() if k != "file_path"} | {"tender_name": t[0].payload.get("name") if t else None}
     return {"document": doc, "chunks": chunks, "total_chunks": total, "start": start, "entities": ents,
             "boilerplate": _boilerplate(tender, sha), "focus": [{"chunk_idx": c, "at": a} for c, a in focus]}
 
@@ -570,16 +567,3 @@ def answer(q: str, tender_id: str = ""):
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
-@router.get("/file/{sha}")
-def file(sha: str):
-    """A stored document, as downloaded by the pilot (when PILOT_FILES_DIR is mounted)."""
-    if not re.fullmatch(r"[0-9a-f]{64}", sha):
-        raise HTTPException(400, "bad sha256")
-    if not FILES_DIR:
-        raise HTTPException(404, "PILOT_FILES_DIR is not set: use the document's source URL")
-    found = sorted(Path(FILES_DIR, sha[:2]).glob(f"{sha}*"))
-    if not found:
-        raise HTTPException(404, "file not stored")
-    # Stored web pages are shown, never run: a sandbox without scripts or same-origin access.
-    headers = {"Content-Security-Policy": "sandbox"} if found[0].suffix.lower() in (".html", ".htm") else None
-    return FileResponse(found[0], filename=found[0].name, content_disposition_type="inline", headers=headers)

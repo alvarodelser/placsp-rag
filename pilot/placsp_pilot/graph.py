@@ -343,9 +343,11 @@ def build_expediente(g: Graph, store: Store, e) -> dict:
     if title:
         g.nodes[tid]["short_title"] = json.loads(title["result_json"]).get("title")
 
-    rows = store.q("SELECT d.sha, d.role, d.label, d.source, d.published, d.notice_type, d.url, b.bytes, b.ext, b.pages,"
-                   " b.text_chars, b.text_status, b.summary_json, b.ner_chunks_total, b.ner_chunks_selected, b.path"
-                   " FROM docref d LEFT JOIN blob b ON b.sha=d.sha WHERE d.exp_id=? AND d.status='fetched' ORDER BY d.id", (eid,))
+    # A file from inside an archive links to the archive as published (its own url is "zip:…").
+    rows = store.q("SELECT d.sha, d.role, d.label, d.source, d.published, d.notice_type, d.url, p.url AS archive_url,"
+                   " b.bytes, b.ext, b.pages, b.text_chars, b.text_status, b.summary_json, b.ner_chunks_total, b.ner_chunks_selected"
+                   " FROM docref d LEFT JOIN blob b ON b.sha=d.sha LEFT JOIN docref p ON p.id=d.parent_id"
+                   " WHERE d.exp_id=? AND d.status='fetched' ORDER BY d.id", (eid,))
     first: dict[str, dict] = {}
     for r in rows:
         d = dict(r)
@@ -360,8 +362,10 @@ def build_expediente(g: Graph, store: Store, e) -> dict:
     for d in order_documents(list(first.values()), t):
         s = json.loads(d["summary_json"]) if d["summary_json"] else {}
         did = g.node(f"doc:{d['sha']}", "Document", sha256=d["sha"], role=d["role"], title=s.get("headline") or d["label"],
-                     filename=d["label"], source=d["source"], published=d["published"], url=d["url"],
-                     bytes=d["bytes"], ext=d["ext"], pages=d["pages"], chars=d["text_chars"], file_path=d["path"],
+                     filename=d["label"], source=d["source"], published=d["published"],
+                     url=d["archive_url"] if (d["url"] or "").startswith("zip:") else d["url"],
+                     in_archive=(d["url"] or "").startswith("zip:") or None,
+                     bytes=d["bytes"], ext=d["ext"], pages=d["pages"], chars=d["text_chars"],
                      text_status=d["text_status"], summary=s.get("summary"),
                      ner_chunks=d["ner_chunks_total"], ner_chunks_processed=d["ner_chunks_selected"])
         # The tender holds the complete, ordered list; the anchor says what the document is about.

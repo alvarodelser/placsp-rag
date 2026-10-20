@@ -56,9 +56,8 @@ const norm = (s) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
 const terms = (s) => norm(s).split(/[^\p{L}\p{N}.,%€]+/u).map((w) => w.replace(/^[.,]+|[.,]+$/g, ''))
   .filter((w) => w.length >= 4 || /\d/.test(w))
 
-// The sentence of `passage` closest to `claim`, at most `max` characters, with where it starts.
-export function excerpt(passage, claim, max = 240) {
-  const text = passage.replace(/[ \t]+/g, ' ')
+// The passage's sentences ([start, end) offsets in `text`) and the one closest to `claim`.
+function closest(text, claim) {
   const want = new Set(terms(claim))
   const sents = []
   let start = 0
@@ -67,15 +66,44 @@ export function excerpt(passage, claim, max = 240) {
     start = m.index + m[0].length
   }
   sents.push([start, text.length])
-  let best = sents[0], bestScore = -1
-  for (const [a, b] of sents) {
+  let best = 0, bestScore = -1
+  sents.forEach(([a, b], i) => {
     const s = text.slice(a, b).trim()
-    if (s.length < 12) continue
+    if (s.length < 12) return
     const score = terms(s).reduce((k, w) => k + (want.has(w) ? (/\d/.test(w) ? 3 : 1) : 0), 0)
-    if (score > bestScore) { best = [a, b]; bestScore = score }
-  }
-  let [a, b] = best
+    if (score > bestScore) { best = i; bestScore = score }
+  })
+  return { sents, best }
+}
+
+// The sentence of `passage` closest to `claim`, at most `max` characters, with where it starts.
+export function excerpt(passage, claim, max = 240) {
+  const text = passage.replace(/[ \t]+/g, ' ')
+  const { sents, best } = closest(text, claim)
+  const [a, b] = sents[best]
   const raw = text.slice(a, b).trim()
   const cut = raw.length > max ? raw.slice(0, raw.lastIndexOf(' ', max) > 0 ? raw.lastIndexOf(' ', max) : max) : raw
   return { at: a, text: `${a > 0 ? '…' : ''}${cut.replace(/[.;:,]$/, '')}${cut.length < raw.length || b < text.length ? '…' : ''}` }
+}
+
+// The closest sentence with the text around it, up to `max` characters: what the reader needs to
+// judge the citation. Sentences after it are taken first (a heading is followed by what it heads).
+// `hit` is the sentence; `lead` and `tail` say the passage goes on before and after.
+export function context(passage, claim, max = 560) {
+  const text = passage.replace(/[ \t]+/g, ' ')
+  const { sents, best } = closest(text, claim)
+  let [i, j] = [best, best]
+  for (;;) {
+    const after = j + 1 < sents.length && sents[j + 1][1] - sents[i][0] <= max
+    if (after) { j++; continue }
+    const before = i > 0 && sents[j][1] - sents[i - 1][0] <= max
+    if (before) { i--; continue }
+    break
+  }
+  const [a, b] = sents[best]
+  const hit = text.slice(a, b)
+  const cut = hit.length > max ? hit.slice(0, hit.lastIndexOf(' ', max) > 0 ? hit.lastIndexOf(' ', max) : max) : null
+  if (cut) return { before: '', hit: cut, after: '', lead: a > 0, tail: true }
+  return { before: text.slice(sents[i][0], a), hit, after: text.slice(b, sents[j][1]).trimEnd(),
+    lead: sents[i][0] > 0, tail: sents[j][1] < text.length }
 }

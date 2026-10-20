@@ -90,7 +90,7 @@ def _feed_checks(r: Recorder, e, t: dict):
 
 def _doc_checks(r: Recorder, store: Store, e, rec: dict | None):
     eid = e["id"]
-    refs = store.q("SELECT d.*, b.path, b.text_status FROM docref d LEFT JOIN blob b ON b.sha=d.sha WHERE d.exp_id=?", (eid,))
+    refs = store.q("SELECT d.*, b.path, b.sha1_b64, b.text_status FROM docref d LEFT JOIN blob b ON b.sha=d.sha WHERE d.exp_id=?", (eid,))
     expected = [x for x in refs if x["status"] != "skipped" or (x["error"] or "").startswith("too_large")]
     fetched = [x for x in refs if x["status"] == "fetched"]
     # The source answering 4xx/5xx is the platform's problem, recorded apart from the pilot's own failures.
@@ -99,8 +99,10 @@ def _doc_checks(r: Recorder, store: Store, e, rec: dict | None):
               if x["status"] == "pending" or (x["status"] == "failed" and not (x["error"] or "").startswith("http_"))]
     r.check("docs.fetched", not failed, "fail", len(expected) - len(source), len(fetched), "; ".join(failed[:5]))
     r.check("docs.source_errors", not source, "warn", 0, len(source), "; ".join(source[:5]))
-    hashed = [x for x in fetched if x["feed_hash"] and x["path"]]
-    bad = [x["label"] for x in hashed if _sha1_b64(x["path"]) != x["feed_hash"]]
+    # The hash taken at download (the file is deleted after its text is read), else the file's own.
+    sha1 = lambda x: x["sha1_b64"] or (_sha1_b64(x["path"]) if x["path"] and Path(x["path"]).exists() else None)  # noqa: E731
+    hashed = [(x, h) for x in fetched if x["feed_hash"] and (h := sha1(x))]
+    bad = [x["label"] for x, h in hashed if h != x["feed_hash"]]
     r.check("docs.hash", (not bad) if hashed else None, "fail", len(hashed), len(hashed) - len(bad), "; ".join(bad[:5]))
     roles = {x["role"] for x in fetched}
     if e["channel"] in TENDERING and (json.loads(e["tender_json"]).get("status") or {}).get("code") != "PRE":

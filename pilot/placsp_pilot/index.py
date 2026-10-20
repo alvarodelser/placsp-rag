@@ -374,7 +374,7 @@ def index(cfg: PilotConfig, store: Store):
             points = []
             prev_chunk = None
             for d in rec["documents"]:
-                if d.get("text_status") != "ok" or not d.get("file_path"):
+                if d.get("text_status") != "ok":
                     continue
                 tp = store.one("SELECT text_path FROM blob WHERE sha=?", (d["sha256"],))
                 if not tp or not tp["text_path"]:
