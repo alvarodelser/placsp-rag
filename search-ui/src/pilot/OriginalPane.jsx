@@ -3,7 +3,7 @@
 // to a page and marks the quote on it, found in the page's own text layer. A web page (a PLACSP
 // notice) shows in a sandbox; other formats (.doc, .docx…) can only be downloaded.
 import { useEffect, useRef, useState } from 'react'
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker'
 import { fileUrl } from './pilotApi.js'
 import { CircleNotch } from '../icons.js'
 
@@ -11,7 +11,9 @@ let pdfjs = null
 async function lib() {
   if (!pdfjs) {
     pdfjs = await import('pdfjs-dist')
-    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
+    // A bundled worker (a .js file): nginx serves .mjs as application/octet-stream, which a
+    // module worker refuses.
+    pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker()
   }
   return pdfjs
 }

@@ -202,7 +202,7 @@ class Store:
         """Put every failed item back to pending so the next run retries it."""
         stmts = {
             "docref": "UPDATE docref SET status='pending', error=NULL WHERE status='failed'",
-            "summary": "UPDATE blob SET summary_status='pending' WHERE summary_status='failed'",
+            "summarize": "UPDATE blob SET summary_status='pending' WHERE summary_status='failed'",
             "chunk": "UPDATE chunk SET status='pending' WHERE status='failed'",
             "ner": "UPDATE blob SET ner_status='pending' WHERE ner_status IN ('failed','partial')",
             "resolve": "DELETE FROM resolution WHERE status!='ok'",

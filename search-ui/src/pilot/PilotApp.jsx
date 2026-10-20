@@ -5,7 +5,7 @@
 // its own page; "Volver a la búsqueda" comes back to the list and graph as they were left.
 import { useEffect, useState } from 'react'
 import { listTenders, search, health, corpusGraph } from './pilotApi.js'
-import { CHANNEL, THEME, roleEs, shortTitle } from './labels.js'
+import { CHANNEL, roleEs, shortTitle } from './labels.js'
 import { money } from '../format.js'
 import { CircleNotch, X } from '../icons.js'
 import TenderView from './TenderView.jsx'
@@ -20,7 +20,7 @@ const SCOPES = [['tenders', 'Contratos'], ['companies', 'Empresas'], ['authoriti
 
 export default function PilotApp() {
   const route = parse(useHash())
-  const [query, setQuery] = useState({ q: route.params.q || '', scope: 'tenders', theme: '' })
+  const [query, setQuery] = useState({ q: route.params.q || '', scope: 'tenders' })
   const [res, setRes] = useState({ status: 'loading' })
   const [problems, setProblems] = useState([])
 
@@ -32,8 +32,8 @@ export default function PilotApp() {
     let live = true
     setRes({ status: 'loading' })
     const q = query.q.trim()
-    const p = q ? search({ q, scope: query.scope, theme: query.theme })
-      : listTenders({ limit: 200, theme: query.theme }).then((d) => ({ tenders: d.results, organizations: [], latest: true, theme: query.theme }))
+    const p = q ? search({ q, scope: query.scope })
+      : listTenders({ limit: 200 }).then((d) => ({ tenders: d.results, organizations: [], latest: true }))
     p.then((d) => live && setRes({ status: 'done', d })).catch((e) => live && setRes({ status: 'error', e: e.message }))
     return () => { live = false }
   }, [query])
@@ -54,8 +54,7 @@ export default function PilotApp() {
       <main>
         {problems.map(([k, v]) => <div key={k} className="wrap err"><b>{k}</b>: {v}</div>)}
         <div className={`wrap playout ${home ? '' : 'full'}`}>
-          {home && <ResultList res={res} current={current} onOrg={(id) => go(`/c/${encodeURIComponent(id)}`)}
-            theme={query.theme} onTheme={(theme) => setQuery((x) => ({ ...x, theme }))} />}
+          {home && <ResultList res={res} current={current} onOrg={(id) => go(`/c/${encodeURIComponent(id)}`)} />}
           <section className="pmain">
             {home && <Landing res={res} />}
             {route.kind === 't' && !route.doc && <TenderView key={route.id} id={route.id} />}
@@ -86,21 +85,12 @@ function SearchBar({ query, onSearch }) {
   )
 }
 
-function ResultList({ res, current, onOrg, theme, onTheme }) {
-  const themes = (
-    <div className="chips plist-themes">
-      {[['', 'Todos'], ...Object.entries(THEME).map(([k, t]) => [k, t.es])].map(([k, l]) => (
-        <button key={k || 'all'} type="button" className={`chip linkchip ${theme === k ? 'on' : ''}`} onClick={() => onTheme(k)}>
-          {k && <i className="theme-dot" style={{ background: THEME[k].color }} />}{l}</button>
-      ))}
-    </div>
-  )
-  if (res.status === 'loading') return <aside className="plist">{themes}<div className="loading-state"><CircleNotch size={22} className="spinner" /></div></aside>
-  if (res.status === 'error') return <aside className="plist">{themes}<div className="err">{res.e}</div></aside>
+function ResultList({ res, current, onOrg }) {
+  if (res.status === 'loading') return <aside className="plist"><div className="loading-state"><CircleNotch size={22} className="spinner" /></div></aside>
+  if (res.status === 'error') return <aside className="plist"><div className="err">{res.e}</div></aside>
   const { tenders, organizations, latest } = res.d
   return (
     <aside className="plist">
-      {themes}
       <div className="plist-head muted small">
         {latest ? `${tenders.length} expedientes, los últimos primero`
           : `${tenders.length ? `${tenders.length} expedientes` : ''}${tenders.length && organizations.length ? ' · ' : ''}${organizations.length ? `${organizations.length} organizaciones` : ''}` || 'Sin resultados'}
@@ -111,7 +101,6 @@ function ResultList({ res, current, onOrg, theme, onTheme }) {
           <li key={t.tender_id}>
             <button type="button" className={`pitem ${current === t.tender_id ? 'on' : ''}`} onClick={() => go(`/t/${t.tender_id}`)}>
               <span className="pitem-top"><span className="badge">{CHANNEL[t.channel] || t.channel}</span>
-                {(t.themes || []).map((k) => THEME[k] && <span key={k} className="badge theme" style={{ color: THEME[k].color }}>{THEME[k].short}</span>)}
                 <span className="muted">{t.published}</span></span>
               <span className="pitem-name" title={t.name}>{shortTitle(t)}</span>
               <span className="muted small">{t.authority?.name}</span>
@@ -144,8 +133,8 @@ function Landing({ res }) {
   const [graph, setGraph] = useState(null)
   const [selected, setSelected] = useState(null)
   useEffect(() => { corpusGraph({ documents: true }).then(setGraph).catch((e) => setGraph({ error: e.message })) }, [])
-  // A search lights its hits; a theme alone lights its expedientes.
-  const hits = res.status === 'done' && (!res.d.latest || res.d.theme)
+  // A search lights its hits.
+  const hits = res.status === 'done' && !res.d.latest
     ? [...res.d.tenders.map((t) => `tender:${t.tender_id}`), ...res.d.organizations.map((o) => o.id)] : null
 
   function open(n) {

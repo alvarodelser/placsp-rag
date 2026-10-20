@@ -28,7 +28,7 @@ class Services:
 
     def _post(self, service: str, url: str, body: dict, *, task: str, exp_id=None, sha=None,
               input_chars: int = 0, retries: int = 2) -> dict:
-        last = None
+        last, detail = None, ""
         for attempt in range(retries + 1):
             t0 = time.time()
             try:
@@ -48,7 +48,8 @@ class Services:
                 if status is not None and status < 500:
                     break  # a 4xx will not get better on retry
                 time.sleep(2 ** attempt)
-        raise ServiceError(str(last))
+        # The service's own body says why (e.g. its model backend is down); httpx's message does not.
+        raise ServiceError(f"{last} {detail[:300]}".strip())
 
     def summarize(self, profile: str, fields: dict, **kw) -> dict:
         size = sum(len(json.dumps(v, ensure_ascii=False)) for v in fields.values())
