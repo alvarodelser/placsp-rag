@@ -151,7 +151,6 @@ services:
       WEAVIATE_API_KEY: "${WEAVIATE_API_KEY}"
       VECTORIZER_URL: "${SEARCH_VECTORIZER_URL:-http://vectorizer:8089}"
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
-      FEEDBACK_DB: "/data/feedback.db"
       USERS_DB: "/data/users.db"
       SECRET_KEY: "${SECRET_KEY}"
       NEO4J_URL: "bolt://placsp-neo4j:7687"
@@ -204,7 +203,7 @@ volumes:
     name: placsp_weaviate_data   # compose-managed, stable name; persists across down/up
                                  # (removed only by an explicit `docker compose down -v`)
   placsp_feedback_data:
-    name: placsp_feedback_data   # relevance-feedback SQLite; same persistence semantics
+    name: placsp_feedback_data   # users.db (accounts, invite list, saved items); the name is historical — keep it
   placsp_neo4j_data:
     name: placsp_neo4j_data      # company graph; same persistence semantics
   placsp_reranker_data:

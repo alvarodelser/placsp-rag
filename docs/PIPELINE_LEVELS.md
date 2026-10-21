@@ -110,6 +110,76 @@ Now:
 - PCAPs are read in their relevant sections only.
 - On the 50 tenders: 5,209 chunks before, about 2,410 now, with 9% fewer words, since furniture is left out.
 
+## Cost per day, all channels
+
+All four channels for September 2026, per calendar day (30-day averages). The daily volumes come
+from that month's archives run through stage 1 (`stage extract` and `stage build`).
+
+Per-tender costs:
+- **Stage 1.5, mayores and external platforms:** measured on a 50-tender sample (40 mayores,
+  10 external) on a laptop with 4 workers.
+- **Stage 1.5, minor contracts and in-house commissions:** estimated from the size of their
+  documents; they were not in the sample.
+- **Stage 2:** estimated. The NER chunk counts are measured; the time per call is the one
+  measured on the server (gemma4:31b on Ollama, L40, 2 workers) with the old, larger NER schema.
+
+### Daily flow
+
+| Channel | Feed versions/day | New tenders/day | With documents | With pliegos | Docs per tender | Results with ≤1 bid |
+|---|---:|---:|---:|---:|---:|---:|
+| PLACSP mayores | 3,197 | 294 calls (449 awards) | 97% | 89% | 10 | 41% |
+| External platforms | 1,150 | 178 calls (152 awards) | 72% | 72% | 2 | 38% |
+| Minor contracts | 2,254 | 1,301 awards (published already awarded) | 22% | 4% | 1.5 | 85% |
+| In-house commissions | 43 | 26 | 94% (the commission document) | 0% | 1.4 | — |
+| **Total** | **6,644** | **about 1,800** | | | | |
+
+Most minor contracts have no documents, and those that do mostly have just the award notice.
+Stage 1.5 summarises that notice from the feed, with no model; only about 55 a day have pliegos.
+
+### Time per day
+
+| Phase | Mayores (294/day) | External (178/day) | Minor (290/day with docs; 55 with pliegos) | In-house (26/day) | **Total per day** |
+|---|---|---|---|---|---|
+| **1. Feed** | | | | | **about 3 s** to extract (80 s for the whole month, all channels), plus a build of seconds |
+| **1.5 Rules** | 35 s each → 2.9 h | ~15 s each → 0.7 h | ~4 s each → 0.3 h | ~3 s each → 1 min | **about 4 h on a 4-core laptop; about 1 h on a 16-core server** |
+| **2. NLP** (serial call time) | 57 NER chunks each → ~56 min → 274 h | 14 NER chunks → ~15 min → 46 h | ~10 chunks, 55 tenders → ~7 h | ~3 min → 1 h | **about 330 GPU-hours: about 165 h with 2 workers, about 7 L40s working nonstop** |
+
+Stage 1.5 time is mostly text extraction (the layout pass: about 0.34 CPU-seconds per page);
+downloads are about 4 s per tender. With vLLM batching (estimated 5–10× on the same workload),
+stage 2 would be about 17–33 GPU-hours a day, or 1–1.5 GPUs. That is before parsing the actas'
+score tables by rule and before limiting stage 2 to the tenders that matter. Mayores are 80% of
+stage 2's cost.
+
+### Disk per day
+
+| Phase | Mayores | External | Minor | In-house | **Total per day** | **Per year** |
+|---|---|---|---|---|---|---|
+| **1. Feed** | ZIP 9.6 MB, versions 0.8 MB | 0.6 + 0.3 MB | 1.2 + 0.4 MB | ~0 | **about 19 MB** (ZIPs 11.5, versions 6.4, `current/` growth about 1.3) | **about 7 GB** |
+| **1.5 Rules** (text, layout file, raw page, database; files deleted after extraction) | 0.85 MB each → 250 MB | ~0.9 MB → 160 MB | ~0.1 MB → 30 MB | ~0.1 MB → 3 MB | **about 440 MB** | **about 160 GB** |
+| … original files kept as well | +10.9 MB each → 3.2 GB | +20.6 MB → 3.7 GB | small | small | **+about 7 GB** | +2.5 TB |
+| **2. NLP** (database, Qdrant at about 9 KB per indexed chunk, Neo4j) | 2.9 MB each → 850 MB | 3.4 MB → 600 MB | ~0.2 MB → 60 MB | small | **about 1.5 GB** | **about 550 GB** |
+
+### Levers
+
+- **Stage 2 is the cost, and it is mostly NER on mayores pliegos.** The cheapest cuts, in order:
+  1. vLLM serving.
+  2. Parsing the actas' score tables by rule in stage 1.5.
+  3. Running stage 2 only on chosen tenders: themes, saved items, value thresholds.
+- **Disk is mostly the chunk index.** External platforms index 265 chunks per tender, most of which
+  NER never reads. Embedding only the chunks of the roles that matter (pliegos, actas, reports)
+  would roughly halve stage 2's disk use.
+- **Do not keep the original files.** The viewer shows originals from PLACSP, so keeping them adds
+  about 7 GB a day for little benefit.
+
+### How firm these figures are
+
+- **Stage 1, and stage 1.5 for mayores and external platforms:** measured, but on a laptop.
+- **Stage 2:** estimated from per-call times taken with the old NER schema.
+- **Minor contracts and in-house commissions:** estimated, not sampled.
+
+A `rules` plus `nlp` run on the server, over a day's tenders from each channel, would replace the
+estimates with measured figures.
+
 ## Gaps to close next
 
 - **Level 1 → level 2 only via documents:** losing bidders and their offers are never in the feed. They need actas (level 1.5) and NER (level 2).

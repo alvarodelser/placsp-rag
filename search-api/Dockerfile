@@ -2,14 +2,13 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY search_api.py filters.py facets.py feedback.py graph_api.py pilot_api.py pilot_rag.py pilot_lexical.py auth.py users.py manage_users.py ./
-# Stamp the deployed commit so feedback rows record which build produced them.
+COPY search_api.py filters.py facets.py graph_api.py pilot_api.py pilot_rag.py pilot_lexical.py auth.py users.py manage_users.py ./
+# Stamp the deployed commit; /api/health reports it.
 # compose passes this from $APP_VERSION (see docker-compose.yml build.args); the
 # bare image defaults to "unknown" if built without the arg.
 ARG APP_VERSION=unknown
 ENV APP_VERSION=$APP_VERSION
-# Relevance-feedback SQLite lives on a mounted volume so it survives container recreation.
-ENV FEEDBACK_DB=/data/feedback.db
+# The users SQLite (accounts, invite list, saved items) lives on a mounted volume.
 RUN mkdir -p /data
 EXPOSE 8092
 HEALTHCHECK --interval=20s --timeout=5s --retries=5 --start-period=10s \

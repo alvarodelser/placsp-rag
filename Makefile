@@ -1,7 +1,7 @@
 # PLACSP deployment helpers.
-# APP_VERSION is the git commit baked into the search-api image so relevance
-# feedback rows record which build produced them. Computed automatically here,
-# so no .env editing is needed.
+# APP_VERSION is the git commit baked into the search-api image; /api/health reports
+# it, so you can see which build is deployed. Computed automatically here, so no .env
+# editing is needed.
 export APP_VERSION := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 .PHONY: deploy build up down ps logs version

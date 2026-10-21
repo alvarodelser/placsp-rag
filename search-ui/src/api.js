@@ -50,31 +50,6 @@ export const typeDist     = tabFetcher('/api/facets/type')
 export const procedureDist= tabFetcher('/api/facets/procedure')
 export const cpvDist      = tabFetcher('/api/facets/cpv')
 
-async function feedbackRequest(method, body) {
-  const r = await fetch(`${BASE}/api/feedback`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.detail || r.statusText || 'request failed')
-  return data
-}
-
-// Record a "relevant" judgment on one result. `payload` carries the search
-// context (query/mode/filters + the shown results snapshot) plus the liked id.
-export function sendFeedback(payload) {
-  return feedbackRequest('POST', payload)
-}
-
-// Toggle a "relevant" judgment off.
-export function removeFeedback({ search_id, result_id }) {
-  return feedbackRequest('DELETE', { search_id, result_id })
-}
-
-
-// ── Auth ────────────────────────────────────────────────────────────────────
-
 export async function authRegister({ email, password, display_name }) {
   const r = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',

@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import App from '../App.jsx'
 
+// The app runs behind sign-in: render it as a signed-in user.
+vi.mock('../AuthContext.jsx', () => ({
+  useAuth: () => ({ user: { email: 'a@b.es', display_name: 'A' }, savedIds: new Set(), toggleSave: () => {},
+                    logout: () => {} }),
+}))
+
 beforeEach(() => {
   vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
     const body = String(url).includes('/api/facets')

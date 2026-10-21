@@ -1,7 +1,7 @@
 """User persistence — SQLite.
 
 Stores user accounts, refresh tokens, saved licitaciones, and behavioural
-events.  Follows the same raw ``sqlite3`` pattern as ``feedback.py``:
+events.  Plain ``sqlite3``:
 Row factory, busy_timeout, schema-init on connect.
 
 See docs/auth_explainer.md for the plain-language description.
