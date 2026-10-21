@@ -36,19 +36,6 @@ CLASS_DEF = {
     "properties": _props(),
 }
 
-COMPANY_CLASS_DEF = {
-    "class": "Placsp_companies",
-    "description": "Companies involved in public procurement.",
-    "vectorizer": "none",
-    "vectorIndexConfig": {"distance": "cosine"},
-    "invertedIndexConfig": {"bm25": {"b": 0.75, "k1": 1.2}},
-    "properties": [
-        {"name": "nif", "dataType": ["text"]},
-        {"name": "name", "dataType": ["text"]},
-        {"name": "description", "dataType": ["text"]}
-    ],
-}
-
 PLIEGO_CRITERIA_CLASS_DEF = {
     "class": "Placsp_pliego_criteria",
     "vectorizer": "none",
@@ -57,29 +44,8 @@ PLIEGO_CRITERIA_CLASS_DEF = {
         {"name": "syndication_id", "dataType": ["text"]},
         {"name": "expediente", "dataType": ["text"]},
         {"name": "criteria_json", "dataType": ["text"]},
-        {"name": "criteria_summary", "dataType": ["text"]},
         {"name": "source_url", "dataType": ["text"]},
-        # Per-licitación extraction cache (shared across users): the LLM-parsed
-        # PCAP/PPT requirements, computed once and reused for every match.
-        {"name": "pcap_json", "dataType": ["text"]},
-        {"name": "ppt_json", "dataType": ["text"]},
-        {"name": "pliegos_extracted_at", "dataType": ["date"]},
         {"name": "extracted_at", "dataType": ["date"]},
-    ],
-}
-
-PLIEGO_CHUNKS_CLASS_DEF = {
-    "class": "Placsp_pliego_chunks",
-    "vectorizer": "none",
-    "vectorIndexConfig": {"distance": "cosine"},
-    "properties": [
-        {"name": "syndication_id", "dataType": ["text"]},
-        {"name": "expediente", "dataType": ["text"]},
-        {"name": "pliego_type", "dataType": ["text"]},
-        {"name": "chunk_index", "dataType": ["int"]},
-        {"name": "chunk_title", "dataType": ["text"]},
-        {"name": "chunk_text", "dataType": ["text"]},
-        {"name": "source_pdf_url", "dataType": ["text"]},
     ],
 }
 

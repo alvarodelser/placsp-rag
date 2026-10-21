@@ -1,4 +1,3 @@
-import json
 import uuid
 import httpx
 import structlog
@@ -17,13 +16,6 @@ class Upserter:
         self.batch_size = batch_size
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._c = httpx.Client(timeout=timeout, transport=transport, headers=headers)
-
-    def get_stored(self, sid: str):
-        r = self._c.get(f"{self.base}/v1/objects/{self.cls}/{object_uuid(sid)}")
-        if r.status_code == 404:
-            return None
-        r.raise_for_status()
-        return r.json().get("properties", {})
 
     def upsert(self, records: list[ProcurementRecord], vectors: list[list[float]]) -> int:
         return self.upsert_rendered([r.syndication_id for r in records], [render(r)[1] for r in records], vectors)
@@ -61,20 +53,3 @@ class Upserter:
             if len(failed) > 3:
                 log.warning("batch_object_failed", additional=len(failed) - 3)
         return len(objects) - len(failed)
-
-    def get_props(self, class_name: str, key: str, values: list[str], fields) -> dict[str, dict]:
-        """{key value: {field: value}} for the objects whose `key` property is one of values,
-        non-empty fields only (objects with none of them are left out)."""
-        if not values:
-            return {}
-        where = '{ path: ["%s"], operator: ContainsAny, valueText: %s }' % (key, json.dumps(values))
-        gql = "{ Get { %s(where: %s, limit: %d) { %s %s } } }" % (
-            class_name, where, len(values), key, " ".join(fields))
-        r = self._c.post(f"{self.base}/v1/graphql", json={"query": gql})
-        r.raise_for_status()
-        body = r.json()
-        if body.get("errors"):
-            raise RuntimeError(f"weaviate: {body['errors'][0].get('message')}")
-        hits = ((body.get("data") or {}).get("Get") or {}).get(class_name) or []
-        out = {h[key]: {k: h[k] for k in fields if h.get(k) not in (None, "")} for h in hits}
-        return {k: v for k, v in out.items() if v}

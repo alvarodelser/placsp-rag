@@ -268,7 +268,7 @@ From sections 3–6, the document stage is needed for:
 2. **Requirement content behind pointers.** About half of the solvency requirements say "see the
    PCAP". The thresholds, years of experience, team sizes and accepted credentials are in the PCAP.
 3. **The technical specifications (PPT).** Deliverables, team profiles, technologies, service levels.
-   Nothing of this is in the feed. This is what profile matching will need most.
+   Nothing of this is in the feed. This is what matching companies to tenders (stage 3) will need most.
 4. **Penalties, full scoring formulas, envelopes, offer validity, bid opening.**
 5. **The three thin channels.** Regional platforms (only 46% have a PCAP link), minor contracts
    and in-house commissions publish no criteria or requirements at all. Minor contracts and
@@ -389,14 +389,19 @@ Ingestion now runs entirely through staging. `./scripts/placsp backfill | daily 
 **Load** (`src/placsp/staging/load.py`) turns each tender of the `current` tables into the
 record the search index has always held (same properties, same summary text, same object id),
 embeds it and writes it to Weaviate and to the company graph. It also writes the
-`Placsp_pliego_criteria` object read by the pliegos modal and by the profile match, now built
-from the feed's structured terms instead of the scraped web page, with more in it (solvency
-requirements with thresholds, minimum years of operation, criteria per lot with their type).
-The LLM extraction cached on that object (`pcap_json`, `ppt_json`) is carried over on reload. Only
-tenders that changed since the last load are loaded again (`data/loaded.duckdb`).
+`Placsp_pliego_criteria` object read by the pliegos modal, now built from the feed's structured
+terms instead of the scraped web page, with more in it (solvency requirements with thresholds,
+minimum years of operation, criteria per lot with their type, the document links). Only tenders
+that changed since the last load are loaded again (`data/loaded.duckdb`).
 
-The analysis endpoint (`placsp.api`) reads the pliego links from that criteria object instead of
-fetching the web page again.
+**Profile matching removed** (2026-10-21). It is stage 3 and not built yet; what existed was an
+early version that downloaded the PCAP and PPT, had an LLM extract from them and compared the
+result with a self-declared company profile. Document analysis is now the pilot's job (levels 2
+and 3, [PIPELINE_LEVELS.md](PIPELINE_LEVELS.md)). Gone with it: the `placsp-ingester-api`
+container (it only ran that analysis), `placsp.api`, `ai/nlp_pipeline.py`, `ai/extractor.py`, the
+prompts, the profile and analysis endpoints and tables of search-api, the profile screen and the
+analysis tabs of the UI, and the two Weaviate classes nothing ever wrote to (`Placsp_companies`,
+`Placsp_pliego_chunks`).
 
 Removed: `ingestion/` (pipeline, `collapse`, page scraping, fetcher), `parsers/atom_parser.py`,
 `parsers/codice_extractor.py`, `parsers/pliego_html_parser.py`, `core/catalog.py`,

@@ -94,20 +94,16 @@ def test_build_merges_versions_across_archives(tmp_path):
 
 
 class _FakeWeaviate:
-    """Records batch writes; answers the criteria lookup with a cached LLM extraction for one id."""
-    def __init__(self, cached_id=None):
-        self.objects, self.cached_id = {}, cached_id
+    """Records batch writes."""
+    def __init__(self):
+        self.objects = {}
 
     def __call__(self, req):
-        body = json.loads(req.content) if req.content else {}
         if req.url.path.endswith("/v1/batch/objects"):
-            for o in body["objects"]:
+            objs = json.loads(req.content)["objects"]
+            for o in objs:
                 self.objects[o["id"]] = o
-            return httpx.Response(200, json=[{"id": o["id"], "result": {"status": "SUCCESS"}} for o in body["objects"]])
-        if req.url.path.endswith("/v1/graphql"):
-            hits = [{"syndication_id": self.cached_id, "pcap_json": '{"penalidades": "x"}', "ppt_json": None,
-                     "pliegos_extracted_at": None}] if self.cached_id and f'"{self.cached_id}"' in body["query"] else []
-            return httpx.Response(200, json={"data": {"Get": {"Placsp_pliego_criteria": hits}}})
+            return httpx.Response(200, json=[{"id": o["id"], "result": {"status": "SUCCESS"}} for o in objs])
         return httpx.Response(404)
 
 
@@ -128,7 +124,7 @@ def test_load_writes_records_and_criteria_then_only_changes(staged, tmp_path):
     d = str(tmp_path / "d")
     shutil.copytree(staged, d)
     sid = duckdb.sql(f"SELECT entry_id FROM read_parquet('{d}/current/criterion.parquet') LIMIT 1").fetchone()[0]
-    wv = _FakeWeaviate(cached_id=sid)
+    wv = _FakeWeaviate()
     stats = _loader(d, wv).load()
     n = duckdb.sql(f"SELECT count(*) FROM read_parquet('{d}/current/tender.parquet')").fetchone()[0]
     assert stats["tenders"] == n and stats["failed_chunks"] == 0
@@ -137,9 +133,8 @@ def test_load_writes_records_and_criteria_then_only_changes(staged, tmp_path):
     assert len(lic) == n and all(o["vector"] == [0.1] * 4 for o in lic)
     rec = wv.objects[object_uuid(sid)]["properties"]
     assert rec["syndication_id"] == sid and rec["content"].startswith("Contrato")
-    c = crit[criteria_uuid(sid)]["properties"]
-    assert json.loads(c["criteria_json"])["criterios_adjudicacion"]
-    assert c["pcap_json"] == '{"penalidades": "x"}'           # the cached LLM extraction survives the reload
+    c = json.loads(crit[criteria_uuid(sid)]["properties"]["criteria_json"])
+    assert c["criterios_adjudicacion"] and c["fuente"] == "feed"
     wv.objects.clear()
     assert _loader(d, wv).load()["tenders"] == 0                 # nothing changed: nothing reloaded
     assert wv.objects == {}

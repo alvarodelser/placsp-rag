@@ -39,15 +39,3 @@ def test_upsert_chunks_large_batches():
     n = up.upsert(recs, vecs)
     assert n == 5
     assert posts == [2, 2, 1]
-
-def test_get_props_returns_existing_objects_by_id():
-    seen = {}
-    def handler(req):
-        seen["q"] = json.loads(req.content)["query"]
-        return httpx.Response(200, json={"data": {"Get": {"Placsp_pliego_criteria": [
-            {"syndication_id": "1", "pcap_json": "{}", "ppt_json": None},
-            {"syndication_id": "2", "pcap_json": None, "ppt_json": ""}]}}})
-    up = Upserter("http://wv:8086", "k", "Placsp_licitaciones", transport=httpx.MockTransport(handler))
-    got = up.get_props("Placsp_pliego_criteria", "syndication_id", ["1", "2", "3"], ("pcap_json", "ppt_json"))
-    assert got == {"1": {"pcap_json": "{}"}}                      # empty fields, and objects with none, left out
-    assert 'path: ["syndication_id"], operator: ContainsAny' in seen["q"] and "limit: 3" in seen["q"]

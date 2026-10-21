@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { listSaved } from '../api.js'
-import { X, Bookmark, LoaderCircle, Sparkles } from '../icons.js'
+import { X, Bookmark, LoaderCircle, FileText } from '../icons.js'
 import PliegosModal from './PliegosModal.jsx'
 
 export default function SavedSpace({ onClose, onRemove }) {
@@ -88,9 +88,9 @@ export default function SavedSpace({ onClose, onRemove }) {
                     setActiveAnalysisTitle(item.title || item.syndication_id)
                   }}
                   style={{ background: '#ebf8ff', color: '#2b6cb0', border: '1px solid #bee3f8', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
-                  title="Análisis Inteligente (AI)"
+                  title="Pliego: datos de la plataforma"
                 >
-                  <Sparkles size={12} className="ico" /> AI
+                  <FileText size={12} className="ico" /> Pliego
                 </button>
                 <button
                   type="button"

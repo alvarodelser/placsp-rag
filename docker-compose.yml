@@ -133,29 +133,6 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
-  # ── Ingester API ──────────────────────────────────────────────────────────
-  placsp-ingester-api:
-    build:
-      context: .
-      dockerfile: deploy/ingester/Dockerfile
-    container_name: placsp-ingester-api
-    command: uvicorn placsp.api:app --host 0.0.0.0 --port 8093
-    volumes:
-      - ./src:/app/src
-      # Shared with the search-api: the NLP pipeline reads user profiles from
-      # and writes match results to /data/users.db.
-      - placsp_feedback_data:/data
-    env_file:
-      - .env
-    environment:
-      USERS_DB: "/data/users.db"
-    expose:
-      - "8093"
-    restart: unless-stopped
-    depends_on:
-      - placsp-weaviate
-      - placsp-init-schema
-
   # ── Search API (FastAPI / uvicorn) ────────────────────────────────────────
   placsp-search-api:
     build:

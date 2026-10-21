@@ -16,7 +16,6 @@ import json
 import os
 import sqlite3
 import subprocess
-import urllib.parse
 import logging
 
 log = logging.getLogger(__name__)
@@ -216,55 +215,10 @@ def search(
     return {"total": total, "offset": offset, "results": results, "errors": data.get("errors")}
 
 
-@app.get("/api/weaviate/company/search")
-def weaviate_company_search(
-    q: str,
-    k: int = Query(10, ge=1, le=50),
-    alpha: float = Query(0.5, ge=0.0, le=1.0)
-):
-    """Semantic search against Placsp_companies to find a company by description."""
-    query = q.strip()
-    if not query:
-        return {"results": []}
-        
-    try:
-        vector = _embed(query)
-    except httpx.HTTPError as exc:
-        raise HTTPException(502, f"vectorizer error: {exc}")
-
-    args = [
-        f"hybrid: {{ query: {json.dumps(query)}, alpha: {alpha}, vector: {json.dumps(vector)} }}",
-        f"limit: {k}"
-    ]
-    clause = ", ".join(args)
-    fields = "nif name description _additional { id score }"
-    
-    gql = f"{{ Get {{ Placsp_companies({clause}) {{ {fields} }} }} }}"
-    try:
-        r = httpx.post(f"{WEAVIATE_URL}/v1/graphql", json={"query": gql},
-                       headers=_wv_headers(), timeout=120)
-        r.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise HTTPException(502, f"weaviate error: {exc}")
-
-    data = r.json()
-    if data.get("errors"):
-        raise HTTPException(500, f"weaviate query errors: {data['errors']}")
-        
-    hits = ((data.get("data") or {}).get("Get") or {}).get("Placsp_companies") or []
-    results = []
-    for h in hits:
-        add = h.pop("_additional", {}) or {}
-        h["_id"] = add.get("id")
-        h["_score"] = add.get("score")
-        results.append(h)
-        
-    return {"query": q, "count": len(results), "results": results}
-
-
 @app.get("/api/pliegos/{syndication_id:path}")
-def get_pliegos_analysis(syndication_id: str):
-    """Fetch AI extracted pliegos criteria and analysis for a given licitación."""
+def get_pliegos(syndication_id: str):
+    """The platform criteria of a licitación (award criteria, guarantees, solvency, documents),
+    loaded from the feed by the staging load."""
     # Weaviate query for Placsp_pliego_criteria
     where = f'{{ path: ["syndication_id"], operator: Equal, valueText: {json.dumps(syndication_id)} }}'
     fields = "syndication_id expediente criteria_json extracted_at"
@@ -283,7 +237,7 @@ def get_pliegos_analysis(syndication_id: str):
         
     hits = ((data.get("data") or {}).get("Get") or {}).get("Placsp_pliego_criteria") or []
     if not hits:
-        raise HTTPException(404, "Pliegos analysis not found for this syndication_id")
+        raise HTTPException(404, "No platform criteria for this syndication_id")
         
     hit = hits[0]
     
@@ -294,45 +248,6 @@ def get_pliegos_analysis(syndication_id: str):
         hit["criteria"] = {}
         
     return hit
-
-
-def _queue_nlp_analysis(conn, *, user_id: str, item_id: str,
-                        syndication_id: str) -> None:
-    """Mark the analysis pending and hand it off to the ingester.  Raises
-    ``httpx.HTTPError`` if the ingester rejects or is unreachable."""
-    users.mark_analysis_pending(conn, user_id=user_id, item_id=item_id)
-    try:
-        r = httpx.post(
-            f"http://placsp-ingester-api:8093/internal/analyze/{urllib.parse.quote(syndication_id)}",
-            json={"user_id": user_id, "item_id": item_id},
-            timeout=5,
-        )
-        r.raise_for_status()
-    except httpx.HTTPError as e:
-        users.mark_analysis_failed(conn, user_id=user_id, item_id=item_id,
-                                   reason=f"No se pudo encolar el análisis: {e}")
-        raise
-
-
-@app.post("/api/pliegos/{syndication_id:path}/analyze")
-def trigger_pliegos_analysis(syndication_id: str,
-                             current: dict = Depends(auth.get_current_user)):
-    """(Re-)runs the NLP analysis for a licitación the user has saved."""
-    conn = _users_conn()
-    try:
-        item = users.get_saved_item(conn, user_id=current["user_id"],
-                                    syndication_id=syndication_id)
-        if not item:
-            raise HTTPException(404, "Guarda la licitación antes de analizarla.")
-        try:
-            _queue_nlp_analysis(conn, user_id=current["user_id"],
-                                item_id=item["item_id"],
-                                syndication_id=syndication_id)
-        except httpx.HTTPError as e:
-            raise HTTPException(502, f"Failed to trigger internal analysis: {e}")
-    finally:
-        conn.close()
-    return {"status": "accepted"}
 
 
 _FILTER_PARAMS = dict(
@@ -675,28 +590,6 @@ def delete_feedback(body: FeedbackDel):
     return {"ok": True}
 
 
-@app.get("/api/users/me/profile")
-def get_profile(current: dict = Depends(auth.get_current_user)):
-    """Get the current user's profile."""
-    conn = _users_conn()
-    try:
-        profile = users.get_user_profile(conn, current["user_id"])
-    finally:
-        conn.close()
-    return {"profile": profile}
-
-
-@app.put("/api/users/me/profile")
-def update_profile(body: dict, current: dict = Depends(auth.get_current_user)):
-    """Update the current user's profile."""
-    conn = _users_conn()
-    try:
-        users.update_user_profile(conn, current["user_id"], body)
-    finally:
-        conn.close()
-    return {"ok": True}
-
-
 # ── Saved items ────────────────────────────────────────────────────────────
 
 
@@ -921,32 +814,10 @@ def save_user_item(body: SaveItemIn,
             conn, user_id=current["user_id"],
             event_type="save", item_id=body.item_id,
         )
-        # Trigger NLP pipeline asynchronously
-        if body.syndication_id:
-            try:
-                _queue_nlp_analysis(
-                    conn, user_id=current["user_id"], item_id=body.item_id,
-                    syndication_id=body.syndication_id,
-                )
-            except Exception as e:
-                log.warning(f"failed_to_trigger_nlp: {e}")
     finally:
         conn.close()
 
     return {"ok": True, "item": item}
-
-
-@app.get("/api/users/me/saved/{item_id}/analysis")
-def get_user_item_analysis(item_id: str, current: dict = Depends(auth.get_current_user)):
-    """Get the AI analysis (MatchResult) for a saved item."""
-    conn = _users_conn()
-    try:
-        analysis = users.get_item_analysis(conn, current["user_id"], item_id)
-        if not analysis:
-            raise HTTPException(404, "Analysis not found or pending.")
-        return analysis
-    finally:
-        conn.close()
 
 
 @app.delete("/api/users/me/saved/{item_id}")

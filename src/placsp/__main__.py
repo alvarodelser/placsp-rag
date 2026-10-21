@@ -57,15 +57,10 @@ def main(argv=None):
         _stage(cfg, steps, args.channel, args.year, args.workers, args.memory)
         return
     if args.cmd == "init-schema":
-        from placsp.storage.weaviate_schema import CLASS_DEF, COMPANY_CLASS_DEF, PLIEGO_CRITERIA_CLASS_DEF, PLIEGO_CHUNKS_CLASS_DEF
-        created_lic = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, cfg.weaviate_class, class_def=CLASS_DEF, timeout=cfg.request_timeout)
-        created_comp = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, "Placsp_companies", class_def=COMPANY_CLASS_DEF, timeout=cfg.request_timeout)
-        created_pliego_crit = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, "Placsp_pliego_criteria", class_def=PLIEGO_CRITERIA_CLASS_DEF, timeout=cfg.request_timeout)
-        created_pliego_chunk = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, "Placsp_pliego_chunks", class_def=PLIEGO_CHUNKS_CLASS_DEF, timeout=cfg.request_timeout)
-        print("licitaciones:", "created" if created_lic else "exists")
-        print("companies:", "created" if created_comp else "exists")
-        print("pliego criteria:", "created" if created_pliego_crit else "exists")
-        print("pliego chunks:", "created" if created_pliego_chunk else "exists")
+        from placsp.storage.weaviate_schema import CLASS_DEF, PLIEGO_CRITERIA_CLASS_DEF
+        for name, d in ((cfg.weaviate_class, CLASS_DEF), ("Placsp_pliego_criteria", PLIEGO_CRITERIA_CLASS_DEF)):
+            created = ensure_class(cfg.weaviate_url, cfg.weaviate_api_key, name, class_def=d, timeout=cfg.request_timeout)
+            print(name, "created" if created else "exists")
         return
     if args.cmd == "init-graph":
         gs = _graph_sink(cfg)

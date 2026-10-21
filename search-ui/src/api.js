@@ -169,28 +169,6 @@ export async function getSavedIds() {
 }
 
 
-// ── User profile ────────────────────────────────────────────────────────────
-
-export async function getProfile() {
-  const r = await fetch(`${BASE}/api/users/me/profile`, { credentials: 'include' })
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.detail || r.statusText || 'fetch profile failed')
-  return data
-}
-
-export async function updateProfile(profile) {
-  const r = await fetch(`${BASE}/api/users/me/profile`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(profile),
-  })
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.detail || r.statusText || 'save profile failed')
-  return data
-}
-
-
 // ── Pliegos ─────────────────────────────────────────────────────────────────
 
 export async function getPliegos(syndicationId) {
@@ -203,24 +181,3 @@ export async function getPliegos(syndicationId) {
   return data
 }
 
-export async function triggerPliegosAnalysis(syndicationId) {
-  const r = await fetch(`${BASE}/api/pliegos/${encodeURIComponent(syndicationId)}/analyze`, {
-    method: 'POST',
-    credentials: 'include',
-  })
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.detail || r.statusText || 'failed to trigger analysis')
-  return data
-}
-
-export async function getSavedAnalysis(itemId) {
-  const r = await fetch(`${BASE}/api/users/me/saved/${encodeURIComponent(itemId)}/analysis`, {
-    credentials: 'include'
-  })
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) {
-    if (r.status === 404) return null;
-    throw new Error(data.detail || r.statusText || 'fetch analysis failed')
-  }
-  return data
-}

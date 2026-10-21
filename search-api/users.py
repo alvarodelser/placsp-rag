@@ -52,26 +52,6 @@ CREATE TABLE IF NOT EXISTS user_events (
     ts              TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS user_profiles (
-    user_id         TEXT PRIMARY KEY REFERENCES users(user_id),
-    profile_json    TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS saved_items_analysis (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id         TEXT NOT NULL REFERENCES users(user_id),
-    item_id         TEXT NOT NULL,
-    pcap_json       TEXT,
-    ppt_json        TEXT,
-    veredicto       TEXT,
-    razonamiento    TEXT,
-    requisitos_evaluados TEXT,
-    status          TEXT NOT NULL DEFAULT 'pending',
-    analyzed_at     TEXT NOT NULL,
-    UNIQUE(user_id, item_id)
-);
-
 -- Invite-only: the emails that may create an account and sign in (manage_users.py).
 CREATE TABLE IF NOT EXISTS allowed_emails (
     email           TEXT PRIMARY KEY,         -- lower case
@@ -79,12 +59,6 @@ CREATE TABLE IF NOT EXISTS allowed_emails (
     added_at        TEXT NOT NULL
 );
 """
-
-# Idempotent ALTERs for DBs created before the column existed.
-_MIGRATIONS = [
-    "ALTER TABLE saved_items_analysis ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'",
-]
-
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -98,11 +72,6 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
-    for stmt in _MIGRATIONS:
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError:
-            pass  # column already exists
     conn.commit()
 
 
@@ -296,79 +265,3 @@ def log_event(conn: sqlite3.Connection, *, user_id: str, event_type: str,
          json.dumps(context) if context else None, _now()),
     )
     conn.commit()
-
-# ── User Profiles ──────────────────────────────────────────────────────────
-
-def get_user_profile(conn: sqlite3.Connection, user_id: str) -> dict:
-    row = conn.execute("SELECT profile_json FROM user_profiles WHERE user_id = ?", (user_id,)).fetchone()
-    if row and row["profile_json"]:
-        return json.loads(row["profile_json"])
-    return {}
-
-def update_user_profile(conn: sqlite3.Connection, user_id: str, profile: dict) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO user_profiles (user_id, profile_json, updated_at) VALUES (?, ?, ?)",
-        (user_id, json.dumps(profile), _now())
-    )
-    conn.commit()
-
-# ── Saved Items Analysis ───────────────────────────────────────────────────
-
-def save_item_analysis(conn: sqlite3.Connection, *, user_id: str, item_id: str,
-                       pcap_json: dict, ppt_json: dict, match_result: dict) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO saved_items_analysis "
-        "(user_id, item_id, pcap_json, ppt_json, veredicto, razonamiento, requisitos_evaluados, status, analyzed_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, 'done', ?)",
-        (user_id, item_id, json.dumps(pcap_json), json.dumps(ppt_json),
-         match_result.get("veredicto"), match_result.get("razonamiento_general"), json.dumps(match_result.get("requisitos_evaluados", [])), _now())
-    )
-    conn.commit()
-
-
-def mark_analysis_pending(conn: sqlite3.Connection, *, user_id: str,
-                          item_id: str) -> None:
-    """Record that an analysis was queued, without clobbering previous results."""
-    conn.execute(
-        "INSERT INTO saved_items_analysis (user_id, item_id, status, analyzed_at) "
-        "VALUES (?, ?, 'pending', ?) "
-        "ON CONFLICT(user_id, item_id) DO UPDATE SET "
-        "status='pending', analyzed_at=excluded.analyzed_at",
-        (user_id, item_id, _now()),
-    )
-    conn.commit()
-
-
-def mark_analysis_failed(conn: sqlite3.Connection, *, user_id: str,
-                         item_id: str, reason: str = "") -> None:
-    """Flip a queued analysis to failed (e.g. the ingester was unreachable)."""
-    conn.execute(
-        "UPDATE saved_items_analysis SET status='failed', razonamiento=?, "
-        "analyzed_at=? WHERE user_id = ? AND item_id = ?",
-        (reason[:500], _now(), user_id, item_id),
-    )
-    conn.commit()
-
-
-def get_saved_item(conn: sqlite3.Connection, *, user_id: str,
-                   syndication_id: str) -> dict | None:
-    """Return the user's active saved item for a syndication_id, if any."""
-    row = conn.execute(
-        "SELECT item_id, syndication_id, title FROM saved_items "
-        "WHERE user_id = ? AND syndication_id = ? AND removed_at IS NULL",
-        (user_id, syndication_id),
-    ).fetchone()
-    return _row_to_dict(row)
-
-def get_item_analysis(conn: sqlite3.Connection, user_id: str, item_id: str) -> dict | None:
-    row = conn.execute(
-        "SELECT * FROM saved_items_analysis WHERE user_id = ? AND item_id = ?",
-        (user_id, item_id)
-    ).fetchone()
-    if not row:
-        return None
-    d = dict(row)
-    d["pcap_json"] = json.loads(d["pcap_json"]) if d["pcap_json"] else {}
-    d["ppt_json"] = json.loads(d["ppt_json"]) if d["ppt_json"] else {}
-    d["requisitos_evaluados"] = json.loads(d["requisitos_evaluados"]) if d["requisitos_evaluados"] else []
-    return d

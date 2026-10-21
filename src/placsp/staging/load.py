@@ -2,8 +2,8 @@
 
 Each tender becomes the ProcurementRecord the search app has always read (same properties, same
 Spanish summary, same object id), plus a Placsp_pliego_criteria object with the platform criteria
-in the shape the pliegos modal and the profile match read (criteria_json) — built from the feed's
-structured terms instead of scraping the tender's web page.
+(criteria_json: award criteria, guarantees, solvency, conditions, document links) that the pliegos
+modal reads — built from the feed's structured terms.
 
 Only tenders that changed since they were last loaded are loaded again: loaded.duckdb keeps a
 fingerprint per tender (its latest update, its removal marker and LOAD_VERSION). Bump LOAD_VERSION
@@ -255,12 +255,6 @@ class Loader:
                     "criteria_json": json.dumps(c, ensure_ascii=False), "source_url": rec.source_url or "",
                     "extracted_at": now}})
         if crit:
-            # A batch write replaces the object: keep the per-tender LLM extraction cached on it.
-            cached = self.upserter.get_props(CRITERIA_CLASS, "syndication_id",
-                                             [o["properties"]["syndication_id"] for o in crit],
-                                             ("pcap_json", "ppt_json", "pliegos_extracted_at"))
-            for o in crit:
-                o["properties"].update(cached.get(o["properties"]["syndication_id"], {}))
             self.upserter.post_batch_raw(crit)
         if self.graph is not None:
             self.graph.upsert(recs)
