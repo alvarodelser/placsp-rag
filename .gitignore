@@ -1,4 +1,5 @@
 work/
+data/
 /codelists/
 *.zip
 /head*.atom

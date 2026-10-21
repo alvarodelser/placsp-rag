@@ -29,18 +29,27 @@ discover     detail pages: PLACSP notices (html/xml/pdf, one kept) and "otros do
 fetch        every document referenced by the feed (PCAP, PPT, anexos, documentos generales,
              actas and contratos attached to notices) and by the detail pages; deduplicated by SHA-256
 text         pdf, html, doc/docx/odt, xls/xlsx, pptx, bc3, rtf, zip (members become documents);
-             OCR for PDFs without a text layer
+             OCR for PDFs without a text layer. PDFs of the roles where structure matters (pliegos,
+             actas, reports, resolutions, contracts…) get the layout pass: Markdown with headings,
+             tables as rows and reading order, and where the page headers, footers, headings and
+             tables are (<sha>.layout.json beside the text)
 classify     /nli for documents the rules could not label
 summarize    /summarize article: one gist per document
-ner          /ner on ~512-word chunks with ontology/placsp_procurement.yaml (every document is
-             chunked and stored; NER reads up to PILOT_NER_MAX_CHUNKS per document)
-mentions     every NER item becomes a mention, located in its chunk (offsets, page)
+ner          /ner on ~512-word chunks, with the schema of the document's role (ontology `profiles`):
+             only what the feed does not give. Every document is chunked and stored; NER reads
+             the roles a profile lists, a PCAP only in its relevant sections, up to
+             PILOT_NER_MAX_CHUNKS per document
+mentions     every NER item becomes a mention, located in its chunk (offsets, page); then
+             locate.py finds the feed's own entities in the text without the model (see "Entities")
 resolve      per expediente: feed anchors, keys, near-identical names, then /resolve type by
              type over all documents -> one entity per real thing (see "Entities" below)
 coref        /coref/links on the passages that carry references ("la empresa", "la adjudicataria",
              "dicha entidad"...): each becomes a mention of the entity it points at, with offsets
 refine       /ner with a narrow schema per requirement and award criterion: thresholds, units,
-             periods, accreditation, points, formulas, sub-criteria
+             periods, accreditation; a criterion's scoring method (proportional to the lowest
+             price, linear on the discount, per unit, tiers, yes/no...), what is offered, its
+             direction, saturation threshold, abnormally-low rule, minimum score, sub-criteria
+formulas     /summarize criterion_formula: each criterion scored by a rule, as an expression
 describe     /summarize once per entity (requirement_desc, criterion_desc, else entity_desc)
              from all its passages and fields, and once per relation
 summary      /summarize aggregate: one description per expediente, from its document
@@ -58,6 +67,41 @@ pilot does the cross-document step itself, per expediente, and uses `/resolve` (
 for the doubtful merges.
 
 ## Entities
+
+**What NER looks for.** The ontology marks each type `source: feed` (authority, lots, criteria and
+points, solvency, guarantees, contracts: CODICE gives them structured) or `source: documents`
+(bids and their scores, UTEs, penalties, deliverables, team profiles, technical requirements,
+qualifications, modifications' reasons, appeals). `/ner` gets one schema per document role
+(`profiles`): actas, valuation reports and award resolutions are read for bids and per-criterion
+scores; the PCAP for penalties and qualifications; the PPT for deliverables, team profiles and
+technical requirements; notices, annexes, project and preparatory documents not at all. A feed
+type is asked for only where the expediente's feed lacks it (`fallback`: an external platform
+without criteria, solvency that only says "según cláusula 8ª PCAP"). Document types point at the
+feed's entities by key attributes, not relations: a bid's `lot`, `bidder` and `bidder_nif`, a
+score's `bidder` and `criterion`. The bidder becomes a company mention with `SUBMITTED_BY`, a score
+hangs from its bid (`HAS_SCORE`) and its criterion (`FOR_CRITERION`), without the model.
+
+**Feed entities in the text** (`locate.py`). The feed's entities are found where the documents name
+them, so they carry the same provenance as an NER mention and refine, describe and the summary
+read their passages: criteria by their words on a short line (a one-word name only beside its
+points), lots by "Lote 2" / "lote nº 3", the authority and winners by NIF and name, guarantees
+by type, and a requirement that only points at the pliego at that clause's heading ("CLÁUSULA
+OCTAVA", "9.1" inside "ANEXO I", "X. C)"), table-of-contents lines excluded. Each find is a
+mention of kind `feed` with the feed node as `target`. On 50 recent mayores and externos: 195 of
+197 criteria, 64 of 66 lots, 26 of 28 guarantees, and 25 of 28 pointing requirements found.
+
+**Structure** (`sections.py`). The text is never changed. Page furniture (letterheads, "Página 3
+de 18", "Cód. Validación…", signature stamps, running titles) is detected, from the layout's
+header and footer boxes when they recur or are short, and from lines that recur at the top or
+bottom of most pages: the reader keeps it to place pages, while headings, NER, embeddings and the
+locator skip it (about 7% of the words of a pliego or an acta). Headings are numbered lines
+("CLÁUSULA OCTAVA", "9.1", "ANEXO I", "B)"), Markdown headings, the layout's section headers and
+paragraphs that open with a bold or underlined numbered run; never an index line, a table row, a
+bidder line or furniture. Their levels make each document's section tree. New texts are chunked
+at sections (`PILOT_CHUNKER=sections`): a chunk starts at a top-level section once the current one
+holds half the budget, keeps sub-sections whole, cuts a longer section at paragraphs and a table
+at rows, and carries its section path (chunk.section, the Qdrant payload, and the head of what NER
+reads). Texts extracted before keep the word chunker, so their stored NER results stay valid.
 
 What NER finds in each chunk is a **mention**. Resolution turns the mentions of all of an
 expediente's documents into **one entity per real thing**:
@@ -110,7 +154,7 @@ NER finds in them, attached to that skeleton:
 - Document criteria are linked `SAME_AS` to the feed criteria they repeat.
 
 The following changes were made to the given model:
-- **Added:** Notice, Guarantee, ExecutionCondition, Modification, Penalty, Deliverable, TeamProfile and TechnicalRequirement. Document roles go beyond the model's list too: preparatory documents, valuation and abnormal-bid reports, appeals, project and technical annexes, notices.
+- **Added:** Notice, Guarantee, ExecutionCondition, Modification, Penalty, Deliverable, TeamProfile, TechnicalRequirement, CriterionScore (what a bidder offered and scored in one criterion, losing bidders included) and Appeal. Document roles go beyond the model's list too: preparatory documents, valuation and abnormal-bid reports, appeals, project and technical annexes, notices.
 - **Not extracted:** envelopes' contents, bid teams (Person) and good-execution certificates. They are not published.
 - **Derived, not stored:** roles (client, awarded, partner, competitor), as the model says.
 - **Not applicable to menores and encargos:** they are published already awarded, with no pliegos. They are still processed, and marked `analysable: false` with the reason.
@@ -177,6 +221,17 @@ formalisation → execution), then by role within the stage (PCAP before PPT bef
 `fail` means the pilot did not do its job. `warn` means the published data is incomplete: a
 missing pliego, criteria that don't add up to 100, or the source returning HTTP 500.
 
+## Levels
+
+The pilot is levels 1.5 and 2 of `docs/PIPELINE_LEVELS.md`; level 1 is the staging tables.
+- `python -m placsp_pilot rules --staging <data dir> …`: stage 1.5, no model. Select from the
+  staging tables (any year; `--themes`, `--quota`, `--years`, `--awarded`, `--ids`), discover,
+  fetch, extract text (layout pass, sections), plan the chunks NER will read, summarise notices
+  from the feed, and locate the feed's entities. It prints what it leaves for the model.
+- `python -m placsp_pilot nlp`: stage 2 on the same files. It skips what the feed settles: the
+  actas of tenders where every lot had one bid, descriptions of feed entities (written from
+  their fields), notices' summaries; bidders' NIFs come from the staging `company` table first.
+
 ## Run on the server
 
 ```bash
@@ -222,7 +277,12 @@ Tuning (environment):
 |---|---|---|
 | `PILOT_NER_MAX_CHUNKS` | 60 | NER chunks per document (0 = all). Over it, the chunks richest in procurement vocabulary are kept; the report says how many were left out and how long they would take. |
 | `PILOT_CHUNK_WORDS` | 512 | Words per NER chunk (same as `RELATIONS_CHUNK_TOKENS`). |
-| `PILOT_NER_SKIP_ROLES` | (none) | Roles to leave out of NER, e.g. `Annex,ProjectDocument,TechnicalAnnex`. |
+| `PILOT_NER_SKIP_ROLES` | (none) | Roles to leave out of NER, besides those no profile lists. |
+| `PILOT_LAYOUT_ROLES` | pliegos, actas, reports, resolutions, contracts, modifications, clarifications, appeals, notices | Roles whose PDFs get the layout pass (`*`: all). About 0.3 CPU-seconds per page. |
+| `PILOT_STAGING_DIR` | (none) | Level 1 data dir: bidders' NIFs by name from its `company` table (`--staging` sets it too). |
+| `PILOT_DESCRIBE_FEED` | template | `template`: feed entities and rule-drawn links described from their fields; `model`: by `/summarize`. |
+| `PILOT_CHUNKER` | sections | How new texts are chunked: `sections`, or `words` (nlp_service's chunker). |
+| `PILOT_NER_BY_SECTION` | 1 | Read a PCAP only under the headings that hold penalties, solvency, criteria, guarantees, and in chunks whose words cue a type asked for. 0: every chunk. |
 | `PILOT_NER_PREFLIGHT_S` | 60 | The `ner` stage stops if its first two calls each take longer (Ollama on the CPU, thinking on). |
 | `PILOT_DESCRIBE_RELATIONS` | 1 | Describe relations as well as entities. |
 | `PILOT_COREF` | 1 | Link references ("la empresa", "la adjudicataria") to their entities: one call per NER'd passage that has them. |

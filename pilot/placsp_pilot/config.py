@@ -51,9 +51,18 @@ class PilotConfig:
     # vocabulary are kept; the report counts the skipped ones so full cost can be extrapolated.
     ner_max_chunks: int
     describe_relations: bool
+    describe_feed: str      # template (feed entities described from their fields) | model
+    staging_dir: str        # level 1 data dir (src/placsp/staging): companies' NIFs by name, `select --staging`
     ner_skip_roles: str     # comma-separated document roles to leave out of NER (default: none)
     # Seconds one /ner call may take before the stage stops: catches Ollama running on the CPU.
     ner_preflight_s: float
+    # NER reads a PCAP only in the sections whose headings hold penalties, solvency, criteria
+    # (locate.relevant_chunks); off: every chunk, up to ner_max_chunks.
+    ner_by_section: bool
+    # Text extraction: roles whose PDFs get the layout pass (pymupdf4llm: Markdown headings, tables
+    # as rows, page headers and footers marked), "*" for all; and how new texts are chunked.
+    layout_roles: str
+    chunker: str            # sections | words
     coref: bool             # link references ("la empresa"...) to their entities; one call per passage with them
     ocr_min_chars_per_page: int
     quotas: dict = field(default_factory=lambda: dict(DEFAULT_QUOTAS))
@@ -103,8 +112,15 @@ def load_config(run_dir: str | None = None) -> PilotConfig:
         chunk_words=int(_env("PILOT_CHUNK_WORDS", "512")),
         ner_max_chunks=int(_env("PILOT_NER_MAX_CHUNKS", "60")),
         describe_relations=_env("PILOT_DESCRIBE_RELATIONS", "1") not in ("0", "false", "no"),
+        describe_feed=_env("PILOT_DESCRIBE_FEED", "template"),
+        staging_dir=_env("PILOT_STAGING_DIR", ""),
         ner_skip_roles=_env("PILOT_NER_SKIP_ROLES", ""),
         ner_preflight_s=float(_env("PILOT_NER_PREFLIGHT_S", "60")),
+        ner_by_section=_env("PILOT_NER_BY_SECTION", "1") not in ("0", "false", "no"),
+        layout_roles=_env("PILOT_LAYOUT_ROLES", "PCAP,PPT,PCAP+PPT,BoardMinutes,ValuationReport,AbnormalBidReport,"
+                                                "AwardProposal,AwardResolution,ContractDocument,ModificationDocument,"
+                                                "Clarification,AppealDocument,TenderNotice"),
+        chunker=_env("PILOT_CHUNKER", "sections"),
         coref=_env("PILOT_COREF", "1") not in ("0", "false", "no"),
         ocr_min_chars_per_page=int(_env("PILOT_OCR_MIN_CHARS_PER_PAGE", "80")),
     )

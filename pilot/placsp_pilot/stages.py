@@ -153,6 +153,51 @@ def pick_balanced(pool: dict, have_theme: Counter, have_cell: Counter, n: int) -
     return out
 
 
+def select_staging(cfg: PilotConfig, store: Store, staging_dir: str, quotas: dict[str, int] | None = None,
+                   themes: dict[str, int] | None = None, years: list[int] | None = None, awarded: bool | None = None,
+                   ids: list[str] | None = None):
+    """Expedientes from the staging tables (level 1, staging.py), any year: by id, by channel quota or
+    by theme (themes.py CPV lists), newest first, only tenders whose feed lists pliegos. Their feed
+    facts and document references come from the tables; discovery and everything after are the
+    pilot's own."""
+    from placsp_pilot.staging import Staging, to_json
+    from placsp_pilot.themes import themes_of
+    st_ = Staging(staging_dir, cfg.codelist_dir)
+    with store.tx() as c:
+        c.execute("CREATE TABLE IF NOT EXISTS expediente_theme (exp_id TEXT NOT NULL, theme TEXT NOT NULL, quota INTEGER,"
+                  " PRIMARY KEY (exp_id, theme))")
+    have = {r["id"] for r in store.q("SELECT id FROM expediente")}
+    plan: list[tuple[str, str | None]] = []
+    if ids:
+        plan = [(i, None) for i in ids if i not in have]
+    elif themes:
+        for theme, n in themes.items():
+            got = store.one("SELECT COUNT(*) n FROM expediente_theme WHERE theme=? AND quota=1", (theme,))["n"]
+            picked = st_.pick(max(0, n - got), years=years, awarded=awarded, theme=theme,
+                              channels=["placsp_mayores", "externos_mayores"], exclude=have | {i for i, _ in plan})
+            plan += [(i, theme) for i in picked]
+    else:
+        for channel, n in (quotas or {}).items():
+            got = store.one("SELECT COUNT(*) n FROM expediente WHERE channel=?", (channel,))["n"]
+            plan += [(i, None) for i in st_.pick(max(0, n - got), channels=[channel], years=years, awarded=awarded,
+                                                 exclude=have, with_documents=channel in ("placsp_mayores", "externos_mayores"))]
+    with store.stage("select") as stg:
+        for eid, theme in plan:
+            rec = st_.record(eid)
+            if rec is None or not rec.get("folder_id"):
+                continue
+            raw = to_json(rec)
+            raw_path = cfg.raw_dir / f"{eid}.staging.json"
+            raw_path.write_bytes(raw)
+            _insert_expediente(store, rec, raw_path, len(raw))
+            with store.tx() as c:
+                for th in themes_of(rec):
+                    c.execute("INSERT OR IGNORE INTO expediente_theme VALUES (?,?,?)", (eid, th, int(th == theme)))
+            stg["items"] += 1
+    log(f"select from staging: +{len(plan)} " + (f"({', '.join(f'{k} {v}' for k, v in (themes or quotas or {}).items())})"
+                                                 if not ids else f"of {len(ids)} ids"))
+
+
 def select_balanced(cfg: PilotConfig, store: Store, n: int, channels: list[str], max_pages: int = 200):
     """n more expedientes, newest first from the given channels' feeds, spread evenly over the themes
     (themes.py, plus "otros" for an entry in none) and, within a theme, over the contract types
@@ -346,17 +391,21 @@ DONE_WITH_FILE = {"ok", "empty", "unsupported", "archive"}
 
 
 def text(cfg: PilotConfig, store: Store):
+    layout_roles = {r.strip() for r in cfg.layout_roles.split(",") if r.strip()}
+
     def one(b):
         t0 = time.time()
         if not b["path"] or not Path(b["path"]).exists():
             return b, None, 0
         data = Path(b["path"]).read_bytes()
-        res = extract_text(data, b["ext"], cfg.ocr_url, cfg.ocr_min_chars_per_page)
+        layout = "*" in layout_roles or bool(layout_roles & set((b["roles"] or "").split(",")))
+        res = extract_text(data, b["ext"], cfg.ocr_url, cfg.ocr_min_chars_per_page, layout=layout)
         return b, res, int((time.time() - t0) * 1000)
 
     with store.stage("text") as st:
         while True:
-            blobs = store.q("SELECT sha, path, ext FROM blob WHERE text_status='pending'")
+            blobs = store.q("SELECT b.sha, b.path, b.ext, (SELECT GROUP_CONCAT(DISTINCT role) FROM docref WHERE sha=b.sha) roles"
+                            " FROM blob b WHERE b.text_status='pending'")
             if not blobs:
                 break
             with ThreadPoolExecutor(max(1, cfg.fetch_workers)) as pool:
@@ -378,6 +427,12 @@ def text(cfg: PilotConfig, store: Store):
                         tp.parent.mkdir(parents=True, exist_ok=True)
                         tp.write_text(res.text, encoding="utf-8")
                         fields["text_path"] = str(tp)
+                        fields["chunker"] = cfg.chunker
+                        lp = tp.with_suffix(".layout.json")
+                        if res.layout:
+                            lp.write_text(json.dumps(res.layout), encoding="utf-8")
+                        else:
+                            lp.unlink(missing_ok=True)
                     if res.status != "ok":
                         fields["summary_status"] = "skipped"
                     if res.status != "ok":

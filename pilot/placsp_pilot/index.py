@@ -55,15 +55,22 @@ def _clean(node: dict, drop=("id", "label", "evidence", "documents", "descriptio
 
 # ── chunks ────────────────────────────────────────────────────────────────
 
-def chunk_records(cfg: PilotConfig, store: Store, g: Graph, eid: str, sha: str, text_path: str) -> list[dict]:
-    """Every chunk of a document, with the mentions resolution placed in it."""
-    pieces = split_words(Path(text_path).read_text(encoding="utf-8"), cfg.chunk_words)
+def chunk_records(cfg: PilotConfig, store: Store, g: Graph, eid: str, sha: str, text_path: str,
+                  chunker: str | None = None) -> list[dict]:
+    """Every chunk of a document, with the mentions resolution placed in it, its section, and the
+    text to embed: the section path and the chunk without its page furniture."""
+    from placsp_pilot.sections import document, furniture_ranges, without_furniture
+    pieces, paths, furniture = document(text_path, cfg.chunk_words, chunker)
     ner = {r["idx"]: r["status"] for r in store.q("SELECT idx, status FROM chunk WHERE sha=?", (sha,))}
     found = g.mentions.get((eid, sha), {})
     out = []
     for i, (piece, (pf, pt)) in enumerate(zip(pieces, page_ranges(pieces))):
         ms = found.get(i, [])
+        section = " › ".join(paths[i]) or None
+        body = without_furniture(piece, furniture)
+        folded = furniture_ranges(piece, furniture)
         out.append({"idx": i, "text": piece, "words": len(piece.split()), "page_from": pf, "page_to": pt,
+                    "section": section, "furniture": folded, "embed_text": f"{section}\n{body}" if section else body,
                     "ner": ner.get(i, "not_planned"), "mentions": ms,
                     "entity_ids": list(dict.fromkeys(m["entity_id"] for m in ms))})
     return out
@@ -376,12 +383,12 @@ def index(cfg: PilotConfig, store: Store):
             for d in rec["documents"]:
                 if d.get("text_status") != "ok":
                     continue
-                tp = store.one("SELECT text_path FROM blob WHERE sha=?", (d["sha256"],))
+                tp = store.one("SELECT text_path, chunker FROM blob WHERE sha=?", (d["sha256"],))
                 if not tp or not tp["text_path"]:
                     continue
-                for ch in chunk_records(cfg, store, g, eid, d["sha256"], tp["text_path"]):
+                for ch in chunk_records(cfg, store, g, eid, d["sha256"], tp["text_path"], tp["chunker"]):
                     pid = point_id("chunk", eid, d["sha256"], ch["idx"])
-                    points.append((pid, ch["text"], {
+                    points.append((pid, ch["embed_text"], {"section": ch["section"], "furniture": ch["furniture"],
                         "chunk_id": pid, "tender_id": eid, "folder_id": rec["folder_id"], "channel": rec["channel"],
                         "themes": g.nodes[f"tender:{eid}"].get("themes"),
                         "doc_sha256": d["sha256"], "doc_seq": d["seq"], "doc_role": d.get("role"), "doc_title": d.get("title"),

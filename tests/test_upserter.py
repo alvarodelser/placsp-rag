@@ -1,6 +1,6 @@
 import uuid, json, httpx
 from placsp.storage.upserter import object_uuid, Upserter
-from placsp.core.models import ProcurementRecord, Tombstone
+from placsp.core.models import ProcurementRecord
 
 def test_object_uuid_deterministic():
     a = object_uuid("19862167"); b = object_uuid("19862167")
@@ -40,14 +40,14 @@ def test_upsert_chunks_large_batches():
     assert n == 5
     assert posts == [2, 2, 1]
 
-def test_apply_tombstones_deletes_by_id():
-    deleted = []
+def test_get_props_returns_existing_objects_by_id():
+    seen = {}
     def handler(req):
-        if req.method == "DELETE":
-            deleted.append(req.url.path)
-            return httpx.Response(204)
-        return httpx.Response(404)
+        seen["q"] = json.loads(req.content)["query"]
+        return httpx.Response(200, json={"data": {"Get": {"Placsp_pliego_criteria": [
+            {"syndication_id": "1", "pcap_json": "{}", "ppt_json": None},
+            {"syndication_id": "2", "pcap_json": None, "ppt_json": ""}]}}})
     up = Upserter("http://wv:8086", "k", "Placsp_licitaciones", transport=httpx.MockTransport(handler))
-    n = up.apply_tombstones([Tombstone("4482937", "2026-06-21T00:00:39+02:00", "CERRADA", "externos_mayores")])
-    assert n == 1
-    assert object_uuid("4482937") in deleted[0]
+    got = up.get_props("Placsp_pliego_criteria", "syndication_id", ["1", "2", "3"], ("pcap_json", "ppt_json"))
+    assert got == {"1": {"pcap_json": "{}"}}                      # empty fields, and objects with none, left out
+    assert 'path: ["syndication_id"], operator: ContainsAny' in seen["q"] and "limit: 3" in seen["q"]

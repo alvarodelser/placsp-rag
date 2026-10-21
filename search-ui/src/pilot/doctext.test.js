@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { reflow, lineKey, lineKeyRanges, blocks } from './doctext.js'
+import { reflow, lineKey, lineKeyRanges, blocks, markup } from './doctext.js'
 
 describe('doctext', () => {
   it('joins lines a PDF broke mid-sentence and keeps the length', () => {
@@ -42,5 +42,32 @@ describe('blocks', () => {
     expect(kinds(t)).toEqual(['page:[Página 2]', 'heading:1.2 División en lotes',
       'para:El contrato no se divide en lotes porque lo impide su objeto.', 'item:• Primera condición', 'heading:CLÁUSULA TERCERA'])
     expect(blocks(t)[0].page).toBe(2)
+  })
+})
+
+describe('markdown from the layout pass', () => {
+  const t = '## **CLÁUSULA 8. SOLVENCIA**\n|N.º|LICITADORES|PUNTOS<br>TOTALES|\n|---|---|---|\n|9|JOGOSA OBRAS, S.L.U.|95,27|\n|1|ACTUACIONES, SL|95,00|\nTexto <u>subrayado</u> y **negrita** con `código`.'
+  it('keeps tables and headings as their own lines', () => {
+    expect(reflow(t)).toBe(t)
+  })
+  it('reads tables as rows of cells, the rule marking the header', () => {
+    const tb = blocks(t).find((b) => b.type === 'table')
+    expect(tb.rows.map((r) => r.cells.map((c) => t.slice(c.a, c.b)))).toEqual([
+      ['N.º', 'LICITADORES', 'PUNTOS<br>TOTALES'], ['9', 'JOGOSA OBRAS, S.L.U.', '95,27'], ['1', 'ACTUACIONES, SL', '95,00']])
+    expect(tb.rows.map((r) => !!r.head)).toEqual([true, false, false])
+    expect(blocks(t)[0]).toMatchObject({ type: 'heading', level: 2 })
+  })
+  it('hides the markers without moving a character', () => {
+    const { hide, strong, br } = markup(t)
+    const shown = [...t].filter((_, i) => !hide.some((h) => i >= h.a && i < h.b)).join('')
+    expect(shown).toContain('CLÁUSULA 8. SOLVENCIA\n|N.º|LICITADORES|PUNTOSTOTALES|')
+    expect(shown).toContain('Texto subrayado y negrita con código.')
+    expect(strong.map((s) => t.slice(s.a, s.b).replace(/<\/?u>/g, ''))).toEqual(['CLÁUSULA 8. SOLVENCIA', 'negrita', 'subrayado'])
+    expect(br.map((i) => t.slice(i, i + 4))).toEqual(['<br>'])
+  })
+  it('folds furniture by the ranges the pipeline found', () => {
+    const f = 'cuerpo del pliego\nCód. Validación: 7XK | Página 2 de 9\nsigue aquí'
+    const a = f.indexOf('Cód'), b = f.indexOf('\nsigue')
+    expect(reflow(f, null, [{ a, b }])).toBe(f)
   })
 })

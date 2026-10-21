@@ -3,21 +3,6 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 @dataclass
-class RawEntry:
-    syndication_id: str
-    updated: Optional[str]
-    link: Optional[str]
-    cfs: Any            # lxml ContractFolderStatus element; valid only until next parse iteration
-    category: str
-
-@dataclass
-class Tombstone:
-    syndication_id: str
-    when: Optional[str]
-    reason: Optional[str]
-    category: str
-
-@dataclass
 class Lot:
     lot_id: str
     name: Optional[str] = None
@@ -85,4 +70,5 @@ class ProcurementRecord:
     lot_results: list[LotResult] = field(default_factory=list)
     source_url: Optional[str] = None
     buyer_profile_url: Optional[str] = None
+    removed_reason: Optional[str] = None     # feed deletion marker: ANULADA (annulled) or CERRADA (closed)
     lang: str = "es"

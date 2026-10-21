@@ -236,17 +236,19 @@ def tender_graph(tender_id: str, entities: bool = True):
 def document(sha: str, tender: str, start: int = Query(0, ge=0), limit: int = Query(40, ge=1, le=200), entity: str = ""):
     """A document as the pipeline read it: its chunks in order, each with every mention placed in it
     (named by NER or a reference such as "la empresa"), and the entities those mentions point at.
-    Also the lines repeated on most pages (headers, footers, signatures) for the viewer to fold, the
-    file's type for the original's pane and, with `entity`, every place it is mentioned in the document."""
+    Also the lines repeated on most pages (headers, footers, signatures) for the viewer to fold (a
+    chunk indexed since the section chunker carries its own exact `furniture` ranges and its
+    `section`), the file's type for the original's pane and, with `entity`, every place it is
+    mentioned in the document."""
     if not re.fullmatch(r"[0-9a-f]{64}", sha):
         raise HTTPException(400, "bad sha256")
     from qdrant_client import models as m
     base = [m.FieldCondition(key="tender_id", match=m.MatchValue(value=tender)),
             m.FieldCondition(key="doc_sha256", match=m.MatchValue(value=sha))]
     flt = m.Filter(must=base + [m.FieldCondition(key="chunk_idx", range=m.Range(gte=start, lt=start + limit))])
-    pts = scroll_all("chunks", flt, ["chunk_idx", "page_from", "page_to", "text", "mentions", "ner"], limit=limit)
-    chunks = sorted(({k: p.payload.get(k) for k in ("chunk_idx", "page_from", "page_to", "text", "mentions", "ner")} for p in pts),
-                    key=lambda c: c["chunk_idx"])
+    fields = ("chunk_idx", "page_from", "page_to", "text", "mentions", "ner", "section", "furniture")
+    pts = scroll_all("chunks", flt, list(fields), limit=limit)
+    chunks = sorted(({k: p.payload.get(k) for k in fields} for p in pts), key=lambda c: c["chunk_idx"])
     total = qdrant().count(coll("chunks"), count_filter=m.Filter(must=base), exact=True).count
     ids = sorted({x["entity_id"] for c in chunks for x in c.get("mentions") or []} | ({entity} if entity else set()))
     ents = {}

@@ -477,6 +477,13 @@ button.tl-doc:hover:not(:disabled) { color: var(--accent); text-decoration: none
 .dv-field dt { color: var(--muted); font-size: 12.5px; padding-right: 14px; }
 .dv-field dd { color: var(--ink); overflow-wrap: anywhere; }
 .dv-boiler { color: var(--faint); font-size: 11.5px; }
+.dv-section { font-size: 11px; color: var(--muted); letter-spacing: .02em; margin: 1.2em 0 .4em; padding-bottom: .3em; border-bottom: 1px solid var(--line); }
+.dv-h.l1 { font-size: 15px; }
+.dv-h.l3 { font-size: 13px; }
+.dv-table-wrap { overflow-x: auto; margin: 0 0 1em; }
+.dv-table { border-collapse: collapse; font-size: 12.5px; line-height: 1.5; min-width: 60%; }
+.dv-table th, .dv-table td { border: 1px solid var(--line); padding: 4px 8px; vertical-align: top; text-align: left; }
+.dv-table th { font-weight: 600; background: var(--subtle); }
 .dv-pagebreak { display: flex; align-items: center; gap: 10px; margin: 1.4em 0 1em; }
 .dv-pagebreak::before, .dv-pagebreak::after { content: ''; flex: 1; border-top: 1px solid var(--line); }
 .dv-page { display: inline-block; margin: 0; padding: 0 6px; border: none; background: none; color: var(--faint); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; border-radius: var(--radius-xs); }

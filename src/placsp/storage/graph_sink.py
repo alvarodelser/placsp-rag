@@ -1,6 +1,6 @@
 import structlog
 from neo4j import GraphDatabase
-from placsp.core.models import ProcurementRecord, Tombstone
+from placsp.core.models import ProcurementRecord
 from placsp.storage.graph_ops import record_to_graph_ops, merge_batches, GraphBatch
 
 log = structlog.get_logger(service="placsp")
@@ -78,12 +78,3 @@ class GraphSink:
             s.execute_write(self._apply, batch)
         log.info("graph_upserted", companies=len(batch.companies), won=len(batch.won))
         return len(batch.won)
-
-    def apply_tombstones(self, tombs: list[Tombstone]) -> int:
-        if not tombs:
-            return 0
-        sids = [t.syndication_id for t in tombs]
-        with self._driver.session() as s:
-            s.run("UNWIND $sids AS sid MATCH (ct:Contract {syndication_id:sid}) "
-                  "OPTIONAL MATCH (ct)-[:HAS_LOT]->(lo:Lot) DETACH DELETE lo, ct", sids=sids)
-        return len(tombs)

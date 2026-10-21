@@ -21,6 +21,7 @@ def _stem(name: str) -> str:
 class Codelists:
     def __init__(self, directory: Path):
         self._maps: dict[str, dict[str, str]] = {}
+        self._es: dict[str, dict[str, str]] = {}      # the Spanish name, where the list has one
         d = Path(directory)
         if not d.is_dir():
             return
@@ -30,16 +31,29 @@ class Codelists:
             except etree.XMLSyntaxError:
                 continue
             m: dict[str, str] = {}
+            es: dict[str, str] = {}
             for row in tree.iter("{*}Row", "Row"):
                 vals = [v.findtext("{*}SimpleValue") or v.findtext("SimpleValue") for v in row.iter("{*}Value", "Value")]
                 if len(vals) >= 2 and vals[0]:
                     m[vals[0].strip()] = (vals[1] or "").strip()
+                    # Columns are named, not in a fixed order: "nombre" is the Spanish one.
+                    nombre = next((v.findtext("{*}SimpleValue") or v.findtext("SimpleValue") for v in row.iter("{*}Value", "Value")
+                                   if (v.get("ColumnRef") or "").lower() == "nombre"), None)
+                    if nombre:
+                        es[vals[0].strip()] = nombre.strip()
             self._maps[_stem(f.name)] = m
+            self._es[_stem(f.name)] = es
 
     def label(self, list_uri: str | None, code: str | None) -> str | None:
         if not list_uri or code is None:
             return None
         return self._maps.get(_stem(list_uri), {}).get(code.strip())
+
+    def spanish(self, name: str, code: str | None) -> str | None:
+        """The code's Spanish name in the list `name`, else its label."""
+        if code is None:
+            return None
+        return self._es.get(name, {}).get(code.strip()) or self.by_name(name, code)
 
     def by_name(self, name: str, code: str | None) -> str | None:
         if code is None:

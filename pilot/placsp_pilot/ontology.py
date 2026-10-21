@@ -47,3 +47,24 @@ def extraction_schema(data: dict) -> dict:
                             "head_types": r["head_types"], "tail_types": r["tail_types"]}
                            for r in data["relation_types"]],
     }
+
+
+def ner_types(data: dict, role: str | None, feed_lacks: set[str] = frozenset()) -> set[str]:
+    """The entity types /ner asks for in a document of this role: its profiles' types, plus the feed
+    types this expediente's feed lacks (`fallback`). Empty when NER does not read the role.
+    `feed_lacks` also carries what the feed settles (`single_bid`): a profile `unless` it is skipped."""
+    types = {t for p in (data.get("profiles") or {}).values()
+             if role in p["roles"] and not set(p.get("unless") or []) & set(feed_lacks) for t in p["entity_types"]}
+    types |= {t for t, fb in (data.get("fallback") or {}).items() if t in feed_lacks and role in fb["roles"]}
+    return types
+
+
+def extraction_schema_for(data: dict, types: set[str]) -> dict:
+    """The ExtractionSchema restricted to these entity types and the relations between them."""
+    full = extraction_schema(data)
+    rels = []
+    for r in full["relation_types"]:
+        heads, tails = [t for t in r["head_types"] if t in types], [t for t in r["tail_types"] if t in types]
+        if heads and tails:
+            rels.append({**r, "head_types": heads, "tail_types": tails})
+    return {"entity_types": [e for e in full["entity_types"] if e["name"] in types], "relation_types": rels}

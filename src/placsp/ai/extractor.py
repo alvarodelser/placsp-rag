@@ -61,8 +61,8 @@ class PliegoExtractor:
     # *may bid* — the reliable qualification gates fed into the match.
     _MATCH_CRITERIA_KEYS = (
         "clasificacion_empresarial", "condiciones_admision", "motivos_exclusion",
-        "num_empleados_min", "garantia_definitiva_pct", "garantia_complementaria_pct",
-        "criterios_adjudicacion",
+        "num_empleados_min", "anos_experiencia_min", "garantia_definitiva_pct", "garantia_complementaria_pct",
+        "solvencia_economica", "solvencia_tecnica", "criterios_adjudicacion",
     )
 
     def match_profile(self, profile: dict, pcap_json: dict, ppt_json: dict,

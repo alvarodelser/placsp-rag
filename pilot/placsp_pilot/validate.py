@@ -20,7 +20,7 @@ from pathlib import Path
 from placsp_pilot import classify as C
 from placsp_pilot.config import PilotConfig
 from placsp_pilot.index import Neo4jIndex, QdrantIndex, point_id
-from placsp_pilot.nlpstages import split_words
+from placsp_pilot.sections import document
 from placsp_pilot.store import Store
 
 SCHEMA = """
@@ -219,9 +219,9 @@ def _expected_chunks(cfg: PilotConfig, store: Store, rec: dict) -> tuple[int, in
     for d in rec["documents"]:
         if d.get("text_status") != "ok":
             continue
-        tp = store.one("SELECT text_path FROM blob WHERE sha=?", (d["sha256"],))
+        tp = store.one("SELECT text_path, chunker FROM blob WHERE sha=?", (d["sha256"],))
         if tp and tp["text_path"]:
-            total += len(split_words(Path(tp["text_path"]).read_text(encoding="utf-8"), cfg.chunk_words))
+            total += len(document(tp["text_path"], cfg.chunk_words, tp["chunker"])[0])
     return total, total
 
 

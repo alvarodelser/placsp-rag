@@ -16,8 +16,9 @@ LOT = re.compile(r"\b[Ll]ote\s+(?:n[º°.]\s*)?(\d{1,3})\b")
 CRIT = re.compile(r"([A-ZÁÉÍÓÚa-záéíóúñ][^\n:]{3,80}?)[:\s]+(?:hasta\s+)?(\d{1,3}(?:[.,]\d+)?)\s+puntos", re.I)
 
 
-def ner(text: str) -> dict:
+def ner(text: str, schema: dict | None = None) -> dict:
     ents, rels = [], []
+    wanted = {e["name"] for e in (schema or {}).get("entity_types", [])}
 
     def add(name, typ, ev, subtype=None, **attrs):
         ents.append({"name": name.strip(), "mention_text": name.strip(), "type": typ, "subtype": subtype,
@@ -36,6 +37,14 @@ def ner(text: str) -> dict:
     for m in COMPANY.finditer(text):
         attrs = {"nif": m.group(2)} if m.group(2) else {}
         add(m.group(1), "COMPANY", m.group(0), **attrs)
+        if "BID" in wanted:   # an acta: each company is a bidder, named in the bid's attributes
+            add(f"Oferta de {m.group(1).strip()}", "BID", m.group(0), bidder=m.group(1).strip(), **({"bidder_nif": m.group(2)} if m.group(2) else {}))
+    # Like the real service, only the schema's types (the refine schemas' *_DETAIL types are not filtered).
+    if wanted and not any(w.endswith("_DETAIL") for w in wanted):
+        keep = [i for i, e in enumerate(ents) if e["type"] in wanted]
+        index = {old: new for new, old in enumerate(keep)}
+        ents = [ents[i] for i in keep]
+        rels = [dict(r, head=index[r["head"]], tail=index[r["tail"]]) for r in rels if r["head"] in index and r["tail"] in index]
     return {"entities": ents[:40], "relations": rels[:40]}
 
 
@@ -103,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         if self.path == "/ner":
-            out = ner(body["text"])
+            out = ner(body["text"], body.get("schema"))
         elif self.path == "/resolve":
             out = resolve(body)
         elif self.path == "/coref/links":

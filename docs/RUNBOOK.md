@@ -61,43 +61,24 @@ python scripts/fetch_codelists.py tests/fixtures/mayores.atom $PLACSP_CODELIST_D
 Process a single year of procurement data to verify end-to-end ingestion.
 
 ```bash
-python - <<'PY'
-from placsp.config import load_config
-from placsp.codelists import Codelists
-from placsp.embedder import Embedder
-from placsp.upserter import Upserter
-from placsp.pipeline import Pipeline
-from placsp.fetcher import download, unzip
-
-cfg = load_config()
-p = Pipeline(cfg, Embedder(cfg.vectorizer_url, cfg.embed_batch_size, cfg.request_timeout),
-             Upserter(cfg.weaviate_url, cfg.weaviate_api_key, cfg.weaviate_class, cfg.request_timeout),
-             Codelists(cfg.codelist_dir))
-url = "https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_1383/EMP_SectorPublico_2022.zip"
-unz = unzip(download(url, "./work/propios_2022.zip"), "./work/propios_2022")
-print(p.process_files(unz, "propios"))
-PY
+./scripts/placsp stage download --channel propios --year 2022
+./scripts/placsp stage extract
+./scripts/placsp stage build
+./scripts/placsp stage load
 ```
 
-**Expected output:** A dictionary with keys:
-- `records` — number of records parsed from the feed (should be > 0)
-- `upserted` — number of records successfully upserted to Weaviate
-- `deleted` — number of tombstone deletions applied
-
-Example:
-```json
-{"records": 1234, "upserted": 1200, "deleted": 5}
-```
+**Expected output:** `download` and `extract` report the archive; `build` prints the row count of
+every current table (`tender` > 0); `load` prints `{"tenders": N, "criteria": M, "failed_chunks": 0}`.
 
 **Troubleshooting:**
-- If `records = 0`, verify the URL is accessible and the feed format is valid
-- If `upserted = 0`, check Weaviate and Vectorizer connectivity
-- If `deleted > 0`, this indicates tombstone records were processed (normal for incremental feeds)
+- If `tender = 0`, check the archive downloaded completely (`data/zips/propios/*.zip` and its `.json`)
+- If `failed_chunks > 0`, check Weaviate and Vectorizer connectivity; the next `load` retries them
+- To check that nothing was missed, `python scripts/check_staging.py data/zips/*/*.zip` lists every
+  feed field the parser does not read (it should list none)
 
 > ⚠️ **Do not trust `upserted` alone.** Weaviate's batch endpoint returns HTTP 200 even
 > when individual objects fail (e.g. a date-typed property rejecting a non-RFC3339 string),
-> and the current `Upserter.upsert` does not inspect per-object results (see
-> [FOLLOWUPS.md](FOLLOWUPS.md) #1). **Verify the actual stored count:**
+> and the upserter only logs per-object failures (see [FOLLOWUPS.md](FOLLOWUPS.md) #1). **Verify the actual stored count:**
 >
 > ```bash
 > python3.11 - <<'PY'
@@ -111,7 +92,7 @@ Example:
 > PY
 > ```
 >
-> The reported `count` should match `upserted`. A large gap means objects were silently
+> The reported `count` should match `tenders`. A large gap means objects were silently
 > rejected — inspect a single object POST response body for per-object `errors`.
 
 ## Step 4: Verify Retrieval Quality (Run on Deployment Host)
@@ -122,7 +103,7 @@ Test vector search and BM25 hybrid retrieval to confirm data quality.
 python - <<'PY'
 import httpx, json
 from placsp.config import load_config
-from placsp.embedder import Embedder
+from placsp.ai.embedder import Embedder
 
 cfg = load_config()
 qv = Embedder(cfg.vectorizer_url).embed(["servicios de limpieza"])[0]

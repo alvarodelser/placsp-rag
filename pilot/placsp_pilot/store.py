@@ -155,8 +155,15 @@ class Store:
         self._lock = threading.Lock()
         with self.tx() as c:
             c.executescript(SCHEMA)
-            if "sha1_b64" not in {r[1] for r in c.execute("PRAGMA table_info(blob)")}:     # pilot.db from before
+            blob_cols = {r[1] for r in c.execute("PRAGMA table_info(blob)")}
+            if "sha1_b64" not in blob_cols:     # pilot.db from before
                 c.execute("ALTER TABLE blob ADD COLUMN sha1_b64 TEXT")
+            # How the text is cut into chunks (sections.py): NULL is the "words" chunker every text
+            # extracted before had, so the chunk numbers its NER results point at stay the same.
+            if "chunker" not in blob_cols:
+                c.execute("ALTER TABLE blob ADD COLUMN chunker TEXT")
+            if "section" not in {r[1] for r in c.execute("PRAGMA table_info(chunk)")}:
+                c.execute("ALTER TABLE chunk ADD COLUMN section TEXT")   # the chunk's section path, " › "-joined
 
     def conn(self) -> sqlite3.Connection:
         c = getattr(self._local, "c", None)

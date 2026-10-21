@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: ./scripts/placsp <command> [args]
-#   commands: init-schema, daily, backfill, reconcile
+#   commands: init-schema, init-graph, backfill, daily, reconcile, stage <step>
 #
 # Auto-creates the virtualenv and installs the package on first run.
 # Sources .env from the repo root if WEAVIATE_API_KEY is not already set.
@@ -18,8 +18,8 @@ fi
 export WEAVIATE_URL="${WEAVIATE_URL:-http://localhost:${WEAVIATE_HTTP_PORT:-8087}}"
 export VECTORIZER_URL="http://localhost:8089"  # always localhost for host-side ingestion
 export PLACSP_CODELIST_DIR="${PLACSP_CODELIST_DIR:-$REPO/codelists}"
-export PLACSP_WORK_DIR="${PLACSP_WORK_DIR:-$REPO/work}"
-mkdir -p "$PLACSP_WORK_DIR"
+export PLACSP_DATA_DIR="${PLACSP_DATA_DIR:-$REPO/data}"     # staging: archives, Parquet tables, load state
+mkdir -p "$PLACSP_DATA_DIR"
 
 # Auto-create venv
 if [ ! -d "$REPO/.venv" ]; then

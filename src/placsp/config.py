@@ -9,13 +9,13 @@ class Config:
     weaviate_url: str
     weaviate_api_key: str
     weaviate_class: str
-    work_dir: str
+    data_dir: str
     codelist_dir: str
     embed_batch_size: int
+    embed_workers: int
+    extract_workers: int
+    build_memory: str
     upsert_batch_size: int
-    max_in_flight: int
-    offpeak_start: int
-    offpeak_end: int
     request_timeout: float
     neo4j_url: str
     neo4j_user: str
@@ -31,13 +31,13 @@ def load_config() -> Config:
         weaviate_url=_env("WEAVIATE_URL", "http://placsp-weaviate:8080"),
         weaviate_api_key=_env("WEAVIATE_API_KEY", ""),
         weaviate_class=_env("PLACSP_CLASS", "Placsp_licitaciones"),
-        work_dir=_env("PLACSP_WORK_DIR", "./work"),
+        data_dir=_env("PLACSP_DATA_DIR", "./data"),
         codelist_dir=_env("PLACSP_CODELIST_DIR", "./codelists"),
         embed_batch_size=int(_env("PLACSP_EMBED_BATCH", "48")),
+        embed_workers=int(_env("PLACSP_EMBED_WORKERS", "2")),
+        extract_workers=int(_env("PLACSP_EXTRACT_WORKERS", "2")),
+        build_memory=_env("PLACSP_BUILD_MEMORY", "4GB"),
         upsert_batch_size=int(_env("PLACSP_UPSERT_BATCH", "100")),
-        max_in_flight=int(_env("PLACSP_MAX_IN_FLIGHT", "1")),
-        offpeak_start=int(_env("PLACSP_OFFPEAK_START", "22")),
-        offpeak_end=int(_env("PLACSP_OFFPEAK_END", "7")),
         request_timeout=float(_env("PLACSP_TIMEOUT", "600")),
         neo4j_url=_env("NEO4J_URL", ""),
         neo4j_user=_env("NEO4J_USER", "neo4j"),

@@ -356,3 +356,27 @@ def write(cfg: PilotConfig, store: Store) -> Path:
     path = cfg.out_dir / "report.md"
     path.write_text(render(m), encoding="utf-8")
     return path
+
+
+def left_for_nlp(cfg, store) -> str:
+    """What stage 1.5 (rules) settled and what it leaves for stage 2 (the model)."""
+    q = lambda sql, *a: store.one(sql, a)["n"] or 0
+    docs = q("SELECT COUNT(*) n FROM blob WHERE text_status='ok'")
+    scanned = q("SELECT COUNT(*) n FROM blob WHERE text_status='needs_ocr'")
+    notices = q("SELECT COUNT(*) n FROM blob WHERE text_status='ok' AND summary_status='ok'")
+    chunks = q("SELECT COUNT(*) n FROM chunk")
+    selected = q("SELECT COUNT(*) n FROM chunk WHERE selected=1")
+    words = q("SELECT SUM(words) n FROM chunk WHERE selected=1")
+    ner_docs = q("SELECT COUNT(DISTINCT sha) n FROM chunk WHERE selected=1")
+    found = q("SELECT COUNT(DISTINCT target) n FROM mention WHERE kind='feed'")
+    exps = q("SELECT COUNT(*) n FROM expediente")
+    lines = [
+        "stage 1.5 (rules, no model):",
+        f"  {exps} expedientes, {docs} documents with text, {scanned} scanned (need OCR)",
+        f"  {notices} documents summarised from the feed (notices)",
+        f"  {found} feed entities found in the documents",
+        "left for stage 2 (the model):",
+        f"  NER: {selected} of {chunks} chunks ({words} words) in {ner_docs} documents",
+        f"  summaries: {docs - notices} documents",
+    ]
+    return "\n".join(lines)

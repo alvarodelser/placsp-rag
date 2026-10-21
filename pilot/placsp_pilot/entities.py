@@ -30,7 +30,8 @@ from pathlib import Path
 
 from placsp_pilot import graph as G
 from placsp_pilot.config import PilotConfig
-from placsp_pilot.nlpstages import PAGE, _pool, log, page_ranges, split_words
+from placsp_pilot.nlpstages import PAGE, _pool, log, page_ranges, reference_only, split_words
+from placsp_pilot.sections import document
 from placsp_pilot.services import ServiceError, Services
 from placsp_pilot.store import Store
 
@@ -42,8 +43,9 @@ CREATE TABLE IF NOT EXISTS mention (
     evidence    TEXT, confidence REAL,
     char_start  INTEGER, char_end INTEGER,   -- of the evidence quote, within the chunk text
     page        INTEGER, located INTEGER,
-    kind        TEXT DEFAULT 'ner',          -- ner | coref (a reference that does not name the entity)
-    name_start  INTEGER, name_end INTEGER    -- the name itself, within the quote: what a reader sees highlighted
+    kind        TEXT DEFAULT 'ner',          -- ner | coref (a reference that does not name the entity) | feed (locate.py)
+    name_start  INTEGER, name_end INTEGER,   -- the name itself, within the quote: what a reader sees highlighted
+    target      TEXT                         -- feed mentions: the feed node they name
 );
 CREATE INDEX IF NOT EXISTS mention_sha ON mention(sha);
 CREATE TABLE IF NOT EXISTS mrelation (
@@ -101,7 +103,6 @@ GENERIC_AUTHORITY = {"ayuntamiento", "el ayuntamiento", "organo de contratacion"
 # The authority's own bodies: mentions of them are the authority acting, not another organization.
 _AUTHORITY_BODY = re.compile(r"^(la |el )?(mesa|junta|comision|unidad|servicio|organo)( permanente)? de "
                              r"(contratacion|asistencia|valoracion|compras)|^junta de gobierno|^alcald|^presidencia")
-_REFERENCE_ONLY = re.compile(r"(cl[aá]usula|pliego|pcap|anexo|apartado|seg[uú]n|de acuerdo|conforme|ver\b)", re.I)
 # Feed requirement groups -> the document requirement subtypes that spell them out.
 _GROUP_SUBTYPES = {"financial": {"TURNOVER", "INSURANCE"},
                    "technical": {"SIMILAR_SERVICES", "TEAM", "CREDENTIAL", "COMMITMENT"},
@@ -117,6 +118,8 @@ def schema(store: Store):
         if "name_start" not in cols:
             c.execute("ALTER TABLE mention ADD COLUMN name_start INTEGER")
             c.execute("ALTER TABLE mention ADD COLUMN name_end INTEGER")
+        if "target" not in cols:
+            c.execute("ALTER TABLE mention ADD COLUMN target TEXT")
 
 
 # ── text helpers ──────────────────────────────────────────────────────────
@@ -250,11 +253,11 @@ def mentions(cfg: PilotConfig, store: Store):
     texts: dict[str, list[str]] = {}
     pages: dict[str, list] = {}
     rows, rels = [], []
-    for r in store.q("SELECT c.sha, c.idx, c.result_json, b.text_path FROM chunk c JOIN blob b ON b.sha=c.sha"
+    for r in store.q("SELECT c.sha, c.idx, c.result_json, b.text_path, b.chunker FROM chunk c JOIN blob b ON b.sha=c.sha"
                      " WHERE c.status='ok' ORDER BY c.sha, c.idx"):
         sha = r["sha"]
         if sha not in texts:
-            texts[sha] = split_words(Path(r["text_path"]).read_text(encoding="utf-8"), cfg.chunk_words)
+            texts[sha] = document(r["text_path"], cfg.chunk_words, r["chunker"])[0]
             pages[sha] = page_ranges(texts[sha])
         if r["idx"] >= len(texts[sha]):
             continue
@@ -277,6 +280,7 @@ def mentions(cfg: PilotConfig, store: Store):
                 rels.append((f"{sha}:{r['idx']}:r{k}", sha, r["idx"], ids[rel["head"]], ids[rel["tail"]], rel["type"],
                              rel.get("subtype"), json.dumps(rel.get("attributes") or {}, ensure_ascii=False),
                              rel.get("evidence_text"), rel.get("confidence")))
+        _keyed(sha, r["idx"], chunk, rows[len(rows) - len(ids):], rows, rels)
     with store.stage("mentions") as st, store.tx() as c:
         c.execute("DELETE FROM mention")
         c.execute("DELETE FROM mrelation")
@@ -288,6 +292,56 @@ def mentions(cfg: PilotConfig, store: Store):
         st["items"] = len(rows)
     located = sum(r[14] for r in rows)
     log(f"mentions: {len(rows)} mentions ({located} located in their chunk), {len(rels)} relations")
+    from placsp_pilot import locate as feed_locate
+    feed_locate.locate(cfg, store)
+
+
+def _keyed(sha: str, idx: int, chunk: str, chunk_rows: list, rows: list, rels: list):
+    """Bids and scores name their bidder in an attribute (`bidder`), not by a relation: here the
+    bidder becomes a company mention (the one NER found in the chunk, else a new one at the
+    bidder's name), with SUBMITTED_BY from the bid; a score hangs from its bidder's bid in the
+    chunk (made when the chunk has none) with HAS_SCORE. Column order is the mention table's."""
+    orgs = [r for r in chunk_rows if r[4] in ("COMPANY", "JOINT_VENTURE")]
+    bids = {}
+    have = {(x[3], x[4]) for x in rels if x[5] == "SUBMITTED_BY"}
+
+    def org_for(row, a) -> str:
+        nif, bidder = G.norm_nif(a.get("bidder_nif")), a.get("bidder") or ""
+        for o in orgs:
+            if (nif and G.norm_nif(json.loads(o[8]).get("nif")) == nif) or \
+                    (G.norm_name(o[6]) and G.norm_name(o[6]) == G.norm_name(bidder)):
+                return o[0]
+        span = locate(chunk, bidder) or (row[11], row[12])
+        typ = "JOINT_VENTURE" if re.match(r"(?i)u\.?t\.?e\b|uni[oó]n temporal", bidder) else "COMPANY"
+        mid = f"{row[0]}b"
+        new = (mid, sha, idx, row[3] + 1000, typ, None, bidder.strip(), bidder, json.dumps({"nif": nif} if nif else {}),
+               row[9], row[10], span[0], span[1], row[13], int(span[0] is not None), span[0], span[1])
+        rows.append(new)
+        orgs.append(new)
+        return mid
+
+    for row in chunk_rows:
+        a = json.loads(row[8] or "{}")
+        if row[4] == "BID" and a.get("bidder"):
+            org = org_for(row, a)
+            bids[(G.norm_name(a["bidder"]), str(a.get("lot") or ""))] = row[0]
+            if (row[0], org) not in have:
+                rels.append((f"{row[0]}:sb", sha, idx, row[0], org, "SUBMITTED_BY", None, "{}", row[9], row[10]))
+    for row in chunk_rows:
+        a = json.loads(row[8] or "{}")
+        if row[4] != "CRITERION_SCORE" or not a.get("bidder"):
+            continue
+        key = (G.norm_name(a["bidder"]), str(a.get("lot") or ""))
+        bid = bids.get(key)
+        if bid is None:
+            org = org_for(row, a)
+            bid = f"{row[0]}o"
+            rows.append((bid, sha, idx, row[3] + 2000, "BID", None, f"Oferta de {a['bidder']}".strip(), a["bidder"],
+                         json.dumps({"bidder": a["bidder"], "lot": a.get("lot")}, ensure_ascii=False), row[9], row[10],
+                         row[11], row[12], row[13], row[14], row[15], row[16]))
+            rels.append((f"{bid}:sb", sha, idx, bid, org, "SUBMITTED_BY", None, "{}", row[9], row[10]))
+            bids[key] = bid
+        rels.append((f"{row[0]}:hs", sha, idx, bid, row[0], "HAS_SCORE", None, "{}", row[9], row[10]))
 
 
 # ── resolve ───────────────────────────────────────────────────────────────
@@ -370,7 +424,8 @@ def lot_object(number: str, evidences: list[str]) -> str | None:
 
 
 def _lot_of(m, lots: dict[str, str]) -> str | None:
-    num = re.sub(r"(?i)^lote\s*", "", str(_attrs(m).get("number") or "")).strip()
+    a = _attrs(m)
+    num = re.sub(r"(?i)^lote\s*(?:n[º°.o]?\s*)?", "", str(a.get("number") or a.get("lot") or "")).strip()
     if num in lots:
         return lots[num]
     hit = re.search(r"(?i)\blote\s*(?:n[º°.]?\s*)?(\w+)", m["name"] or "")
@@ -382,17 +437,23 @@ def _lot_of(m, lots: dict[str, str]) -> str | None:
 def resolve(cfg: PilotConfig, store: Store):
     schema(store)
     svc = Services(cfg, store)
+    companies = {}
+    if cfg.staging_dir:
+        from placsp_pilot.staging import company_index
+        companies = company_index(cfg.staging_dir)
+        log(f"resolve: {len(companies)} company names with their NIF from the staging tables")
     done = {r["exp_id"]: r["mentions"] for r in store.q("SELECT exp_id, mentions FROM resolution WHERE status='ok'")}
     exps = store.q("SELECT * FROM expediente ORDER BY id")
     with store.stage("resolve") as st:
         for e in exps:
-            ms = store.q("SELECT m.* FROM mention m WHERE m.kind='ner' AND m.sha IN"
-                         " (SELECT sha FROM docref WHERE exp_id=? AND status='fetched') ORDER BY m.id", (e["id"],))
+            ms = store.q("SELECT m.* FROM mention m WHERE (m.kind='ner' OR (m.kind='feed' AND m.id LIKE ?)) AND m.sha IN"
+                         " (SELECT sha FROM docref WHERE exp_id=? AND status='fetched') ORDER BY m.id",
+                         (f"%:f:{e['id']}:%", e["id"]))
             if done.get(e["id"]) == len(ms):
                 continue
             t0 = time.time()
             try:
-                stats = _resolve_expediente(svc, store, e, ms)
+                stats = _resolve_expediente(svc, store, e, ms, companies)
                 status, err = ("ok" if not stats.get("llm_failed") else "partial"), None
             except Exception as exc:  # keep going: validation reports the expediente
                 stats, status, err = {}, "failed", f"{type(exc).__name__}: {exc}"[:500]
@@ -404,8 +465,17 @@ def resolve(cfg: PilotConfig, store: Store):
             log(f"resolve {e['id']}: {len(ms)} mentions -> {stats.get('entities')} entities {stats.get('merges', {})} {err or ''}")
 
 
-def _resolve_expediente(svc: Services, store: Store, e, ms: list) -> dict:
+def _resolve_expediente(svc: Services, store: Store, e, ms: list, companies: dict | None = None) -> dict:
     eid = e["id"]
+    # A company named without its NIF (a bidder in an acta) takes the NIF stage 1 knows for that name.
+    ms, from_staging = [dict(m) for m in ms], 0
+    for m in ms:
+        if companies and m["kind"] == "ner" and m["type"] in ("COMPANY", "JOINT_VENTURE"):
+            a = _attrs(m)
+            nif = None if G.norm_nif(a.get("nif")) else companies.get(G.norm_name(m["name"]))
+            if nif:
+                m["attributes"] = json.dumps({**a, "nif": nif, "nif_from": "staging"}, ensure_ascii=False)
+                from_staging += 1
     t = json.loads(e["tender_json"])
     fg, sk = _anchors(eid, e, t)
     lots = {fg.nodes[l]["number"]: l for l in sk["lots"].values()}
@@ -434,9 +504,13 @@ def _resolve_expediente(svc: Services, store: Store, e, ms: list) -> dict:
         uf.add(node_id, node_id)
         join(m_id, node_id, how)
 
-    # 1. Feed anchors and keys.
+    # 1. Feed anchors and keys. A feed mention (locate.py) already names its node.
     keys: dict[tuple, str] = {}
     for m in ms:
+        if m["kind"] == "feed":
+            if m["target"] in fg.nodes:
+                anchor(m["id"], m["target"])
+            continue
         typ, a = m["type"], _attrs(m)
         key = None
         if typ in ORG_TYPES or typ == "JOINT_VENTURE":
@@ -480,6 +554,8 @@ def _resolve_expediente(svc: Services, store: Store, e, ms: list) -> dict:
                 anchor(m["id"], hit)
                 continue
             key = ("GUARANTEE", sub or G.norm_name(m["name"]))
+        elif typ == "CRITERION_SCORE":
+            key = ("SCORE", _lot_of(m, lots), G.norm_name(a.get("bidder")), G.norm_name(a.get("criterion") or m["name"]))
         elif typ == "CONTRACT" and len(sk["contracts"]) == 1:
             anchor(m["id"], sk["contracts"][0])
             continue
@@ -492,13 +568,10 @@ def _resolve_expediente(svc: Services, store: Store, e, ms: list) -> dict:
             if key[0] == "org" and key[1] in fg.nodes:
                 anchor(m["id"], key[1])
 
-    # Bids: one per lot and bidder. The bidder comes from SUBMITTED_BY, else from the bid's name.
-    _resolve_bids(store, ms, uf, fg, sk, lots, join, anchor)
-
     # 2. Near-identical names of the same type (typos, plurals, "S.A." vs ", SA").
     roots = _roots(uf, by_id)
     for typ, rs in roots.items():
-        if typ in ("LOT", "BID"):
+        if typ in ("LOT", "BID", "CRITERION_SCORE"):
             continue
         for i, a in enumerate(rs):
             for b in rs[i + 1:]:
@@ -513,11 +586,15 @@ def _resolve_expediente(svc: Services, store: Store, e, ms: list) -> dict:
             if a is not b and a["nif"] and not b["nif"] and similarity(a["name"], b["name"]) >= 0.85:
                 join(b["root"], a["root"], "similar")
 
+    # Bids: one per lot and bidder. The bidder comes from SUBMITTED_BY, else from the bid's name;
+    # after the companies' misspellings are merged, so "ACME SERVCIOS" and "ACME SERVICIOS, S.L." bid once.
+    _resolve_bids(store, ms, uf, fg, sk, lots, join, anchor)
+
     # 3. The model, type by type, over what is left (feed nodes included as candidates).
     llm_calls, llm_failed = 0, False
     roots = _roots(uf, by_id, fg)
     for typ, rs in roots.items():
-        if typ in ("LOT", "BID", "CONTRACTING_AUTHORITY") or len(rs) < 2:
+        if typ in ("LOT", "BID", "CRITERION_SCORE", "CONTRACTING_AUTHORITY") or len(rs) < 2:
             continue
         rs = sorted(rs, key=lambda r: G.norm_name(r["name"]))
         for i in range(0, len(rs), LLM_BATCH):
@@ -543,6 +620,8 @@ def _resolve_expediente(svc: Services, store: Store, e, ms: list) -> dict:
     n = _write(store, eid, e, t, ms, by_id, uf, fg, sk, lots)
     if lot_dropped:
         merges["lot_mentions_dropped"] = lot_dropped
+    if from_staging:
+        merges["nif_from_staging"] = from_staging
     return {"entities": n, "merges": dict(merges), "llm_calls": llm_calls, "llm_failed": llm_failed}
 
 
@@ -558,8 +637,7 @@ def _is_authority(name: str, auth: dict, nif: str | None) -> bool:
 
 
 def _reference_only(n: dict) -> bool:
-    text = n.get("text") or n.get("name") or ""
-    return n.get("amount") is None and len(text) < 160 and bool(_REFERENCE_ONLY.search(text))
+    return reference_only(n.get("text") or n.get("name"), n.get("amount"))
 
 
 def _guarantee_kind(n: dict) -> str | None:
@@ -753,6 +831,8 @@ def _write(store, eid, e, t, ms, by_id, uf, fg, sk, lots) -> int:
                 lid = _root_lot(uf, lm, by_id, lots)
                 if lid:
                     lot_ids.add(lid)
+            if _attrs(m).get("lot") not in (None, "") and len(lots) > 1 and (lid := _lot_of(m, lots)):
+                lot_ids.add(lid)
         root_entity[root] = nid
         rows.append((eid, nid, scope, typ, G.LABEL.get(typ, typ.title()), name, subtype, int(bool(node)),
                      "feed" if node else ("single" if len(mm) == 1 else "merged"),
@@ -769,6 +849,7 @@ def _write(store, eid, e, t, ms, by_id, uf, fg, sk, lots) -> int:
                          "[]", json.dumps({k: n[k] for k in ("points", "formula", "text", "amount") if n.get(k) is not None},
                                           ensure_ascii=False), "{}", "[]", "[]", 0))
     rel_rows = _relations(store, eid, by_id, uf, root_entity)
+    rel_rows += _score_criteria(eid, rows)
     # Feed requirements that only point at the PCAP are spelt out by the requirements of the
     # documents where solvency is set (the pliego administrativo and the notice), not the PPT's.
     role_of = {r["sha"]: r["role"] for r in store.q("SELECT sha, MIN(role) role FROM docref WHERE exp_id=? GROUP BY sha", (eid,))}
@@ -793,6 +874,30 @@ def _write(store, eid, e, t, ms, by_id, uf, fg, sk, lots) -> int:
         c.executemany("INSERT OR REPLACE INTO entity_mention VALUES (?,?,?)", links)
         c.executemany("INSERT OR REPLACE INTO entity_relation VALUES (?,?,?,?,?,?,?,?,?)", rel_rows)
     return len(rows)
+
+
+def _score_criteria(eid: str, rows: list) -> list[tuple]:
+    """A score names its criterion as the acta writes it: FOR_CRITERION to the expediente's
+    criterion of that name (the feed's line of the baremo, or one the documents gave)."""
+    crits = [(r[1], r[5] or "", set(json.loads(r[12]))) for r in rows if r[3] == "AWARD_CRITERION"]
+    out = []
+    for r in rows:
+        if r[3] != "CRITERION_SCORE":
+            continue
+        name = json.loads(r[10]).get("criterion") or r[5] or ""
+        lots = set(json.loads(r[12]))
+        best, score = None, 0.0
+        for cid, cname, clots in crits:
+            s = similarity(cname, name)
+            if tokens(name) and tokens(name) <= tokens(cname):
+                s = max(s, 0.8)
+            if lots and clots and not lots & clots:
+                continue
+            if s > score:
+                best, score = cid, s
+        if best and score >= ANCHOR_SIMILAR:
+            out.append((eid, f"{r[1]}|FOR_CRITERION|{best}", r[1], "FOR_CRITERION", best, None, "{}", "[]", "[]"))
+    return out
 
 
 def _root_lot(uf, lot_mention, by_id, lots) -> str | None:
@@ -827,19 +932,21 @@ def _relations(store, eid, by_id, uf, root_entity) -> list[tuple]:
 def passages(store: Store, cfg: PilotConfig, exp_id: str, entity_id: str, window: int = 600, limit: int = 6) -> list[str]:
     """Each located mention with the text around it, headed by document position, role and page."""
     rows = store.q(
-        "SELECT m.*, (SELECT MIN(role) FROM docref WHERE sha=m.sha) role, b.text_path FROM entity_mention em"
+        "SELECT m.*, (SELECT MIN(role) FROM docref WHERE sha=m.sha) role, b.text_path, b.chunker FROM entity_mention em"
         " JOIN mention m ON m.id=em.mention_id JOIN blob b ON b.sha=m.sha"
         " WHERE em.exp_id=? AND em.entity_id=? ORDER BY m.kind='ner' DESC, m.located DESC, m.confidence DESC", (exp_id, entity_id))
     out, seen, texts = [], {}, {}
     for m in rows:
         if m["sha"] not in texts:
-            texts[m["sha"]] = split_words(Path(m["text_path"]).read_text(encoding="utf-8"), cfg.chunk_words)
+            texts[m["sha"]] = document(m["text_path"], cfg.chunk_words, m["chunker"])[0]
         chunk = texts[m["sha"]][m["idx"]]
         if m["located"]:
             # A mention already inside a passage taken for this entity adds nothing new.
             if any(x <= m["char_start"] and m["char_end"] <= y for x, y in seen.get((m["sha"], m["idx"]), [])):
                 continue
-            a, b = max(0, m["char_start"] - window), min(len(chunk), m["char_end"] + window)
+            # A requirement found at its clause's heading (locate.py) is the text that follows it.
+            after = 4 * window if m["kind"] == "feed" and m["type"] == "REQUIREMENT" else window
+            a, b = max(0, m["char_start"] - window), min(len(chunk), m["char_end"] + after)
             body = chunk[a:b]
             seen.setdefault((m["sha"], m["idx"]), []).append((a, b))
         else:
@@ -901,14 +1008,14 @@ def _coref_expediente(cfg: PilotConfig, store: Store, svc: Services, eid: str) -
     if not cands:
         return {"status": "ok", "chunks": 0, "calls": 0, "links": 0}
     listing = [{"name": c["name"], "type": c["type"]} for c in cands]
-    rows = store.q("SELECT c.sha, c.idx, b.text_path, (SELECT MIN(role) FROM docref WHERE sha=c.sha AND exp_id=?) role,"
+    rows = store.q("SELECT c.sha, c.idx, b.text_path, b.chunker, (SELECT MIN(role) FROM docref WHERE sha=c.sha AND exp_id=?) role,"
                    " (SELECT MIN(label) FROM docref WHERE sha=c.sha AND exp_id=?) label FROM chunk c JOIN blob b ON b.sha=c.sha"
                    " WHERE c.status='ok' AND c.sha IN (SELECT sha FROM docref WHERE exp_id=? AND status='fetched')"
                    " ORDER BY c.sha, c.idx", (eid, eid, eid))
     texts, pages, jobs = {}, {}, []
     for r in rows:
         if r["sha"] not in texts:
-            texts[r["sha"]] = split_words(Path(r["text_path"]).read_text(encoding="utf-8"), cfg.chunk_words)
+            texts[r["sha"]] = document(r["text_path"], cfg.chunk_words, r["chunker"])[0]
             pages[r["sha"]] = page_ranges(texts[r["sha"]])
         chunk = texts[r["sha"]][r["idx"]] if r["idx"] < len(texts[r["sha"]]) else ""
         if CUE.search(chunk):
@@ -1007,15 +1114,38 @@ REFINE_SCHEMAS = {
         ]}], "relation_types": []},
     "AWARD_CRITERION": {"entity_types": [{
         "name": "CRITERION_DETAIL",
-        "description": "El criterio de adjudicación que describe el texto, con sus puntos y su forma de valoración.",
-        "subtypes": [{"name": "JUDGEMENT", "description": "Evaluable mediante juicio de valor"},
-                     {"name": "FORMULA", "description": "Evaluable mediante fórmula o de forma automática"}],
+        "description": "El criterio de adjudicación que describe el texto: cómo se puntúa, con sus cifras exactas.",
+        # The subtype is the scoring method: what the formulas stage writes as an expression, and
+        # what lets two tenders' criteria be compared.
+        "subtypes": [{"name": s, "description": d} for s, d in [
+            ("PRICE_PROPORTIONAL", "Precio, proporcional inversa a la oferta más baja: P = Pmax · Omin / Oi"),
+            ("PRICE_LINEAR_DISCOUNT", "Precio, proporcional a la baja ofertada: P = Pmax · Bi / Bmax"),
+            ("PRICE_LINEAR_RANGE", "Precio, lineal entre el presupuesto base (0 puntos) y la oferta más baja o un umbral (máximo)"),
+            ("PRICE_RELATIVE_AVERAGE", "Precio, respecto a la media de las ofertas"),
+            ("PRICE_OTHER", "Precio, otra fórmula (cuadrática, logarítmica, exponencial...)"),
+            ("PROPORTIONAL_BEST", "Otra cifra ofertada, proporcional a la mejor oferta (más años, menos horas): P = Pmax · Oi / Omax"),
+            ("PER_UNIT", "Puntos fijos por cada unidad ofertada, hasta un máximo (0,5 puntos por mes adicional)"),
+            ("TIERS", "Baremo por tramos: tantos puntos si la oferta está entre tal y cual cifra"),
+            ("YES_NO", "Todo o nada: los puntos se dan si se ofrece y no si no"),
+            ("RANKING", "Por puesto en la clasificación de las ofertas"),
+            ("JUDGEMENT", "Juicio de valor, con o sin escala"),
+        ]],
         "attributes": [
             {"name": "points", "datatype": "number", "description": "Puntuación máxima del criterio"},
+            {"name": "variable", "datatype": "string", "description": "Lo que oferta cada licitador y se puntúa: precio, baja, años de garantía, plazo..."},
+            {"name": "unit", "datatype": "string", "description": "Unidad de lo ofertado: EUR, %, años, meses, días, horas, unidades"},
+            {"name": "direction", "datatype": "string", "description": "lower_better si gana la cifra más baja (precio, plazo), higher_better si la más alta"},
             {"name": "formula", "datatype": "string", "description": "Fórmula o regla de puntuación, literal"},
             {"name": "scoring_rule", "datatype": "string", "description": "Cómo se asignan los puntos, en una frase"},
+            {"name": "saturation", "datatype": "string", "description": "Umbral de saciedad: a partir de qué oferta no se dan más puntos, literal"},
+            {"name": "saturation_value", "datatype": "number", "description": "La cifra del umbral de saciedad, sin unidad"},
+            {"name": "abnormal_rule", "datatype": "string", "description": "Cuándo una oferta se presume anormalmente baja (baja temeraria), literal"},
+            {"name": "abnormal_pct", "datatype": "number", "description": "El porcentaje o los puntos porcentuales de esa regla (10 en «10 unidades por debajo de la media»)"},
+            {"name": "price_basis", "datatype": "string", "description": "Si el precio se valora con o sin IVA, por unidad o total"},
+            {"name": "judgement_scale", "datatype": "string", "description": "Escala del juicio de valor (excelente 100 %, bueno 75 %...), literal"},
+            {"name": "threshold_points", "datatype": "number", "description": "Puntuación mínima en el criterio (o en el sobre) para seguir en el procedimiento"},
             {"name": "subcriteria", "datatype": "string", "description": "Subcriterios con sus puntos, separados por ';'"},
-            {"name": "threshold_points", "datatype": "number", "description": "Umbral mínimo de puntos para seguir en el procedimiento"},
+            {"name": "rounding", "datatype": "string", "description": "Decimales o redondeo de la puntuación"},
             {"name": "envelope", "datatype": "string", "description": "Sobre o archivo en que se presenta"},
             {"name": "evidence_required", "datatype": "string", "description": "Documentación que debe aportar el licitador"},
             {"name": "applies_to_lots", "datatype": "string", "description": "Lotes a los que se aplica, si el texto lo dice"},
@@ -1043,7 +1173,9 @@ def refine(cfg: PilotConfig, store: Store):
             return r, "failed", {"error": str(e)}, int((time.time() - t0) * 1000)
         ents = out.get("entities", [])
         best = max(ents, key=lambda x: (similarity(x.get("name") or "", r["name"]), x.get("confidence") or 0), default=None)
-        result = {"subtype": best.get("subtype"), **{k: v for k, v in (best.get("attributes") or {}).items() if v not in (None, "")}} if best else {}
+        # A criterion's refined subtype is its scoring method, not the feed's formula / judgement.
+        key = "method" if r["type"] == "AWARD_CRITERION" else "subtype"
+        result = {key: best.get("subtype"), **{k: v for k, v in (best.get("attributes") or {}).items() if v not in (None, "")}} if best else {}
         return r, "ok", result, int((time.time() - t0) * 1000)
 
     with store.stage("refine") as st, _pool(cfg.nlp_workers) as pool:
@@ -1069,7 +1201,7 @@ def formulas(cfg: PilotConfig, store: Store):
     jobs = []
     for r in store.q("SELECT exp_id, id, name, subtype, attributes FROM entity WHERE type='AWARD_CRITERION'"):
         ref = refined.get((r["exp_id"], r["id"]), {})
-        if (r["exp_id"], r["id"]) in done or (ref.get("subtype") or r["subtype"]) == "JUDGEMENT":
+        if (r["exp_id"], r["id"]) in done or (ref.get("method") or ref.get("subtype") or r["subtype"]) == "JUDGEMENT":
             continue
         jobs.append((r, ref))
 
@@ -1111,7 +1243,8 @@ def formulas(cfg: PilotConfig, store: Store):
 
 # A lot is its number, its object and its figures, all in the feed or stated as "Lote 2: …" in the
 # documents (graph.py writes that); a generated paragraph only restated them, or contradicted them.
-NOT_DESCRIBED = {"LOT"}
+# A score is one cell of a valuation table: bidder, criterion, what was offered, points. Its fields say it all.
+NOT_DESCRIBED = {"LOT", "CRITERION_SCORE"}
 # The prompt reads the type as a word ("Penalidad"), not as a code: with "PENALTY" the model wrote
 # "X es una entidad de tipo PENALTY…", which says nothing.
 TYPE_ES = {
@@ -1120,7 +1253,7 @@ TYPE_ES = {
     "REQUIREMENT": "Requisito de solvencia o de participación", "TECHNICAL_REQUIREMENT": "Requisito técnico de la prestación",
     "QUALIFICATION": "Acreditación o certificado", "GUARANTEE": "Garantía", "BID": "Oferta", "CONTRACT": "Contrato",
     "MODIFICATION": "Modificación del contrato", "PENALTY": "Penalidad por incumplimiento", "DELIVERABLE": "Entregable o prestación",
-    "TEAM_PROFILE": "Perfil del equipo exigido",
+    "TEAM_PROFILE": "Perfil del equipo exigido", "APPEAL": "Recurso",
 }
 PROFILE = {"REQUIREMENT": "requirement_desc", "TECHNICAL_REQUIREMENT": "requirement_desc",
            "AWARD_CRITERION": "criterion_desc"}
@@ -1133,6 +1266,91 @@ def attributes_text(attrs: dict, refined: dict, conflicts: dict) -> str:
         lines.append(f"- DISCREPANCIA en {k}: " + "; ".join(
             f"{v['value']} ({'feed' if v.get('source') else str(v.get('mentions')) + ' menciones'})" for v in vs))
     return "\n".join(lines) or "- (sin atributos)"
+
+
+# ── descriptions from the fields (no model) ─────────────────────────────
+
+# What the feed (level 1) and the rules give an entity is enough to describe it: a sentence made
+# from its fields, the refined ones included. The model is kept for what only the documents tell.
+METHOD_ES = {
+    "PRICE_PROPORTIONAL": "precio puntuado en proporción inversa a la oferta más baja",
+    "PRICE_LINEAR_DISCOUNT": "precio puntuado en proporción a la baja ofertada",
+    "PRICE_LINEAR_RANGE": "precio puntuado linealmente entre el presupuesto base y la oferta más baja",
+    "PRICE_RELATIVE_AVERAGE": "precio puntuado respecto a la media de las ofertas",
+    "PRICE_OTHER": "precio puntuado con otra fórmula",
+    "PROPORTIONAL_BEST": "puntuado en proporción a la mejor oferta",
+    "PER_UNIT": "puntos por cada unidad ofertada, hasta el máximo",
+    "TIERS": "puntuado por tramos",
+    "YES_NO": "todos los puntos si se ofrece, ninguno si no",
+    "RANKING": "puntuado por puesto en la clasificación",
+    "JUDGEMENT": "valorado mediante juicio de valor",
+}
+GROUP_ES = {"financial": "Solvencia económica y financiera", "technical": "Solvencia técnica o profesional",
+            "classification": "Clasificación empresarial", "general": "Requisito de participación"}
+REL_ES = {"SUBMITTED_BY": "{tail} presentó {head}", "HAS_SCORE": "{tail} es una puntuación de {head}",
+          "FOR_CRITERION": "{head} corresponde al criterio «{tail}»", "MEMBER_OF": "{head} forma parte de {tail}"}
+# Relations the pilot draws by rule (bidder, score, criterion): described by rule as well.
+RULE_RELATIONS = {"SUBMITTED_BY", "HAS_SCORE", "FOR_CRITERION"}
+
+
+def _n(v) -> str:
+    if isinstance(v, (int, float)):
+        return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".").rstrip("0").rstrip(",")
+    return str(v)
+
+
+def _join(parts) -> str:
+    out = " ".join(p.strip() for p in parts if p and p.strip())
+    return out if out.endswith(".") else out + "."
+
+
+def feed_description(typ: str, name: str, node: dict, attrs: dict, ref: dict, tender: dict | None = None) -> str | None:
+    """A description of a feed entity from its fields; None for a type without a template."""
+    f = {**node, **{k: v for k, v in attrs.items() if v not in (None, "")}, **{k: v for k, v in ref.items() if v not in (None, "")}}
+    if typ == "AWARD_CRITERION":
+        kind = {"FORMULA": " evaluable mediante fórmula", "JUDGEMENT": " sujeto a juicio de valor"}.get(node.get("subtype") or "", "")
+        pts = f", hasta {_n(f['points'])} puntos" if f.get("points") not in (None, "") else ""
+        return _join([f"{name}: criterio de adjudicación{kind}{pts}.",
+                      f"{METHOD_ES[f['method']].capitalize()}." if f.get("method") in METHOD_ES else "",
+                      f"{f['scoring_rule']}." if f.get("scoring_rule") else "",
+                      f"Fórmula: {f['formula']}" if f.get("formula") else "",
+                      f"Umbral mínimo: {_n(f['threshold_points'])} puntos." if f.get("threshold_points") else "",
+                      f"Saciedad: {f['saturation']}." if f.get("saturation") else "",
+                      f"Ofertas anormalmente bajas: {f['abnormal_rule']}." if f.get("abnormal_rule") else "",
+                      f"Subcriterios: {f['subcriteria']}." if f.get("subcriteria") else "",
+                      f"Se presenta en el sobre {f['envelope']}." if f.get("envelope") else ""])
+    if typ == "REQUIREMENT":
+        head = GROUP_ES.get(node.get("group") or "", "Requisito")
+        text = node.get("text") or name
+        amount = f.get("threshold_amount") or f.get("amount")
+        return _join([f"{head}: {text.rstrip('.')}.",
+                      f"Cifra exigida: {_n(amount)} {f.get('threshold_unit') or ('euros' if f.get('amount') else '')}." if amount else "",
+                      f"Periodo: {_n(f['period_years'])} años." if f.get("period_years") else "",
+                      f"Referencia: {f['reference_base']}." if f.get("reference_base") else "",
+                      f"Norma o clasificación: {f['standard']}." if f.get("standard") else "",
+                      f"Se acredita con: {f['accreditation']}." if f.get("accreditation") else ""])
+    if typ == "GUARANTEE":
+        return _join([f"{name}" + (f" del {_n(f['pct'])} %" if f.get("pct") else "") +
+                      (f", {_n(f['amount'])} euros" if f.get("amount") else "") + "."])
+    if typ == "CONTRACT":
+        return _join([f"Contrato {f.get('contract_id') or name}",
+                      f"firmado el {f['signed_date']}" if f.get("signed_date") else "",
+                      f"por {_n(f['price'])} euros sin IVA" if f.get("price") else ""])
+    if typ == "MODIFICATION":
+        return _join([f"{name}.", f"Variación del importe: {_n(f['amount_change'])} euros." if f.get("amount_change") else "",
+                      f"Nuevo importe: {_n(f['new_total'])} euros." if f.get("new_total") else "",
+                      f"Motivo: {f['reason']}." if f.get("reason") else ""])
+    if typ == "CONTRACTING_AUTHORITY":
+        a = (tender or {}).get("authority") or {}
+        kind = ((a.get("type") or {}).get("label") or "").lower()
+        parent = (a.get("hierarchy") or [None])[0]
+        return _join([f"{name}" + (f" (NIF {f['nif']})" if f.get("nif") else "") + ": órgano de contratación" +
+                      (f", {kind}" if kind else "") + (f", dentro de {parent}" if parent else "") + "."])
+    if typ in ("COMPANY", "JOINT_VENTURE"):
+        return _join([f"{name}" + (f" (NIF {f['nif']})" if f.get("nif") else "") +
+                      (": unión temporal de empresas" if typ == "JOINT_VENTURE" else ": empresa") +
+                      (" adjudicataria en el expediente" if node.get("label") == "Organization" else "") + "."])
+    return None
 
 
 def describe(cfg: PilotConfig, store: Store):
@@ -1160,6 +1378,7 @@ def describe(cfg: PilotConfig, store: Store):
         for r in store.q("SELECT * FROM entity_relation WHERE type != 'DETAILED_BY'"):
             if (r["exp_id"], "relation", r["id"]) not in done:
                 jobs.append(("relation", r["exp_id"], r["id"], r, names))
+    jobs, templated = _templated(cfg, store, jobs)
 
     def one(job):
         kind, exp_id, item_id, r, extra = job
@@ -1198,5 +1417,45 @@ def describe(cfg: PilotConfig, store: Store):
             st["items"] += 1
             if i % 50 == 0 or i == len(jobs):
                 log(f"describe {i}/{len(jobs)}")
+    log(f"describe: {templated} from their fields, {len(jobs)} by the model")
     if _FALLBACK:
         log(f"describe: nlp_service has no {sorted(_FALLBACK)}; used entity_desc with the fields as evidence")
+
+
+def _templated(cfg: PilotConfig, store: Store, jobs: list) -> tuple[list, int]:
+    """Describe from their fields (no model) the feed's entities and the relations drawn by rule;
+    return the jobs left for the model. PILOT_DESCRIBE_FEED=model sends everything to the model."""
+    if cfg.describe_feed != "template":
+        return jobs, 0
+    tenders = {r["id"]: r for r in store.q("SELECT * FROM expediente")}
+    feed: dict[str, dict] = {}
+    refined = {(r["exp_id"], r["entity_id"]): json.loads(r["result_json"]) for r in
+               store.q("SELECT * FROM refinement WHERE status='ok'")}
+
+    def nodes(eid):
+        if eid not in feed:
+            e = tenders.get(eid)
+            feed[eid] = _anchors(eid, e, json.loads(e["tender_json"]))[0].nodes if e else {}
+        return feed[eid]
+
+    left, rows = [], []
+    for job in jobs:
+        kind, exp_id, item_id, r, extra = job
+        text = None
+        if kind == "relation":
+            if r["type"] in RULE_RELATIONS:
+                text = REL_ES[r["type"]].format(head=extra.get((r["exp_id"], r["src"]), r["src"]),
+                                                tail=extra.get((r["exp_id"], r["dst"]), r["dst"])) + "."
+        elif r["anchor"]:
+            eid = extra[0] if exp_id == "*" else exp_id
+            node = nodes(eid).get(item_id, {})
+            t = json.loads(tenders[eid]["tender_json"]) if eid in tenders else None
+            text = feed_description(r["type"], r["name"], node, json.loads(r["attributes"] or "{}"),
+                                    refined.get((eid, item_id), {}), t)
+        if text:
+            rows.append((exp_id, kind, item_id, "template", "ok", 0, text))
+        else:
+            left.append(job)
+    with store.tx() as c:
+        c.executemany("INSERT OR REPLACE INTO entity_description VALUES (?,?,?,?,?,?,?)", rows)
+    return left, len(rows)

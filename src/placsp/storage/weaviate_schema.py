@@ -10,7 +10,8 @@ def _props():
         "result_code", "result_label", "contract_type_code", "contract_type",
         "procedure_code", "procedure", "notice_type", "contracting_authority",
         "contracting_authority_id", "org_top_level", "adjudicatario",
-        "adjudicatario_nif", "nuts", "nuts_label", "city", "country", "funding_program"]]
+        "adjudicatario_nif", "nuts", "nuts_label", "city", "country", "funding_program",
+        "removed_reason"]]
     out += [{"name": n, "dataType": ["text[]"]} for n in ["cpv", "document_urls"]]
     out += [text(n) for n in ["budget_bucket", "pub_month", "deadline_month"]]
     out += [num("budget_amount"), num("estimated_value"), num("awarded_amount"),

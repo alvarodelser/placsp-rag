@@ -6,7 +6,7 @@ def test_defaults(monkeypatch):
     assert cfg.vectorizer_url == "http://vectorizer:8089"
     assert cfg.weaviate_class == "Placsp_licitaciones"
     assert cfg.embed_batch_size == 48
-    assert cfg.max_in_flight == 1
+    assert cfg.data_dir == "./data"
 
 def test_env_override(monkeypatch):
     monkeypatch.setenv("VECTORIZER_URL", "http://x:1")

@@ -1,12 +1,15 @@
 """CLI: python -m placsp_pilot <stage> [--run-dir DIR] [--quota channel=n,... | --themes theme=n,... | --add N]
 
-Stages run in this order; `run` does them all. Each is resumable.
+Stages run in this order; `run` does them all, `rules` stage 1.5 (no model: select … mentions, then
+what is left for the model), `nlp` stage 2 on the same files. Each is resumable.
   select       pick the latest expedientes per channel from the live feeds, or with --themes the
                latest whose CPVs fall in each theme (themes.py: urbanismo, sostenibilidad,
                cartografia, participacion)
   discover     scrape detail pages (PLACSP and external platforms) for more documents
   fetch        download every referenced document
-  text         extract text (OCR service for scanned PDFs), unpack zips
+  text         extract text (OCR service for scanned PDFs), unpack zips; layout pass for pliegos and actas
+  plan         chunk every document by sections and mark the chunks NER will read
+  feed_summaries  notices summarised from the feed record (no model)
   classify     nlp_service /nli: zero-shot role for documents the rules could not label
   summarize    nlp_service /summarize (article): one gist per document
   ner          nlp_service /ner per chunk with the procurement ontology (every document is chunked)
@@ -35,8 +38,14 @@ from placsp_pilot import entities, graph, index, nlpstages, report, stages, vali
 from placsp_pilot.config import DEFAULT_QUOTAS, load_config
 from placsp_pilot.store import Store
 
-ORDER = ["select", "discover", "fetch", "text", "classify", "summarize", "ner", "mentions", "resolve", "coref", "refine",
-         "formulas", "describe", "summary", "graph", "index", "validate", "report"]
+ORDER = ["select", "discover", "fetch", "text", "plan", "feed_summaries", "classify", "summarize", "ner", "mentions",
+         "resolve", "coref", "refine", "formulas", "describe", "summary", "graph", "index", "validate", "report"]
+# Stage 1.5: the documents by rules, no model: download, text and layout, sections, the chunks NER
+# will read, notices summarised from the feed, the feed's entities located in the text. What it
+# leaves (chunks to read, entities not found, scanned files) is stage 2's, on the same files.
+RULES = ["select", "discover", "fetch", "text", "plan", "feed_summaries", "mentions"]
+NLP = ["classify", "summarize", "ner", "mentions", "resolve", "coref", "refine", "formulas", "describe", "summary",
+       "graph", "index", "validate", "report"]
 
 
 def _quotas(s: str | None) -> dict:
@@ -58,7 +67,7 @@ def _themes(s: str) -> dict:
 def main(argv=None):
     warnings.filterwarnings("ignore", message="Unverified HTTPS request")
     ap = argparse.ArgumentParser(prog="placsp_pilot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("stage", choices=ORDER + ["run"])
+    ap.add_argument("stage", choices=ORDER + ["run", "rules", "nlp"])
     ap.add_argument("--run-dir", help="output directory (default $PILOT_RUN_DIR or ./pilot_runs/default)")
     ap.add_argument("--quota", help="per-channel sample size, e.g. placsp_mayores=50,externos_mayores=20,placsp_menores=15,propios=15")
     ap.add_argument("--themes", help="select by theme instead (CPV lists in themes.py), e.g. "
@@ -70,10 +79,16 @@ def main(argv=None):
     ap.add_argument("--max-pages", type=int, default=200, help="feed pages read per channel by --themes")
     ap.add_argument("--max-doc-chars", type=int, default=400_000,
                     help="characters of a document sent to /summarize (the service reduces it further)")
+    ap.add_argument("--staging", help="select from the staging tables (level 1) in this data dir instead of the live feeds")
+    ap.add_argument("--years", help="with --staging: years of the tenders, e.g. 2023,2024")
+    ap.add_argument("--awarded", action="store_true", help="with --staging: only tenders with a winner")
+    ap.add_argument("--ids", help="with --staging: these entry ids, comma-separated")
     ap.add_argument("--retry-failed", action="store_true", help="put failed downloads and service calls back to pending first")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.run_dir)
+    if args.staging:
+        cfg.staging_dir = args.staging
     store = Store(cfg.db_path)
     print(f"run dir {cfg.run_dir}; nlp_service {cfg.nlp_url or '(unset)'}; OCR {cfg.ocr_url or 'off'}; "
           f"vectorizer {cfg.vectorizer_url or 'off'}", flush=True)
@@ -81,7 +96,11 @@ def main(argv=None):
         print("retry: " + ", ".join(f"{k} {v}" for k, v in store.reset_failed().items() if v), flush=True)
 
     steps = {
-        "select": lambda: stages.select_balanced(cfg, store, args.add, args.channels.split(","), args.max_pages)
+        "select": lambda: stages.select_staging(cfg, store, args.staging, None if args.themes else _quotas(args.quota),
+                                                _themes(args.themes) if args.themes else None,
+                                                [int(y) for y in args.years.split(",")] if args.years else None,
+                                                True if args.awarded else None, args.ids.split(",") if args.ids else None)
+        if args.staging else stages.select_balanced(cfg, store, args.add, args.channels.split(","), args.max_pages)
         if args.add is not None else stages.select_themes(cfg, store, _themes(args.themes), args.channels.split(","), args.max_pages)
         if args.themes else stages.select(cfg, store, _quotas(args.quota)),
         "discover": lambda: stages.discover(cfg, store),
@@ -97,13 +116,17 @@ def main(argv=None):
         "formulas": lambda: entities.formulas(cfg, store),
         "describe": lambda: entities.describe(cfg, store),
         "summary": lambda: nlpstages.summary(cfg, store),
+        "plan": lambda: nlpstages._plan_chunks(cfg, store, nlpstages.Schemas(cfg, store)),
+        "feed_summaries": lambda: nlpstages.feed_summaries(cfg, store),
         "graph": lambda: graph.build(cfg, store),
         "index": lambda: index.index(cfg, store),
         "validate": lambda: validate.validate(cfg, store),
         "report": lambda: print(f"report: {report.write(cfg, store)}"),
     }
-    for s in (ORDER if args.stage == "run" else [args.stage]):
+    for s in {"run": ORDER, "rules": RULES, "nlp": NLP}.get(args.stage, [args.stage]):
         steps[s]()
+    if args.stage == "rules":
+        print(report.left_for_nlp(cfg, store))
     return 0
 
 

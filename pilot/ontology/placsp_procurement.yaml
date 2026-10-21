@@ -1,35 +1,33 @@
 # pilot/ontology/placsp_procurement.yaml
 # Public-procurement ontology for PLACSP expedientes, in the nlp_service ontology format
 # (config/ontologies/*.yaml): it can be dropped into nlp_service and run by the relation pipeline
-# unchanged. The pilot projects it into the inline ExtractionSchema it sends to POST /ner.
+# unchanged (nlp_service ignores `source` and `profiles`). The pilot projects one inline
+# ExtractionSchema per document role from it (`profiles` below) and sends that to POST /ner.
 #
 # It follows the data model (ContractingAuthority, Tender, Lot, AwardCriterion, Requirement,
 # Qualification, Bid, JointVenture, Result, Contract), adjusted to what public documents contain:
-# - Tender-level facts (procedure, value, deadline, CPV) come from the feed, not from text.
-# - Envelopes, team members and good-execution certificates are never published: not extracted.
-# - Added: Guarantee, Modification, Penalty and the PPT scope (deliverables, team profiles,
-#   technical requirements, service levels), which the pliegos and resolutions do contain.
-version: "1"
+# - `source: feed` types are published structured in the CODICE feed (authority, lots, criteria and
+#   points, solvency, guarantees, winners, contracts, modifications). NER does not look for them:
+#   the `locate` stage finds them in the documents by name, number and clause, and those passages
+#   are their provenance. NER only asks for a feed type when the feed of that expediente lacks it
+#   (`fallback` below), as external platforms often do.
+# - `source: documents` types exist only in the text. They point at the feed's entities by key
+#   attributes (`lot`, `bidder`, `criterion`) instead of relations, which the pilot resolves
+#   without the model; relations are kept only between document entities.
+# - Envelopes' contents, team members and good-execution certificates are never published: not extracted.
+version: "2"
 use_case: placsp_procurement
 
 entity_types:
+  # ── in the feed ─────────────────────────────────────────────────────────
   - name: CONTRACTING_AUTHORITY
+    source: feed
     description: Órgano de contratación o entidad pública que licita (ayuntamiento, consejería, ministerio, diputación, empresa pública).
     attributes:
       nif: {type: string, description: "NIF/CIF si aparece en el texto."}
 
-  - name: COMPANY
-    description: Empresa o persona jurídica que licita, resulta adjudicataria, forma parte de una UTE o es subcontratista. No incluir personas físicas.
-    attributes:
-      nif:  {type: string, description: "NIF/CIF de la empresa si aparece."}
-      sme:  {type: boolean, description: "true si el texto la identifica como PYME."}
-
-  - name: JOINT_VENTURE
-    description: Unión temporal de empresas (UTE) que presenta una oferta conjunta.
-    attributes:
-      nif: {type: string, description: "NIF de la UTE si aparece."}
-
   - name: LOT
+    source: feed
     description: Un lote en que se divide el contrato, solo cuando el texto nombra el lote ("Lote 2", "lote nº 3", "LOTE 1. Suministro de…"). Si el contrato no se divide en lotes, no hay ningún LOT; tampoco lo es el objeto del contrato ni la frase que justifica no dividirlo.
     attributes:
       number: {type: string, description: "Número o código del lote, como lo da el texto."}
@@ -37,16 +35,19 @@ entity_types:
       cpv:    {type: string, description: "Código CPV del lote si aparece."}
 
   - name: AWARD_CRITERION
+    source: feed
     description: Criterio de adjudicación con su puntuación máxima (una línea de baremo).
     subtypes:
       - {name: JUDGEMENT, description: Criterio sujeto a juicio de valor.}
       - {name: FORMULA,   description: Criterio evaluable mediante fórmula o de forma automática.}
     attributes:
+      lot:      {type: string, description: "Número del lote al que se aplica, si el texto lo dice."}
       points:   {type: number, description: "Puntuación máxima del criterio."}
       envelope: {type: string, description: "Sobre o archivo en que se presenta (A, B, C, 1, 2...)."}
       formula:  {type: string, description: "Fórmula, umbral, tope o regla de baja anormal del criterio."}
 
   - name: REQUIREMENT
+    source: feed
     description: Requisito de solvencia o aptitud que se exige a los licitadores, tal como lo redacta el pliego.
     subtypes:
       - {name: TURNOVER,         description: Volumen anual de negocios.}
@@ -57,19 +58,13 @@ entity_types:
       - {name: CLASSIFICATION,   description: Clasificación empresarial (grupo, subgrupo, categoría).}
       - {name: COMMITMENT,       description: Compromiso de adscripción de medios u otra obligación.}
     attributes:
+      lot:         {type: string, description: "Número del lote al que se aplica, si el texto lo dice."}
       amount:      {type: number, description: "Importe exigido en euros."}
       years:       {type: number, description: "Años de referencia o de experiencia exigidos."}
       technicians: {type: number, description: "Número de personas exigidas."}
 
-  - name: QUALIFICATION
-    description: Titulación, certificación, clasificación o campo de experiencia que acredita un requisito o perfil.
-    subtypes:
-      - {name: DEGREE,           description: Titulación académica.}
-      - {name: CERTIFICATION,    description: Certificación profesional o de calidad.}
-      - {name: EXPERIENCE_FIELD, description: Campo o ámbito de experiencia.}
-      - {name: CLASSIFICATION,   description: Grupo/subgrupo/categoría de clasificación.}
-
   - name: GUARANTEE
+    source: feed
     description: Garantía exigida (provisional, definitiva o complementaria).
     subtypes:
       - {name: PROVISIONAL,   description: Garantía provisional.}
@@ -79,18 +74,8 @@ entity_types:
       pct:    {type: number, description: "Porcentaje sobre el precio."}
       amount: {type: number, description: "Importe en euros."}
 
-  - name: BID
-    description: Oferta presentada a un lote por una empresa o UTE, nombrada por su licitador (p. ej. "Oferta de ACME SL al lote 1").
-    attributes:
-      outcome:          {type: string, description: "admitted, excluded o withdrawn."}
-      exclusion_reason: {type: string, description: "Motivo de exclusión si la oferta fue excluida."}
-      price:            {type: number, description: "Precio ofertado en euros sin IVA."}
-      technical_score:  {type: number, description: "Puntuación técnica (juicio de valor)."}
-      economic_score:   {type: number, description: "Puntuación económica o de fórmulas."}
-      total_score:      {type: number, description: "Puntuación total."}
-      rank:             {type: number, description: "Posición en la clasificación."}
-
   - name: CONTRACT
+    source: feed
     description: Contrato formalizado con el adjudicatario (o encargo a medio propio).
     attributes:
       contract_id: {type: string, description: "Número o referencia del contrato."}
@@ -100,8 +85,107 @@ entity_types:
       duration:    {type: string, description: "Duración (p. ej. \"24 meses\")."}
       price:       {type: number, description: "Precio del contrato en euros sin IVA."}
 
+  # ── only in the documents ───────────────────────────────────────────────
+  - name: COMPANY
+    source: documents
+    description: Empresa o persona jurídica que licita, resulta adjudicataria, forma parte de una UTE o es subcontratista. No incluir personas físicas.
+    attributes:
+      nif:  {type: string, description: "NIF/CIF de la empresa si aparece."}
+      sme:  {type: boolean, description: "true si el texto la identifica como PYME."}
+
+  - name: JOINT_VENTURE
+    source: documents
+    description: Unión temporal de empresas (UTE) que presenta una oferta conjunta.
+    attributes:
+      nif: {type: string, description: "NIF de la UTE si aparece."}
+
+  - name: BID
+    source: documents
+    description: La oferta de un licitador (empresa o UTE) a un lote, tal como la recoge un acta, un informe o la resolución de adjudicación. Una por licitador y lote.
+    attributes:
+      lot:              {type: string, description: "Número del lote; vacío si el contrato no tiene lotes."}
+      bidder:           {type: string, description: "Nombre del licitador, literal."}
+      bidder_nif:       {type: string, description: "NIF del licitador si aparece."}
+      outcome:          {type: string, description: "admitted, excluded, withdrawn, proposed (propuesta como adjudicataria) o awarded."}
+      exclusion_reason: {type: string, description: "Motivo de exclusión o de rechazo, si la oferta fue excluida."}
+      price:            {type: number, description: "Precio ofertado en euros sin IVA."}
+      discount_pct:     {type: number, description: "Baja ofertada en % sobre el presupuesto, si se expresa así."}
+      abnormally_low:   {type: boolean, description: "true si incurre en presunción de anormalidad (baja temeraria)."}
+      technical_score:  {type: number, description: "Puntuación total de los criterios de juicio de valor."}
+      economic_score:   {type: number, description: "Puntuación total de los criterios de fórmula."}
+      total_score:      {type: number, description: "Puntuación total."}
+      rank:             {type: number, description: "Posición en la clasificación."}
+
+  - name: CRITERION_SCORE
+    source: documents
+    description: Lo que un licitador ofertó y obtuvo en un criterio de adjudicación concreto (una celda de la tabla de valoración).
+    attributes:
+      lot:           {type: string, description: "Número del lote; vacío si el contrato no tiene lotes."}
+      bidder:        {type: string, description: "Nombre del licitador, literal."}
+      criterion:     {type: string, description: "Nombre del criterio de adjudicación, como lo da el texto."}
+      points:        {type: number, description: "Puntos obtenidos en ese criterio."}
+      offered:       {type: string, description: "Lo ofertado en ese criterio, literal (\"12 % de baja\", \"3 años de garantía\", \"Sí\")."}
+      offered_value: {type: number, description: "La cifra ofertada, sin unidad."}
+      offered_unit:  {type: string, description: "Unidad de la cifra: EUR, %, años, meses, horas, unidades..."}
+
+  - name: QUALIFICATION
+    source: documents
+    description: Titulación, certificación, clasificación o campo de experiencia que acredita un requisito o perfil.
+    subtypes:
+      - {name: DEGREE,           description: Titulación académica.}
+      - {name: CERTIFICATION,    description: Certificación profesional o de calidad.}
+      - {name: EXPERIENCE_FIELD, description: Campo o ámbito de experiencia.}
+      - {name: CLASSIFICATION,   description: Grupo/subgrupo/categoría de clasificación.}
+
+  - name: PENALTY
+    source: documents
+    description: Penalidad por incumplimiento o demora prevista en el pliego.
+    subtypes:
+      - {name: DELAY,        description: Por demora en el plazo.}
+      - {name: DEFECTIVE,    description: Por cumplimiento defectuoso o incumplimiento de la prestación.}
+      - {name: CONDITION,    description: Por incumplir una condición especial de ejecución o de la oferta.}
+      - {name: SUBCONTRACT,  description: Por incumplir las condiciones de subcontratación.}
+      - {name: OTHER,        description: Otra.}
+    attributes:
+      lot:       {type: string, description: "Número del lote, si el texto lo dice."}
+      amount:    {type: number, description: "Importe o cuantía en euros si es fija."}
+      pct:       {type: number, description: "Porcentaje (sobre el precio del contrato) si se expresa así."}
+      per:       {type: string, description: "Por qué se cuenta: día de retraso, incidencia, hora, mes..."}
+      cap_pct:   {type: number, description: "Tope total de las penalidades en % del precio."}
+      condition: {type: string, description: "Incumplimiento que la activa."}
+
+  - name: DELIVERABLE
+    source: documents
+    description: Entregable, fase o prestación concreta que exige el pliego técnico.
+    attributes:
+      lot:      {type: string, description: "Número del lote, si el texto lo dice."}
+      deadline: {type: string, description: "Plazo o fecha del entregable."}
+
+  - name: TEAM_PROFILE
+    source: documents
+    description: Perfil profesional exigido o valorado en el equipo (jefe de proyecto, técnico...).
+    attributes:
+      lot:              {type: string, description: "Número del lote, si el texto lo dice."}
+      count:            {type: number, description: "Número de personas con ese perfil."}
+      experience_years: {type: number, description: "Años de experiencia exigidos."}
+      dedication:       {type: string, description: "Dedicación exigida (completa, 50 %, horas/mes)."}
+
+  - name: TECHNICAL_REQUIREMENT
+    source: documents
+    description: Requisito técnico, tecnología obligatoria o nivel de servicio (ANS/SLA) del pliego técnico. Una obligación concreta y verificable, no una descripción general del servicio.
+    subtypes:
+      - {name: TECHNOLOGY,    description: Tecnología, producto o estándar obligatorio.}
+      - {name: SERVICE_LEVEL, description: Acuerdo de nivel de servicio (tiempo de respuesta, disponibilidad).}
+      - {name: OTHER,         description: Otro requisito técnico.}
+    attributes:
+      lot:       {type: string, description: "Número del lote, si el texto lo dice."}
+      metric:    {type: string, description: "Lo que se mide (tiempo de respuesta, disponibilidad...)."}
+      threshold: {type: number, description: "Cifra exigida, sin unidad."}
+      unit:      {type: string, description: "Unidad de la cifra: horas, %, días..."}
+
   - name: MODIFICATION
-    description: Modificación, prórroga, suspensión o resolución de un contrato.
+    source: documents
+    description: Modificación, prórroga, suspensión o resolución de un contrato. El feed da sus importes; el documento, el motivo.
     subtypes:
       - {name: MODIFICATION, description: Modificación del contrato.}
       - {name: EXTENSION,    description: Prórroga.}
@@ -114,69 +198,26 @@ entity_types:
       new_end:       {type: string, description: "Nueva fecha de fin AAAA-MM-DD."}
       reason:        {type: string, description: "Motivo."}
 
-  - name: PENALTY
-    description: Penalidad por incumplimiento o demora prevista en el pliego.
+  - name: APPEAL
+    source: documents
+    description: Recurso especial o reclamación contra un acto del procedimiento, y su resolución.
     attributes:
-      amount:    {type: number, description: "Importe o cuantía en euros si es fija."}
-      pct:       {type: number, description: "Porcentaje si se expresa así."}
-      condition: {type: string, description: "Incumplimiento que la activa."}
-
-  - name: DELIVERABLE
-    description: Entregable, fase o prestación concreta que exige el pliego técnico.
-    attributes:
-      deadline: {type: string, description: "Plazo o fecha del entregable."}
-
-  - name: TEAM_PROFILE
-    description: Perfil profesional exigido o valorado en el equipo (jefe de proyecto, técnico...).
-    attributes:
-      count:            {type: number, description: "Número de personas con ese perfil."}
-      experience_years: {type: number, description: "Años de experiencia exigidos."}
-
-  - name: TECHNICAL_REQUIREMENT
-    description: Requisito técnico, tecnología obligatoria o nivel de servicio (ANS/SLA) del pliego técnico.
-    subtypes:
-      - {name: TECHNOLOGY,    description: Tecnología, producto o estándar obligatorio.}
-      - {name: SERVICE_LEVEL, description: Acuerdo de nivel de servicio.}
-      - {name: OTHER,         description: Otro requisito técnico.}
+      lot:        {type: string, description: "Número del lote, si el texto lo dice."}
+      appellant:  {type: string, description: "Quién recurre, literal."}
+      tribunal:   {type: string, description: "Tribunal u órgano que lo resuelve."}
+      act:        {type: string, description: "Acto recurrido (pliegos, exclusión, adjudicación...)."}
+      outcome:    {type: string, description: "estimado, desestimado, inadmitido, pendiente..."}
+      date:       {type: string, description: "Fecha de la resolución AAAA-MM-DD."}
 
   - name: OTHER_ORGANIZATION
-    description: Otro organismo relevante (tribunal de recursos, mesa de contratación, entidad financiadora).
+    source: documents
+    description: Otro organismo relevante (tribunal de recursos, entidad financiadora). No la mesa ni los servicios del órgano de contratación.
 
 relation_types:
-  - name: TENDERS
-    description: El órgano de contratación licita el lote.
-    head_types: [CONTRACTING_AUTHORITY]
-    tail_types: [LOT]
-
-  - name: HAS_CRITERION
-    description: El lote se adjudica según este criterio.
-    head_types: [LOT]
-    tail_types: [AWARD_CRITERION]
-
-  - name: REQUIRES
-    description: El lote exige este requisito de solvencia, garantía o requisito técnico.
-    head_types: [LOT]
-    tail_types: [REQUIREMENT, GUARANTEE, TECHNICAL_REQUIREMENT]
-
   - name: ACCEPTS
     description: El requisito o perfil se acredita con esta titulación, certificación o clasificación.
     head_types: [REQUIREMENT, TEAM_PROFILE]
     tail_types: [QUALIFICATION]
-
-  - name: INCLUDES
-    description: El lote incluye este entregable, perfil de equipo o penalidad.
-    head_types: [LOT]
-    tail_types: [DELIVERABLE, TEAM_PROFILE, PENALTY]
-
-  - name: BID_FOR
-    description: La oferta se presenta al lote.
-    head_types: [BID]
-    tail_types: [LOT]
-
-  - name: SUBMITTED_BY
-    description: La oferta la presenta esta empresa o UTE.
-    head_types: [BID]
-    tail_types: [COMPANY, JOINT_VENTURE]
 
   - name: MEMBER_OF
     description: La empresa forma parte de la UTE.
@@ -185,45 +226,40 @@ relation_types:
     attributes:
       share: {type: number, description: "Porcentaje de participación en la UTE."}
 
-  - name: AWARDED_TO
-    description: El lote se adjudica (o se propone adjudicar) a esta empresa o UTE.
-    head_types: [LOT]
-    tail_types: [COMPANY, JOINT_VENTURE]
-    attributes:
-      amount:   {type: number, description: "Importe de adjudicación en euros sin IVA."}
-      date:     {type: string, description: "Fecha de adjudicación AAAA-MM-DD."}
-      proposed: {type: boolean, description: "true si es solo propuesta de adjudicación."}
-
-  - name: DECLARED_VOID
-    description: El órgano declara desierto el lote o desiste o renuncia a él.
-    head_types: [CONTRACTING_AUTHORITY]
-    tail_types: [LOT]
-    attributes:
-      reason: {type: string, description: "Motivo."}
-
-  - name: CONTRACT_FOR
-    description: El contrato formaliza la adjudicación de este lote.
-    head_types: [CONTRACT]
-    tail_types: [LOT]
-
-  - name: SIGNED_WITH
-    description: El contrato se firma con esta empresa o UTE.
-    head_types: [CONTRACT]
-    tail_types: [COMPANY, JOINT_VENTURE]
-
-  - name: MODIFIES
-    description: La modificación o prórroga afecta a este contrato.
-    head_types: [MODIFICATION]
-    tail_types: [CONTRACT]
-
   - name: SUBCONTRACTS
     description: Una empresa subcontrata parte de la prestación a otra.
     head_types: [COMPANY, JOINT_VENTURE]
     tail_types: [COMPANY]
 
-  - name: REVIEWS
-    description: Un tribunal u organismo resuelve un recurso sobre el lote.
-    head_types: [OTHER_ORGANIZATION]
-    tail_types: [LOT]
-    attributes:
-      outcome: {type: string, description: "Estimado, desestimado, inadmitido..."}
+# What /ner asks for in each kind of document. A document gets the union of the profiles that list
+# its role; a role in none is chunked and embedded but not read by NER. Relations follow the types:
+# a relation is asked for when its head and tail types are both in the schema.
+profiles:
+  award:
+    roles: [BoardMinutes, ValuationReport, AbnormalBidReport, AwardProposal, AwardResolution]
+    entity_types: [COMPANY, JOINT_VENTURE, BID, CRITERION_SCORE]
+    # Every lot received one bid (the feed's ReceivedTenderQuantity): the bidder is the feed's
+    # winner, with its amount; the actas add nothing NER would have to find.
+    unless: [single_bid]
+  pcap:
+    roles: [PCAP, PCAP+PPT]
+    entity_types: [PENALTY, QUALIFICATION]
+  ppt:
+    roles: [PPT, PCAP+PPT]
+    entity_types: [DELIVERABLE, TEAM_PROFILE, TECHNICAL_REQUIREMENT, QUALIFICATION]
+  contract:
+    roles: [ContractDocument]
+    entity_types: [COMPANY, JOINT_VENTURE]
+  modification:
+    roles: [ModificationDocument]
+    entity_types: [MODIFICATION, COMPANY]
+  appeal:
+    roles: [AppealDocument]
+    entity_types: [APPEAL, OTHER_ORGANIZATION, COMPANY]
+
+# Feed types NER asks for after all, in these roles, when the expediente's feed lacks them:
+# key -> the feed field that must be empty (requirements that only point at the pliego count as empty).
+fallback:
+  AWARD_CRITERION: {feed: award_criteria, roles: [PCAP, PCAP+PPT, TenderNotice]}
+  REQUIREMENT:     {feed: requirements,   roles: [PCAP, PCAP+PPT, TenderNotice]}
+  GUARANTEE:       {feed: guarantees,     roles: [PCAP, PCAP+PPT]}

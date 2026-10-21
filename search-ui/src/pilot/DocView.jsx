@@ -16,7 +16,7 @@ import { ChevronLeft, ChevronRight, X } from '../icons.js'
 import { ErrorNote, ExtLink, Loading, SourceRef, Tabs, sourceText } from './ui.jsx'
 import NodePanel from './NodePanel.jsx'
 import OriginalPane from './OriginalPane.jsx'
-import { reflow, lineKeyRanges, blocks } from './doctext.js'
+import { reflow, lineKeyRanges, blocks, markup } from './doctext.js'
 import { useNavName } from './Nav.jsx'
 
 const PAGE = /\[Página (\d+)\]/g
@@ -170,8 +170,9 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
 
       <article className="dv-text">
         {first > 0 && <button type="button" className="more" onClick={() => load(Math.max(0, first - BATCH))}>Fragmentos anteriores</button>}
-        {data.chunks.map((c) => (
+        {data.chunks.map((c, i) => (
           <section key={c.chunk_idx} id={`chunk-${c.chunk_idx}`} className={`dv-chunk ${c.ner !== 'ok' ? 'no-ner' : ''}`}>
+            {c.section && c.section !== data.chunks[i - 1]?.section && <div className="dv-section" title="Sección del documento">{c.section}</div>}
             <div className="dv-chunk-head" title={c.ner !== 'ok' ? 'Este fragmento no pasó por la extracción de entidades' : ''}>
               {c.chunk_idx + 1}{c.ner !== 'ok' && <span> · sin extracción</span>}</div>
             <Annotated chunk={c} entity={entity} boiler={boiler} tagOf={tagOf}
@@ -187,25 +188,30 @@ export default function DocView({ tenderId, sha, focusChunk, focusEntity }) {
   )
 }
 
-// The chunk laid out as blocks (headings, a notice's label/value rows, list items, paragraphs, page
-// dividers), repeated lines folded; the focused entity's references framed (their quote, the name
-// in bold) and tagged with document and page. A reference across two blocks is framed in each.
+// The chunk laid out as blocks (headings, tables, a notice's label/value rows, list items,
+// paragraphs, page dividers), the page furniture folded; the focused entity's references framed
+// (their quote, the name in bold) and tagged with document and page. A reference across two blocks
+// is framed in each. The layout pass's Markdown is drawn, its markers hidden, never removed.
 function Annotated({ chunk, entity, boiler, tagOf, onOpen, onPage }) {
-  const text = useMemo(() => reflow(chunk.text, boiler), [chunk.text, boiler])
+  // Furniture: the exact ranges the pipeline found, else the lines the API saw repeated (older runs).
+  const furniture = useMemo(() => (chunk.furniture || []).map(([a, b]) => ({ a, b })), [chunk.furniture])
+  const text = useMemo(() => reflow(chunk.text, boiler, furniture), [chunk.text, boiler, furniture])
   const layout = useMemo(() => blocks(text), [text])
+  const mk = useMemo(() => markup(text), [text])
   const refs = []
   for (const m of (chunk.mentions || []).filter((x) => x.entity_id === entity)
     .map((x) => ({ ...x, a: x.char_start ?? x.name_start, b: x.char_end ?? x.name_end, key: x.name_start ?? x.char_start ?? 0 }))
     .filter((x) => x.a != null && x.b > x.a).sort((x, y) => x.a - y.a)) {
     if (!refs.length || m.a >= refs[refs.length - 1].b) refs.push(m)
   }
-  const boilers = lineKeyRanges(chunk.text, boiler)
+  const boilers = furniture.length ? furniture : lineKeyRanges(chunk.text, boiler)
   const pages = [...chunk.text.matchAll(PAGE)].map((p) => ({ a: p.index, b: p.index + p[0].length, page: Number(p[1]) }))
 
-  // Plain text between references: page markers become dividers, repeated lines are folded.
+  // Plain text between references: page markers become dividers, furniture is folded, Markdown
+  // markers are hidden ("<br>" as a line break) and bold or underlined runs are bold.
   function plain(from, to, key) {
     const cuts = new Set([from, to])
-    for (const r of [...boilers, ...pages]) for (const x of [r.a, r.b]) if (x > from && x < to) cuts.add(x)
+    for (const r of [...boilers, ...pages, ...mk.hide, ...mk.strong]) for (const x of [r.a, r.b]) if (x > from && x < to) cuts.add(x)
     const pts = [...cuts].sort((x, y) => x - y)
     const out = []
     for (let i = 0; i < pts.length - 1; i++) {
@@ -218,7 +224,12 @@ function Annotated({ chunk, entity, boiler, tagOf, onOpen, onPage }) {
         continue
       }
       if (pages.some((p) => a >= p.a && b <= p.b)) continue
-      const piece = text.slice(a, b)
+      if (mk.hide.some((h) => a >= h.a && b <= h.b)) {
+        if (mk.br.includes(a)) out.push(<br key={`${key}br${a}`} />)
+        continue
+      }
+      const s = text.slice(a, b)
+      const piece = mk.strong.some((x) => x.a <= a && b <= x.b) ? <strong key={`${key}s${a}`}>{s}</strong> : s
       out.push(boilers.some((x) => x.a <= a && b <= x.b) ? <span key={`${key}${a}`} className="dv-boiler">{piece}</span> : piece)
     }
     return out
@@ -238,7 +249,7 @@ function Annotated({ chunk, entity, boiler, tagOf, onOpen, onPage }) {
           data-tag={tagOf(r.page || chunk.page_from)}
           title={`${r.kind === 'coref' ? 'Referencia sin nombre («la empresa»…)' : 'Referencia'}${onOpen ? ' · clic: verla en el original' : ''}`}
           onClick={() => onOpen?.(r)}>
-          {ne > ns ? <>{text.slice(a, ns)}<b>{text.slice(ns, ne)}</b>{text.slice(ne, b)}</> : text.slice(a, b)}
+          {ne > ns ? <>{plain(a, ns, `${key}r${i}a`)}<b>{plain(ns, ne, `${key}r${i}n`)}</b>{plain(ne, b, `${key}r${i}z`)}</> : plain(a, b, `${key}r${i}w`)}
         </mark>)
       at = b
     })
@@ -261,8 +272,13 @@ function Annotated({ chunk, entity, boiler, tagOf, onOpen, onPage }) {
       }
       i--
       out.push(<dl key={key} className="dv-fields">{rows}</dl>)
+    } else if (x.type === 'table') {
+      out.push(<div key={key} className="dv-table-wrap"><table className="dv-table"><tbody>{x.rows.map((r, ri) => (
+        <tr key={ri}>{r.cells.map((c, ci) => r.head
+          ? <th key={ci}>{span(c.a, c.b, `${key}r${ri}c${ci}`)}</th>
+          : <td key={ci}>{span(c.a, c.b, `${key}r${ri}c${ci}`)}</td>)}</tr>))}</tbody></table></div>)
     } else if (x.type === 'heading') {
-      out.push(<h4 key={key} className={`dv-h ${x.sub ? 'sub' : ''}`}>{span(x.a, x.b, key)}</h4>)
+      out.push(<h4 key={key} className={`dv-h ${x.sub ? 'sub' : ''} ${x.level ? `l${Math.min(x.level, 3)}` : ''}`}>{span(x.a, x.b, key)}</h4>)
     } else if (x.type === 'item') {
       out.push(<p key={key} className="dv-p dv-li">{span(x.a, x.b, key)}</p>)
     } else {

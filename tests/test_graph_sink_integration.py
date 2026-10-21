@@ -1,6 +1,6 @@
 import os
 import pytest
-from placsp.core.models import ProcurementRecord, LotResult, Tombstone
+from placsp.core.models import ProcurementRecord, LotResult
 from placsp.storage.graph_sink import GraphSink
 
 URI = os.getenv("NEO4J_TEST_URL")
@@ -51,11 +51,3 @@ def test_canonical_name_is_most_frequent(sink):
     sink.upsert([_rec("3", [LotResult(lot_id="0", winner_name="OTHERNAME SA", winner_nif="B9", amount=1.0)])])
     name = _count(sink, "MATCH (c:Company {nif:'B9'}) RETURN c.canonical_name")
     assert name == "Acme SL"
-
-def test_tombstone_deletes_contract_and_lots_keeps_company(sink):
-    sink.upsert([_rec("500", [LotResult(lot_id="1", winner_name="Acme", winner_nif="B1", amount=5.0)])])
-    sink.apply_tombstones([Tombstone(syndication_id="500", when=None, reason="CERRADA",
-                                     category="placsp_mayores")])
-    assert _count(sink, "MATCH (c:Contract {syndication_id:'500'}) RETURN count(c)") == 0
-    assert _count(sink, "MATCH (l:Lot {lot_key:'500:1'}) RETURN count(l)") == 0
-    assert _count(sink, "MATCH (c:Company {nif:'B1'}) RETURN count(c)") == 1

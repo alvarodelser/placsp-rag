@@ -5,6 +5,14 @@ The pipeline is feature-complete for the **"validate on one feed first"** milest
 intentionally deferred past that milestone. Triage these before enabling the full backfill
 + unattended daily cron.
 
+## Resolved by the staging area (2026-10, see STAGING_REPORT.md)
+Ingestion now goes archives → Parquet staging tables → Weaviate/Neo4j (`src/placsp/staging/`), which
+resolves: **I2** (the daily watermark is read from the staging tables, not a Weaviate aggregate),
+**I5** (every step resumes: downloads, extracted archives and loaded tenders are recorded), **N1**
+(render runs once per tender), **N4** (no temp files; live pages are saved as an archive), the
+status history lost between yearly archives, and the deletion of closed (`CERRADA`) tenders.
+Downloads retry with backoff (part of **I4**); the embedder and upserter still do not.
+
 ## Fixed before merge (final review)
 - **C1 — daily `updated` guard:** `process_files(..., merge_stored=True)` now skips records
   not newer than the stored object. (daily/reconcile only)

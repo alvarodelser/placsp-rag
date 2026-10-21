@@ -49,9 +49,13 @@ Ingestion runs on the **host** (not in Docker), talking to published ports.
 | Command | What it does |
 |---|---|
 | `init-schema` | Creates or verifies the Weaviate schema |
-| `daily` | Pages the live feed, upserts new records, applies tombstones |
-| `backfill` | Ingests historical data; self-gates to the off-peak window |
-| `reconcile` | Monthly full reconcile against the live feed |
+| `backfill` | Downloads every PLACSP archive not on disk yet (`data/zips/`), extracts them into the staging tables, builds the current state of every tender, and loads what changed into Weaviate and Neo4j. Safe to rerun: each step resumes where it stopped |
+| `daily` | Saves the live feed since the latest staged update as one more archive, then extract, build and load |
+| `reconcile` | The same as `backfill`; run monthly it picks up the month that just finished |
+| `stage <step>` | One step on its own: `live`, `download`, `extract`, `build`, `load` (or `all` = the backfill steps). `--channel`/`--year` limit `download` |
+
+All of it is described in [STAGING_REPORT.md](STAGING_REPORT.md). Nothing is deleted from the
+index any more: tenders the feed marks as annulled or closed are kept, with `removed_reason`.
 
 Scheduled via cron (example):
 
@@ -85,11 +89,11 @@ Loaded from `.env` in the repo root (auto-sourced by `scripts/placsp`).
 | `SEARCH_API_PORT` | | `8092` | Published search-api port |
 | `CORS_ORIGINS` | | `*` | CORS origins for search-api |
 | `PLACSP_CODELIST_DIR` | | `./codelists` | Codelist cache directory |
-| `PLACSP_WORK_DIR` | | `./work` | Download/unzip scratch directory |
-| `PLACSP_EMBED_BATCH` | | — | Vectorizer batch size |
-| `PLACSP_MAX_IN_FLIGHT` | | — | Concurrent embed requests |
-| `PLACSP_OFFPEAK_START` | | — | Off-peak window start (host local time) |
-| `PLACSP_OFFPEAK_END` | | — | Off-peak window end |
+| `PLACSP_DATA_DIR` | | `./data` | Staging area: archives, Parquet tables, load state (`loaded.duckdb`) |
+| `PLACSP_EXTRACT_WORKERS` | | `2` | Archives extracted in parallel |
+| `PLACSP_BUILD_MEMORY` | | `4GB` | DuckDB memory limit for the build |
+| `PLACSP_EMBED_BATCH` | | `48` | Vectorizer batch size |
+| `PLACSP_EMBED_WORKERS` | | `2` | Embedding requests in flight |
 
 ## Rollback
 

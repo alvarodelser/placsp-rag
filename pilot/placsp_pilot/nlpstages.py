@@ -131,7 +131,81 @@ def classify(cfg: PilotConfig, store: Store):
 
 # ── summarize ─────────────────────────────────────────────────────────────
 
+# ── notices summarised from the feed (no model) ──────────────────────
+
+NOTICE_ROLES = {C.TENDER_NOTICE, C.PRIOR_NOTICE, C.AWARD_NOTICE, C.FORMALIZATION_NOTICE, C.MODIFICATION_NOTICE}
+
+
+def _eur(v) -> str:
+    return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €" if isinstance(v, (int, float)) else ""
+
+
+_ES_LIST = {"result": "TenderResultCode", "contract_type": "ContractCode", "procedure": "SyndicationTenderingProcessCode"}
+
+
+def notice_summary(role: str, t: dict, cl=None) -> dict:
+    """A notice is the feed rendered as a page: its gist is written from the feed record. `cl`
+    (Codelists) gives codes their Spanish names."""
+    tender = t.get("tender") or {}
+    name = tender.get("name") or t.get("atom_title") or ""
+    auth = (t.get("authority") or {}).get("name") or ""
+
+    def lab(d, kind=None):
+        if not d:
+            return ""
+        return (cl.spanish(_ES_LIST[kind], d.get("code")) if cl and kind else None) or d.get("label") or ""
+    lots = [l for l in t.get("lots") or [] if not l.get("implicit")]
+    if role == C.AWARD_NOTICE:
+        parts = []
+        for r in t.get("results") or []:
+            who = ", ".join(w["name"] for w in r.get("winners") or [] if w.get("name"))
+            parts.append(" ".join(x for x in [
+                f"Lote {', '.join(r['lots'])}:" if r.get("lots") and lots else "",
+                lab(r.get("result"), "result") or "Adjudicado", f"a {who}" if who else "",
+                f"por {_eur(r['amount_tax_excl'])} sin IVA" if r.get("amount_tax_excl") else "",
+                f"({int(r['bids_received'])} ofertas)" if r.get("bids_received") is not None else ""] if x))
+        return {"headline": f"Adjudicación: {name}"[:160], "summary": f"{auth}. " + "; ".join(parts) + ".", "source": "feed"}
+    if role == C.FORMALIZATION_NOTICE:
+        cs = [f"contrato {c['id']} firmado el {c['signed']}" if c.get("signed") else f"contrato {c['id']}"
+              for r in t.get("results") or [] for c in r.get("contracts") or [] if c.get("id")]
+        return {"headline": f"Formalización: {name}"[:160], "summary": f"{auth}. " + ("; ".join(cs) or "Contrato formalizado") + ".",
+                "source": "feed"}
+    if role == C.MODIFICATION_NOTICE:
+        ms = [" ".join(x for x in [f"Modificación {m.get('id') or ''}".strip(),
+                                    f"de {_eur(m['amount_change'])}" if m.get("amount_change") else "",
+                                    f"(nuevo importe {_eur(m['final_amount'])})" if m.get("final_amount") else ""] if x)
+              for m in t.get("modifications") or []]
+        return {"headline": f"Modificación: {name}"[:160], "summary": f"{auth}. " + ("; ".join(ms) or "Modificación del contrato") + ".",
+                "source": "feed"}
+    kind = "Anuncio previo" if role == C.PRIOR_NOTICE else "Licitación"
+    crit = t.get("award_criteria") or []
+    deadline = (tender.get("deadline") or {}).get("date")
+    ctype, proc = lab(tender.get("contract_type"), "contract_type"), lab(tender.get("procedure"), "procedure").lower()
+    bits = [" por procedimiento ".join(x for x in (ctype, proc) if x),
+            f"presupuesto {_eur(tender['budget_tax_excl'])} sin IVA" if tender.get("budget_tax_excl") else "",
+            f"{len(lots)} lotes" if lots else "", f"plazo de ofertas hasta {deadline}" if deadline else "",
+            f"{len(crit)} criterios de adjudicación" if crit else ""]
+    return {"headline": f"{kind}: {name}"[:160], "summary": f"{auth}. " + ", ".join(b for b in bits if b) + ".", "source": "feed"}
+
+
+def feed_summaries(cfg: PilotConfig, store: Store) -> int:
+    """Summaries of the notices, from their expediente's feed record; `summarize` leaves them."""
+    n = 0
+    from placsp_pilot.codelists import Codelists
+    cl = Codelists(cfg.codelist_dir)
+    rows = store.q("SELECT b.sha, d.role, e.tender_json FROM blob b JOIN docref d ON d.sha=b.sha JOIN expediente e ON e.id=d.exp_id"
+                   " WHERE b.summary_status='pending' AND b.text_status='ok' AND d.role IN (%s) GROUP BY b.sha"
+                   % ",".join("?" * len(NOTICE_ROLES)), sorted(NOTICE_ROLES))
+    for r in rows:
+        store.update("blob", {"sha": r["sha"]}, summary_status="ok", summary_ms=0,
+                     summary_json=notice_summary(r["role"], json.loads(r["tender_json"]), cl))
+        n += 1
+    log(f"summaries from the feed: {n} notices")
+    return n
+
+
 def summarize(cfg: PilotConfig, store: Store, max_doc_chars: int):
+    feed_summaries(cfg, store)
     svc = Services(cfg, store)
     blobs = store.q("SELECT sha, text_path, text_chars FROM blob WHERE summary_status='pending' AND text_status='ok'")
 
@@ -172,49 +246,119 @@ def summarize(cfg: PilotConfig, store: Store, max_doc_chars: int):
 
 # ── ner ───────────────────────────────────────────────────────────────────
 
-def _plan_chunks(cfg: PilotConfig, store: Store):
-    """Create chunk rows for documents not yet chunked and mark which ones NER will process."""
+# A feed requirement that only points at the pliego ("según cláusula 8ª PCAP") says nothing itself.
+REFERENCE_ONLY = re.compile(r"(cl[aá]usula|pliego|pcap|anexo|apartado|seg[uú]n|de acuerdo|conforme|ver\b)", re.I)
+
+
+def reference_only(text: str | None, amount=None) -> bool:
+    """A pointer and little else: "Según cláusula 8ª PCAP", not "Título-licencia de agencias de
+    viajes otorgado por la Administración competente, según…", which is a requirement itself."""
+    from placsp_pilot.lexical import terms
+    text = text or ""
+    return amount is None and len(text) < 160 and bool(REFERENCE_ONLY.search(text)) and len(terms(text)) <= 9
+
+
+def single_bid(tender_json: dict) -> bool:
+    """Every result of the expediente says one bid was received (or none): its only bidder is the
+    feed's winner."""
+    results = tender_json.get("results") or []
+    return bool(results) and all(r.get("bids_received") is not None and r["bids_received"] <= 1 for r in results)
+
+
+def feed_lacks(tender_json: dict) -> set[str]:
+    """The feed types this expediente's feed does not give, so NER looks for them in the pliegos;
+    and "single_bid" when the feed settles the competition (see single_bid)."""
+    out = {"single_bid"} if single_bid(tender_json) else set()
+    if not tender_json.get("award_criteria"):
+        out.add("AWARD_CRITERION")
+    reqs = [r for r in tender_json.get("requirements") or [] if r.get("group") != "declaration"]
+    if not reqs or all(reference_only(r.get("text"), r.get("threshold")) for r in reqs):
+        out.add("REQUIREMENT")
+    if not tender_json.get("guarantees"):
+        out.add("GUARANTEE")
+    return out
+
+
+class Schemas:
+    """The /ner schema of each document: by its role, and by what its expediente's feed lacks."""
+
+    def __init__(self, cfg: PilotConfig, store: Store):
+        self.data = ontology.load(cfg.ontology_path)
+        self.store = store
+        self._lacks: dict[str, set] = {}
+        self._cache: dict[tuple, dict | None] = {}
+
+    def types(self, sha: str) -> set[str]:
+        ref = _ref(self.store, sha)
+        if not ref:
+            return set()
+        if ref["exp_id"] not in self._lacks:
+            e = self.store.one("SELECT tender_json FROM expediente WHERE id=?", (ref["exp_id"],))
+            self._lacks[ref["exp_id"]] = feed_lacks(json.loads(e["tender_json"])) if e else set()
+        return ontology.ner_types(self.data, ref["role"], self._lacks[ref["exp_id"]])
+
+    def schema(self, sha: str) -> dict | None:
+        key = frozenset(self.types(sha))
+        if key not in self._cache:
+            self._cache[key] = ontology.extraction_schema_for(self.data, set(key)) if key else None
+        return self._cache[key]
+
+
+def _plan_chunks(cfg: PilotConfig, store: Store, schemas: Schemas):
+    """Create chunk rows for documents not yet chunked and mark which ones NER will process.
+    A document whose role no profile reads is chunked (for retrieval and provenance) but skipped."""
     skip_roles = {r.strip() for r in cfg.ner_skip_roles.split(",") if r.strip()}
-    for b in store.q("SELECT sha, text_path FROM blob WHERE ner_status='pending' AND text_status='ok'"
+    from placsp_pilot.sections import document
+    for b in store.q("SELECT sha, text_path, chunker FROM blob WHERE ner_status='pending' AND text_status='ok'"
                      " AND sha NOT IN (SELECT DISTINCT sha FROM chunk)"):
         ref = _ref(store, b["sha"])
-        pieces = split_words(Path(b["text_path"]).read_text(encoding="utf-8"), cfg.chunk_words)
+        text = Path(b["text_path"]).read_text(encoding="utf-8")
+        pieces, paths, _ = document(b["text_path"], cfg.chunk_words, b["chunker"])
         scores = [_score(p) for p in pieces]
         keep = set(range(len(pieces)))
         # Every document is chunked, whether or not NER reads it: chunks are what retrieval and
         # provenance point at.
-        if ref and ref["role"] in skip_roles:
+        if not ref or ref["role"] in skip_roles or not schemas.types(b["sha"]):
             keep = set()
             store.update("blob", {"sha": b["sha"]}, ner_status="skipped")
-        elif cfg.ner_max_chunks and len(pieces) > cfg.ner_max_chunks:
-            ranked = sorted(range(len(pieces)), key=lambda i: (-scores[i], i))
+        elif ref["role"] in (C.PCAP, C.PCAP_PPT) and cfg.ner_by_section:
+            # A pliego administrativo is read only in the sections that hold what NER looks for in it.
+            from placsp_pilot.locate import relevant_chunks
+            sections = relevant_chunks(text, cfg.chunk_words, schemas.types(b["sha"]), chunker=b["chunker"],
+                                       text_path=b["text_path"])
+            if sections is not None:
+                keep = sections
+        if keep and cfg.ner_max_chunks and len(keep) > cfg.ner_max_chunks:
+            ranked = sorted(keep, key=lambda i: (-scores[i], i))
             keep = set(ranked[:cfg.ner_max_chunks])
         with store.tx() as c:
             c.executemany(
-                "INSERT OR IGNORE INTO chunk (sha, idx, words, chars, score, selected, status) VALUES (?,?,?,?,?,?,?)",
-                [(b["sha"], i, len(p.split()), len(p), scores[i], int(i in keep), "pending" if i in keep else "skipped")
-                 for i, p in enumerate(pieces)])
+                "INSERT OR IGNORE INTO chunk (sha, idx, words, chars, score, selected, status, section) VALUES (?,?,?,?,?,?,?,?)",
+                [(b["sha"], i, len(p.split()), len(p), scores[i], int(i in keep), "pending" if i in keep else "skipped",
+                  " › ".join(paths[i]) or None) for i, p in enumerate(pieces)])
         store.update("blob", {"sha": b["sha"]}, ner_chunks_total=len(pieces), ner_chunks_selected=len(keep))
 
 
 def ner(cfg: PilotConfig, store: Store):
     svc = Services(cfg, store)
-    schema = ontology.extraction_schema(ontology.load(cfg.ontology_path))
-    _plan_chunks(cfg, store)
-    rows = store.q("SELECT c.sha, c.idx, b.text_path FROM chunk c JOIN blob b ON b.sha=c.sha"
+    schemas = Schemas(cfg, store)
+    _plan_chunks(cfg, store, schemas)
+    from placsp_pilot.sections import document, without_furniture
+    rows = store.q("SELECT c.sha, c.idx, c.section, b.text_path, b.chunker FROM chunk c JOIN blob b ON b.sha=c.sha"
                    " WHERE c.status='pending' ORDER BY c.sha, c.idx")
-    text_cache: dict[str, list[str]] = {}
 
-    def piece(sha: str, path: str, idx: int) -> str:
-        if sha not in text_cache:
-            text_cache[sha] = split_words(Path(path).read_text(encoding="utf-8"), cfg.chunk_words)
-        return text_cache[sha][idx]
+    def piece(r) -> str:
+        """What NER reads: the chunk without its page furniture, headed by the section it is in.
+        Quotes NER returns are located in the stored chunk, which keeps both."""
+        chunks, _, furniture = document(r["text_path"], cfg.chunk_words, r["chunker"])
+        body = without_furniture(chunks[r["idx"]], furniture)
+        return f"[Sección: {r['section']}]\n{body}" if r["section"] else body
 
     def one(r):
         t0 = time.time()
         ref = _ref(store, r["sha"])
         try:
-            out = svc.ner(piece(r["sha"], r["text_path"], r["idx"]), schema,
+            out = svc.ner(piece(r), schemas.schema(r["sha"]),
                           exp_id=ref["exp_id"] if ref else None, sha=r["sha"])
             return r, "ok", out, int((time.time() - t0) * 1000)
         except ServiceError as e:

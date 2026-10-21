@@ -33,6 +33,9 @@ class TextResult:
     ocr_ms: int = 0
     error: str = ""
     members: list = field(default_factory=list)   # for archives: [(name, bytes)]
+    # The layout pass's boxes as character spans of `text`: furniture (page headers and footers),
+    # headings and tables (sections.py reads them). None for a plain extraction.
+    layout: dict | None = None
 
 
 def sniff(data: bytes, filename: str | None, mime: str | None) -> str:
@@ -84,11 +87,41 @@ def _decode(data: bytes) -> str:
     return data.decode("utf-8", "replace")
 
 
+_NORM_STEPS = [(re.compile("\x00"), ""), (re.compile(r"[ \t\u00a0]+"), " "), (re.compile(r"\n\s*\n\s*\n+"), "\n\n")]
+
+
 def _norm(text: str) -> str:
-    text = text.replace("\x00", "")
-    text = re.sub(r"[ \t\u00a0]+", " ", text)
-    text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
+    for rx, repl in _NORM_STEPS:
+        text = rx.sub(repl, text)
     return text.strip()
+
+
+def _norm_spans(text: str, spans: dict) -> tuple[str, dict]:
+    """_norm, carrying character spans from the raw text to the normalised one."""
+    from bisect import bisect_right
+    points = sorted({x for v in spans.values() for ab in v for x in ab})
+    where = {x: x for x in points}                # raw offset -> offset in the current text
+    for rx, repl in _NORM_STEPS:
+        starts, ends, shift, total = [], [], [], 0
+        for m in rx.finditer(text):
+            starts.append(m.start())
+            ends.append(m.end())
+            total += (m.end() - m.start()) - len(repl)
+            shift.append(total)                    # characters removed up to the end of this match
+        for x in points:
+            cur = where[x]
+            k = bisect_right(starts, cur) - 1
+            if k < 0:
+                continue
+            if cur < ends[k]:                      # inside a match: where its replacement starts
+                where[x] = starts[k] - (shift[k - 1] if k else 0)
+            else:
+                where[x] = cur - shift[k]
+        text = rx.sub(repl, text)
+    lead = len(text) - len(text.lstrip())
+    text = text.strip()
+    fix = lambda x: min(max(0, where[x] - lead), len(text))
+    return text, {k: [[fix(a), fix(b)] for a, b in v] for k, v in spans.items()}
 
 
 def _xml_text(xml: bytes, para_tags: tuple[str, ...]) -> str:
@@ -176,15 +209,84 @@ def _ocr(data: bytes, ocr_url: str, timeout: float = 1800) -> str:
     return r.json().get("content_parsed") or ""
 
 
-def _pdf(data: bytes, ocr_url: str, min_chars_per_page: int) -> TextResult:
+_FURNITURE_BOXES = {"page-header", "page-footer"}
+_HEADING_BOXES = {"section-header", "title"}
+
+
+_GLUED = re.compile(r"[^\W\d_]{8,}")
+
+
+def _unglue(body: str, plain: str, boxes: list) -> str:
+    """Words the layout pass ran together in a table cell ("JOGOSAOBRASYSERVICIOS"), spaced as the
+    plain text of the same page has them; the boxes' positions move with the edits."""
+    words = [w.strip(".,;:()«»\"'") for w in plain.split()]
+    spaced = {}
+    for i in range(len(words)):
+        for n in range(2, 7):
+            run = words[i:i + n]
+            if len(run) == n and all(run) and all(w.isalpha() for w in run):
+                spaced.setdefault("".join(run), " ".join(run))
+    edits = [(m.start(), m.end(), spaced[m.group()]) for m in _GLUED.finditer(body) if m.group() in spaced]
+    if not edits:
+        return body
+    out, last, shifts = [], 0, []
+    for a, b, new in edits:
+        out += [body[last:a], new]
+        shifts.append((b, len(new) - (b - a)))
+        last = b
+    out.append(body[last:])
+    moved = lambda x: x + sum(d for end, d in shifts if end <= x)
+    for box in boxes:
+        if box.get("pos"):
+            box["pos"] = (moved(box["pos"][0]), moved(box["pos"][1]))
+    return "".join(out)
+
+
+def _layout_markdown(doc, plain: list[str]) -> tuple[str, dict]:
+    """The PDF as Markdown (headings, tables as rows, lists, reading order), page by page with the
+    same "[Página N]" markers, and where its layout model put furniture, headings and tables."""
+    import pymupdf4llm
+    pages = pymupdf4llm.to_markdown(doc, page_chunks=True, use_ocr=False, show_progress=False)
+    parts, spans, pos = [], {"furniture": [], "headings": [], "tables": []}, 0
+    for i, page in enumerate(pages):
+        body = page.get("text") or ""
+        if not body.strip():
+            continue
+        body = _unglue(body, plain[i] if i < len(plain) else "", page.get("page_boxes") or [])
+        if parts:
+            pos += 2                                   # the "\n\n" that joins pages
+        head = f"[Página {i + 1}]\n"
+        base = pos + len(head)
+        for box in page.get("page_boxes") or []:
+            a, b = box.get("pos") or (None, None)
+            if a is None:
+                continue
+            kind = ("furniture" if box["class"] in _FURNITURE_BOXES else "headings" if box["class"] in _HEADING_BOXES
+                    else "tables" if box["class"] == "table" else None)
+            if kind:
+                spans[kind].append([base + a, base + b])
+        parts.append(head + body)
+        pos += len(head) + len(body)
+    return "\n\n".join(parts), spans
+
+
+def _pdf(data: bytes, ocr_url: str, min_chars_per_page: int, layout: bool = False) -> TextResult:
     import pymupdf
     doc = pymupdf.open(stream=data, filetype="pdf")
     pages = doc.page_count
     texts = [p.get_text("text") for p in doc]
-    doc.close()
     text = "\n\n".join(f"[Página {i + 1}]\n{t.strip()}" for i, t in enumerate(texts) if t.strip())
     low = sum(1 for t in texts if len(t.strip()) < min_chars_per_page)
     scanned = pages > 0 and low / pages > 0.5
+    if not scanned and layout:
+        try:
+            md, spans = _layout_markdown(doc, texts)
+            if len(md.split()) >= 0.8 * len(text.split()):     # the layout pass lost no text
+                doc.close()
+                return TextResult("ok", "pymupdf4llm", md, pages, layout=spans)
+        except Exception:        # a PDF the layout model cannot read: the plain text is still good
+            pass
+    doc.close()
     if not scanned:
         return TextResult("ok", "pymupdf", text, pages)
     if not ocr_url:
@@ -194,10 +296,10 @@ def _pdf(data: bytes, ocr_url: str, min_chars_per_page: int) -> TextResult:
     return TextResult("ok", "ocr", ocr_text, pages, ocr_pages=pages, ocr_ms=int((time.time() - t0) * 1000))
 
 
-def extract(data: bytes, ext: str, ocr_url: str = "", min_chars_per_page: int = 80) -> TextResult:
+def extract(data: bytes, ext: str, ocr_url: str = "", min_chars_per_page: int = 80, layout: bool = False) -> TextResult:
     try:
         if ext == "pdf":
-            res = _pdf(data, ocr_url, min_chars_per_page)
+            res = _pdf(data, ocr_url, min_chars_per_page, layout)
         elif ext == "zip":
             z = zipfile.ZipFile(io.BytesIO(data))
             members = [(i.filename, z.read(i)) for i in z.infolist()
@@ -225,7 +327,10 @@ def extract(data: bytes, ext: str, ocr_url: str = "", min_chars_per_page: int = 
             return TextResult("unsupported", ext or "bin")
     except Exception as e:  # noqa: BLE001 - a bad file must not stop the run
         return TextResult("failed", ext, error=f"{type(e).__name__}: {e}"[:500])
-    res.text = _norm(res.text)
+    if res.layout:
+        res.text, res.layout = _norm_spans(res.text, res.layout)
+    else:
+        res.text = _norm(res.text)
     if res.status == "ok" and len(res.text) < 20:
         res.status = "empty"
     return res

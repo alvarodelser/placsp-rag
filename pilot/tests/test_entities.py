@@ -110,24 +110,30 @@ def test_resolution_merges_across_documents_into_the_feed(expediente):
     cfg, store, rec, docs = expediente
     eid = rec["id"]
     E.mentions(cfg, store)
-    assert store.one("SELECT SUM(located) n FROM mention")["n"] == 13
+    assert store.one("SELECT SUM(located) n FROM mention WHERE kind='ner'")["n"] == 13
     E.resolve(cfg, store)
     ents = {r["id"]: r for r in store.q("SELECT * FROM entity WHERE exp_id=?", (eid,))}
-    # The two documents' criteria are the feed's own lines of the baremo (an acta's 0 is a score, not a weight).
-    assert ents[f"crit:{eid}:feed0"]["mentions"] == 2 and ents[f"crit:{eid}:feed2"]["mentions"] == 2
+    # The two documents' criteria are the feed's own lines of the baremo (an acta's 0 is a score, not a weight),
+    # plus where locate.py found the feed's names without NER: the PCAP's two lines, the acta's "Memoria Tecnica 49 puntos".
+    assert ents[f"crit:{eid}:feed0"]["mentions"] == 3 and ents[f"crit:{eid}:feed2"]["mentions"] == 4
+    feed = {(m["target"], m["entity_id"]) for m in store.q(
+        "SELECT m.target, em.entity_id FROM mention m JOIN entity_mention em ON em.mention_id=m.id WHERE m.kind='feed'")}
+    # The authority too, by the name of its hierarchy (the feed's own name is the body that signs).
+    assert feed == {(f"crit:{eid}:feed0",) * 2, (f"crit:{eid}:feed2",) * 2, (f"guarantee:{eid}:2:*",) * 2,
+                    ("org:nif:Q5450008G",) * 2}
     assert not [i for i, r in ents.items() if r["type"] == "AWARD_CRITERION" and not r["anchor"]]
     # One company: NIF with a dash in the PCAP, a typo and no NIF in the acta.
     companies = [r for r in ents.values() if r["type"] == "COMPANY"]
     assert [c["id"] for c in companies] == ["org:nif:B12345678"] and companies[0]["mentions"] == 2
     # The committee is the authority acting; codes stay distinct.
     auth = ents["org:nif:Q5450008G"]
-    assert auth["anchor"] == 1 and auth["mentions"] == 2
+    assert auth["anchor"] == 1 and auth["mentions"] == 3
     assert {r["name"] for r in ents.values() if r["type"] == "TECHNICAL_REQUIREMENT"} == {"ENI-03", "ENI-04"}
     # The feed's "Según pliego" is spelt out by the PCAP's requirement.
     detail = store.q("SELECT src, dst FROM entity_relation WHERE exp_id=? AND type='DETAILED_BY'", (eid,))
     assert [r["dst"] for r in detail] == [f"requirement:{eid}:volumen anual de negocios"]
     # Every mention is placed but the "Lote 1" of a contract without lots, which is dropped and counted.
-    assert store.one("SELECT COUNT(*) n FROM entity_mention WHERE exp_id=?", (eid,))["n"] == 12
+    assert store.one("SELECT COUNT(*) n FROM entity_mention WHERE exp_id=?", (eid,))["n"] == 12 + 5
     merges = json.loads(store.one("SELECT merges FROM resolution WHERE exp_id=?", (eid,))["merges"])
     assert merges["lot_mentions_dropped"] == 1
     names = [(r["type"], r["name"].lower()) for r in ents.values()]
@@ -138,11 +144,24 @@ def test_describe_uses_domain_profiles_and_passages(expediente):
     cfg, store, rec, docs = expediente
     for stage in (E.mentions, E.resolve, E.refine, E.describe):
         stage(cfg, store)
-    profiles = {r["item_id"]: r["profile"] for r in store.q("SELECT item_id, profile FROM entity_description WHERE kind='entity'")}
-    assert profiles[f"requirement:{rec['id']}:volumen anual de negocios"] == "requirement_desc"
-    assert profiles[f"crit:{rec['id']}:feed0"] == "criterion_desc"
+    descs = {r["item_id"]: r for r in store.q("SELECT * FROM entity_description WHERE kind='entity'")}
+    # Only in the documents: the model, with the domain profile.
+    assert descs[f"requirement:{rec['id']}:volumen anual de negocios"]["profile"] == "requirement_desc"
+    # The feed's criterion: from its fields, no call.
+    crit = descs[f"crit:{rec['id']}:feed0"]
+    assert crit["profile"] == "template" and crit["ms"] == 0 and "puntos" in crit["text"] and "criterio de adjudicación" in crit["text"]
     passages = E.passages(store, cfg, rec["id"], f"crit:{rec['id']}:feed0")
     assert any(p.startswith("[PCAP") and "31 puntos" in p for p in passages)
+
+
+def test_describe_feed_entities_by_the_model_when_asked(expediente, monkeypatch):
+    cfg, store, rec, docs = expediente
+    monkeypatch.setenv("PILOT_DESCRIBE_FEED", "model")
+    cfg = load_config(str(cfg.run_dir))
+    for stage in (E.mentions, E.resolve, E.refine, E.describe):
+        stage(cfg, store)
+    prof = store.one("SELECT profile FROM entity_description WHERE item_id=?", (f"crit:{rec['id']}:feed0",))["profile"]
+    assert prof == "criterion_desc"
 
 
 def test_lots_are_mentioned_only_by_name():
@@ -191,3 +210,68 @@ def test_coref_links_references_to_their_entity(expediente):
         c.execute("DELETE FROM resolution")
     E.resolve(cfg, store)
     assert store.one("SELECT COUNT(*) n FROM mention WHERE kind='coref'")["n"] == 0
+
+
+VALUATION = ("INFORME DE VALORACIÓN. ACME SERVICIOS, S.L. (B12345678): 80 puntos en total. "
+             "BETA OBRAS SL ofrece una memoria de 40 páginas y obtiene 30 puntos en Memoria técnica.")
+
+
+def _add_valuation(cfg, store, rec):
+    """A valuation report whose NER output names bidders and criteria by attribute only."""
+    eid = rec["id"]
+    found = {"entities": [
+        ent("Oferta de ACME", "BID", "ACME SERVICIOS, S.L. (B12345678): 80 puntos en total",
+            bidder="ACME SERVICIOS, S.L.", bidder_nif="B12345678", total_score=80),
+        ent("Memoria técnica de BETA", "CRITERION_SCORE", "BETA OBRAS SL ofrece una memoria de 40 páginas y obtiene 30 puntos",
+            bidder="BETA OBRAS SL", criterion="Memoria técnica", points=30, offered="memoria de 40 páginas")],
+        "relations": []}
+    sha = _save_blob(cfg, store, VALUATION.encode(), "valoracion.txt", "text/plain")
+    tp = cfg.text_dir / f"{sha}.txt"
+    tp.write_text(VALUATION, encoding="utf-8")
+    store.update("blob", {"sha": sha}, text_status="ok", text_path=str(tp), text_chars=len(VALUATION), ner_status="ok")
+    with store.tx() as c:
+        c.execute("INSERT INTO docref (exp_id, url, source, label, role, role_source, status, sha) VALUES (?,?,?,?,?,?,?,?)",
+                  (eid, "http://x/val", "detail_other", "valoracion.pdf", "ValuationReport", "rule", "fetched", sha))
+        c.execute("INSERT INTO chunk (sha, idx, words, chars, score, selected, status, result_json) VALUES (?,?,?,?,?,?,?,?)",
+                  (sha, 0, len(VALUATION.split()), len(VALUATION), 1, 1, "ok", json.dumps(found, ensure_ascii=False)))
+
+
+def test_bids_and_scores_point_at_their_bidder_and_criterion(expediente):
+    """A valuation table read by NER: the bidder and the criterion are attributes, not relations."""
+    cfg, store, rec, docs = expediente
+    eid = rec["id"]
+    _add_valuation(cfg, store, rec)
+    E.mentions(cfg, store)
+    E.resolve(cfg, store)
+    ents = {r["id"]: r for r in store.q("SELECT * FROM entity WHERE exp_id=?", (eid,))}
+    rels = {(r["src"], r["type"], r["dst"]) for r in store.q("SELECT * FROM entity_relation WHERE exp_id=?", (eid,))}
+    # The bidder named by NIF is the PCAP's company; the other bidder becomes a company of its own.
+    beta = next(i for i, r in ents.items() if r["type"] == "COMPANY" and "beta" in i)
+    assert ents["org:nif:B12345678"]["mentions"] == 3
+    bids = {r["src"]: r["dst"] for r in store.q("SELECT * FROM entity_relation WHERE exp_id=? AND type='SUBMITTED_BY'", (eid,))}
+    assert sorted(bids.values()) == sorted([beta, "org:nif:B12345678"])
+    beta_bid = next(b for b, o in bids.items() if o == beta)
+    score = next(i for i, r in ents.items() if r["type"] == "CRITERION_SCORE")
+    assert (beta_bid, "HAS_SCORE", score) in rels
+    # The acta's "Memoria técnica" is the feed's line of the baremo.
+    assert (score, "FOR_CRITERION", f"crit:{eid}:feed2") in rels
+    assert json.loads(ents[score]["attributes"])["points"] == 30
+
+
+def test_a_bidder_without_nif_takes_the_one_stage_1_knows(expediente, tmp_path):
+    """The valuation report names BETA OBRAS SL without a NIF; stage 1 has it as a winner elsewhere."""
+    import duckdb
+    from placsp_pilot import staging
+    cfg, store, rec, docs = expediente
+    cur = tmp_path / "staging" / "current"
+    cur.mkdir(parents=True)
+    duckdb.connect().execute(f"COPY (SELECT 'B99999999' AS nif_norm, ['BETA OBRAS, S.L.'] AS names) TO '{cur / 'company.parquet'}' (FORMAT parquet)")
+    staging._COMPANIES.clear()
+    cfg.staging_dir = str(tmp_path / "staging")
+    _add_valuation(cfg, store, rec)
+    E.mentions(cfg, store)
+    E.resolve(cfg, store)
+    ids = {r["id"] for r in store.q("SELECT id FROM entity WHERE exp_id=? AND type='COMPANY'", (rec["id"],))}
+    assert "org:nif:B99999999" in ids
+    merges = json.loads(store.one("SELECT merges FROM resolution WHERE exp_id=?", (rec["id"],))["merges"])
+    assert merges["nif_from_staging"] >= 1

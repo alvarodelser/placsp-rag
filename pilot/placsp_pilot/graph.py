@@ -34,12 +34,13 @@ LABEL = {
     "REQUIREMENT": "Requirement", "QUALIFICATION": "Qualification", "GUARANTEE": "Guarantee", "BID": "Bid",
     "CONTRACT": "Contract", "MODIFICATION": "Modification", "PENALTY": "Penalty", "DELIVERABLE": "Deliverable",
     "TEAM_PROFILE": "TeamProfile", "TECHNICAL_REQUIREMENT": "TechnicalRequirement",
+    "CRITERION_SCORE": "CriterionScore", "APPEAL": "Appeal",
 }
 ORG_KIND = {"CONTRACTING_AUTHORITY": "ContractingAuthority", "COMPANY": "Company", "OTHER_ORGANIZATION": "Other"}
 # Entities with no lot relation of their own are attached to every lot with this edge.
 LOT_EDGE = {"AWARD_CRITERION": "HAS_CRITERION", "REQUIREMENT": "REQUIRES", "GUARANTEE": "REQUIRES",
             "TECHNICAL_REQUIREMENT": "REQUIRES", "DELIVERABLE": "INCLUDES", "TEAM_PROFILE": "INCLUDES",
-            "PENALTY": "INCLUDES"}
+            "PENALTY": "INCLUDES", "BID": "RECEIVED_BID", "APPEAL": "APPEALED"}
 
 # Where each document role hangs in the model.
 _ANCHOR = {
