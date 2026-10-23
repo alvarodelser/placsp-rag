@@ -35,7 +35,9 @@ def _copy(con, sql: str, path: str):
     con.execute(f"COPY ({sql}) TO '{path}' (FORMAT parquet, COMPRESSION zstd)")
 
 
-def build(data_dir: str, codelist_dir: str, memory_limit: str = "4GB") -> dict:
+def build(data_dir: str, codelist_dir: str, memory_limit: str = "4GB", threads: int | None = None) -> dict:
+    """memory_limit caps DuckDB (it spills to data/tmp beyond it); every thread needs its own share,
+    so on a machine with many cores lower threads rather than raise the limit."""
     t0 = time.time()
     final_dir = os.path.join(data_dir, "current")
     out_dir = final_dir + ".tmp"            # swapped in at the end: readers never see a half-built set
@@ -43,6 +45,8 @@ def build(data_dir: str, codelist_dir: str, memory_limit: str = "4GB") -> dict:
     os.makedirs(out_dir)
     con = duckdb.connect()
     con.execute(f"SET memory_limit='{memory_limit}'")
+    if threads:
+        con.execute(f"SET threads={int(threads)}")
     con.execute(f"SET temp_directory='{os.path.join(data_dir, 'tmp')}'")
     con.execute("SET preserve_insertion_order=false")
 

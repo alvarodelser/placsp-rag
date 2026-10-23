@@ -18,7 +18,7 @@ def _loader(cfg):
                            batch_size=cfg.upsert_batch_size),
                   graph_sink=_graph_sink(cfg))
 
-def _stage(cfg, steps, channels=None, years=None, workers=2, memory="4GB"):
+def _stage(cfg, steps, channels=None, years=None, workers=2, memory="4GB", threads=None):
     """Run staging steps in order: live, download, extract, build, load."""
     from placsp.staging import sources, extract, build, live
     if "live" in steps:
@@ -28,7 +28,7 @@ def _stage(cfg, steps, channels=None, years=None, workers=2, memory="4GB"):
     if "extract" in steps:
         print(f"extracted {len(extract.extract_all(cfg.data_dir, workers))} archives")
     if "build" in steps:
-        print(build.build(cfg.data_dir, cfg.codelist_dir, memory))
+        print(build.build(cfg.data_dir, cfg.codelist_dir, memory, threads))
     if "load" in steps:
         print(_loader(cfg).load())
 
@@ -49,12 +49,14 @@ def main(argv=None):
     stage.add_argument("--channel", action="append", help="limit live/download to these channels")
     stage.add_argument("--year", action="append", type=int, help="limit download to these years")
     stage.add_argument("--workers", type=int, default=2, help="archives extracted in parallel")
-    stage.add_argument("--memory", default="4GB", help="DuckDB memory limit for build")
+    stage.add_argument("--memory", default=None, help="DuckDB memory limit for build (PLACSP_BUILD_MEMORY)")
+    stage.add_argument("--threads", type=int, default=None, help="DuckDB threads for build (PLACSP_BUILD_THREADS)")
     args = parser.parse_args(argv)
     cfg = load_config()
     if args.cmd == "stage":
         steps = RUNS["backfill"] if args.step == "all" else (args.step,)
-        _stage(cfg, steps, args.channel, args.year, args.workers, args.memory)
+        _stage(cfg, steps, args.channel, args.year, args.workers, args.memory or cfg.build_memory,
+               args.threads or cfg.build_threads)
         return
     if args.cmd == "init-schema":
         from placsp.storage.weaviate_schema import CLASS_DEF, PLIEGO_CRITERIA_CLASS_DEF
@@ -69,7 +71,7 @@ def main(argv=None):
         gs.ensure_constraints(); gs.close()
         print("constraints ensured")
         return
-    _stage(cfg, RUNS[args.cmd], workers=cfg.extract_workers, memory=cfg.build_memory)
+    _stage(cfg, RUNS[args.cmd], workers=cfg.extract_workers, memory=cfg.build_memory, threads=cfg.build_threads)
 
 if __name__ == "__main__":
     main()

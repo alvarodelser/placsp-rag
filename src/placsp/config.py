@@ -15,6 +15,7 @@ class Config:
     embed_workers: int
     extract_workers: int
     build_memory: str
+    build_threads: int
     upsert_batch_size: int
     request_timeout: float
     neo4j_url: str
@@ -33,6 +34,7 @@ def load_config() -> Config:
         embed_workers=int(_env("PLACSP_EMBED_WORKERS", "2")),
         extract_workers=int(_env("PLACSP_EXTRACT_WORKERS", "2")),
         build_memory=_env("PLACSP_BUILD_MEMORY", "4GB"),
+        build_threads=int(_env("PLACSP_BUILD_THREADS", "4")),
         upsert_batch_size=int(_env("PLACSP_UPSERT_BATCH", "100")),
         request_timeout=float(_env("PLACSP_TIMEOUT", "600")),
         neo4j_url=_env("NEO4J_URL", ""),

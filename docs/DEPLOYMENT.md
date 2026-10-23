@@ -91,7 +91,8 @@ Loaded from `.env` in the repo root (auto-sourced by `scripts/placsp`).
 | `PLACSP_CODELIST_DIR` | | `./codelists` | Codelist cache directory |
 | `PLACSP_DATA_DIR` | | `./data` | Staging area: archives, Parquet tables, load state (`loaded.duckdb`) |
 | `PLACSP_EXTRACT_WORKERS` | | `2` | Archives extracted in parallel |
-| `PLACSP_BUILD_MEMORY` | | `4GB` | DuckDB memory limit for the build |
+| `PLACSP_BUILD_MEMORY` | | `4GB` | DuckDB memory limit for the build; it spills to `data/tmp` beyond it |
+| `PLACSP_BUILD_THREADS` | | `4` | DuckDB threads for the build; each needs its own memory, so fewer threads need less |
 | `PLACSP_EMBED_BATCH` | | `48` | Vectorizer batch size |
 | `PLACSP_EMBED_WORKERS` | | `2` | Embedding requests in flight |
 
