@@ -41,8 +41,9 @@ _DOC_NAMES = {"legal": "Pliego de cláusulas administrativas (PCAP)",
 
 
 def fetch_dicts(con, sql: str, params=None) -> list[dict]:
-    res = con.execute(sql, params or []).arrow()
-    return (res.read_all() if hasattr(res, "read_all") else res).to_pylist()   # a reader on newer DuckDB
+    res = con.execute(sql, params or [])
+    # to_arrow_table on DuckDB 1.5+, fetch_arrow_table before (deprecated after)
+    return (res.to_arrow_table() if hasattr(res, "to_arrow_table") else res.fetch_arrow_table()).to_pylist()
 
 
 class Labels:
