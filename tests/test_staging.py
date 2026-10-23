@@ -138,6 +138,22 @@ def test_load_writes_records_and_criteria_then_only_changes(staged, tmp_path):
     wv.objects.clear()
     assert _loader(d, wv).load()["tenders"] == 0                 # nothing changed: nothing reloaded
     assert wv.objects == {}
+    assert all("lot_results" not in o["properties"] for o in lic)
+
+
+def test_load_does_not_mark_rejected_records_loaded(staged, tmp_path):
+    import shutil
+    d = str(tmp_path / "d")
+    shutil.copytree(staged, d)
+    def rejecting(req):
+        objs = json.loads(req.content)["objects"]
+        return httpx.Response(200, json=[{"id": o["id"], "result": {"errors": {"error": [{"message": "bad"}]}}}
+                                         for o in objs])
+    stats = _loader(d, rejecting).load()
+    assert stats["tenders"] == 0 and stats["failed_chunks"] > 0
+    wv = _FakeWeaviate()
+    n = duckdb.sql(f"SELECT count(*) FROM read_parquet('{d}/current/tender.parquet')").fetchone()[0]
+    assert _loader(d, wv).load()["tenders"] == n                 # retried in full on the next run
 
 
 def test_live_saves_pages_until_watermark(tmp_path):

@@ -76,6 +76,7 @@ def render(rec: ProcurementRecord) -> tuple[str, dict]:
     # serialize nested
     props["status_history"] = [asdict(e) for e in rec.status_history]
     props["lots"] = [asdict(l) for l in rec.lots]
+    props.pop("lot_results", None)      # per-lot awards are for the graph (graph_ops), not the search index
     # RFC3339: Weaviate date fields require a full timestamp. Source values that
     # already carry a time component (contain "T", e.g. updated) are left as-is;
     # date-only values are normalized from their YYYY-MM-DD prefix, tolerating

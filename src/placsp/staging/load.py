@@ -14,6 +14,7 @@ import json
 import os
 import time
 import uuid
+import warnings
 
 import duckdb
 import structlog
@@ -42,8 +43,10 @@ _DOC_NAMES = {"legal": "Pliego de cláusulas administrativas (PCAP)",
 
 def fetch_dicts(con, sql: str, params=None) -> list[dict]:
     res = con.execute(sql, params or [])
-    # to_arrow_table on DuckDB 1.5+, fetch_arrow_table before (deprecated after)
-    return (res.to_arrow_table() if hasattr(res, "to_arrow_table") else res.fetch_arrow_table()).to_pylist()
+    with warnings.catch_warnings():     # DuckDB 1.5 notes the extra copy; chunks are small
+        warnings.simplefilter("ignore")
+        # to_arrow_table on DuckDB 1.5+, fetch_arrow_table before (deprecated after)
+        return (res.to_arrow_table() if hasattr(res, "to_arrow_table") else res.fetch_arrow_table()).to_pylist()
 
 
 class Labels:
@@ -245,7 +248,9 @@ class Loader:
         recs = [to_record(t, rows[t["entry_id"]], L) for t in tenders]
         rendered = [render(r) for r in recs]
         vectors = self.embedder.embed([text for text, _ in rendered])
-        self.upserter.upsert_rendered([r.syndication_id for r in recs], [p for _, p in rendered], vectors)
+        ok = self.upserter.upsert_rendered([r.syndication_id for r in recs], [p for _, p in rendered], vectors)
+        if ok < len(recs):      # Weaviate answers 200 and rejects objects one by one: fail the chunk, retry it
+            raise RuntimeError(f"weaviate rejected {len(recs) - ok} of {len(recs)} records")
         now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
         crit = []
         for t, rec in zip(tenders, recs):
@@ -255,8 +260,8 @@ class Loader:
                     "syndication_id": rec.syndication_id, "expediente": rec.expediente or "",
                     "criteria_json": json.dumps(c, ensure_ascii=False), "source_url": rec.source_url or "",
                     "extracted_at": now}})
-        if crit:
-            self.upserter.post_batch_raw(crit)
+        if crit and self.upserter.post_batch_raw(crit) < len(crit):
+            raise RuntimeError("weaviate rejected criteria objects")
         if self.graph is not None:
             self.graph.upsert(recs)
         return len(crit)
