@@ -160,3 +160,20 @@ def test_refresh_token_expired(conn):
                               token_hash="old", expires_at=past)
     assert not users.validate_refresh_token(conn, user_id=u["user_id"],
                                             token_hash="old")
+
+
+def test_delete_user_keeps_email_allowed(conn):
+    users.allow_email(conn, "del@b.com")
+    u = users.create_user(conn, email="del@b.com", display_name="D",
+                          hashed_password="h")
+    users.save_item(conn, user_id=u["user_id"], item_id="x1")
+    users.log_event(conn, user_id=u["user_id"], event_type="save", item_id="x1")
+    users.store_refresh_token(conn, user_id=u["user_id"], token_hash="t",
+                              expires_at="2999-01-01T00:00:00+00:00")
+    assert users.delete_user(conn, "DEL@b.com")
+    assert users.get_user_by_email(conn, "del@b.com") is None
+    for table in ("refresh_tokens", "saved_items", "user_events"):
+        assert not conn.execute(f"SELECT 1 FROM {table} WHERE user_id = ?",
+                                (u["user_id"],)).fetchone()
+    assert users.is_allowed(conn, "del@b.com")
+    assert not users.delete_user(conn, "del@b.com")

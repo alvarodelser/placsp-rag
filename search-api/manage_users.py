@@ -2,6 +2,8 @@
 
   python manage_users.py allow EMAIL [NOTE]   let EMAIL create an account (and sign in)
   python manage_users.py remove EMAIL         take EMAIL off the list: no sign-in, no new tokens
+  python manage_users.py reset EMAIL          forgotten password: delete EMAIL's account (saved items and
+                                              history too) and keep it allowed, so they register again
   python manage_users.py list                 the allowed emails, whether each has registered, and the
                                               accounts not on the list (no access until allowed)
 
@@ -15,7 +17,7 @@ import users
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 2 or argv[1] not in ("allow", "remove", "list") or (argv[1] != "list" and len(argv) < 3):
+    if len(argv) < 2 or argv[1] not in ("allow", "remove", "reset", "list") or (argv[1] != "list" and len(argv) < 3):
         print(__doc__.strip())
         return 2
     conn = users.connect(os.getenv("USERS_DB", "users.db"))
@@ -28,6 +30,11 @@ def main(argv: list[str]) -> int:
                 return 2
             users.allow_email(conn, email, " ".join(argv[3:]) or None)
             print(f"allowed: {email}")
+        elif cmd == "reset":
+            email = argv[2].strip().lower()
+            deleted = users.delete_user(conn, email)
+            users.allow_email(conn, email)
+            print(("account deleted, " if deleted else "no account, ") + f"allowed to register: {email}")
         elif cmd == "remove":
             print(("removed: " if users.disallow_email(conn, argv[2]) else "was not on the list: ") + argv[2].strip().lower())
         else:

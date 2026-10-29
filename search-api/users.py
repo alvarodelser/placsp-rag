@@ -150,6 +150,18 @@ def update_last_seen(conn: sqlite3.Connection, user_id: str) -> None:
     conn.commit()
 
 
+def delete_user(conn: sqlite3.Connection, email: str) -> bool:
+    """Delete the account for *email* with its tokens, saved items and events.
+    The email stays on the allowed list, so the person can register again."""
+    user = get_user_by_email(conn, email)
+    if user is None:
+        return False
+    for table in ("refresh_tokens", "saved_items", "user_events", "users"):
+        conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user["user_id"],))
+    conn.commit()
+    return True
+
+
 # ── Refresh tokens ─────────────────────────────────────────────────────────
 
 def store_refresh_token(conn: sqlite3.Connection, *, user_id: str,
